@@ -17,6 +17,7 @@ int main() {
     wordset_sort_value(&wl.self_set);
     LOG("top score = " PRIWORD, PRIWORDF(*ws->words[0]));
 
+    /*
     struct wordset regex_matches;
     wordset_init(&regex_matches, ".a.io matches");
     ASSERT(filter_regex(".a.io.*", ws, &regex_matches) == 0);
@@ -30,6 +31,21 @@ int main() {
     ASSERT(filter_apply(&f, ws) == 0);
     LOG("top score for filter '%s' = " PRIWORD, f.name, PRIWORDF(*f.output.words[0]));
     filter_term(&f);
+    */
+
+    struct filter * f = NONNULL(filter_parse("extract: ab(.{7})"));
+    struct wordset wso;
+    wordset_init(&wso, "filter matches");
+    filter_apply(f, ws, &wso);
+    LOG("top score for filter = " PRIWORD, PRIWORDF(*wso.words[0]));
+
+    struct wordtuple wt;
+    wordtuple_init(&wt, wso.words, 5);
+    LOG("wordtuple: %s", wordtuple_original(&wt));
+    wordtuple_term(&wt);
+
+    wordset_term(&wso);
+    filter_destroy(f);
 
     wordlist_term(&wl);
     return 0;

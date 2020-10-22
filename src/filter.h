@@ -2,14 +2,6 @@
 #include "prelude.h"
 #include "wordlist.h"
 
-int filter_regex(const char * regex, const struct wordset * src, struct wordset * dst);
-void filter_anagram(const char * letters, const struct wordset * src, struct wordset * dst);
-void filter_subanagram(const char * letters, const struct wordset * src, struct wordset * dst);
-void filter_superanagram(const char * letters, const struct wordset * src, struct wordset * dst);
-void filter_transadd(size_t n, const char * letters, const struct wordset * src, struct wordset * dst);
-void filter_transdelete(size_t n, const char * letters, const struct wordset * src, struct wordset * dst);
-void filter_bank(const char * letters, const struct wordset * src, struct wordset * dst);
-
 enum filter_type {
     FILTER_REGEX,
     FILTER_ANAGRAM,
@@ -18,19 +10,15 @@ enum filter_type {
     FILTER_TRANSADD,
     FILTER_TRANSDELETE,
     FILTER_BANK,
+    FILTER_EXTRACT,
     _FILTER_TYPE_MAX,
 };
+
 extern const char * const filter_type_names[];
 
-struct filter {
-    enum filter_type type;
-    size_t arg_n;
-    char * arg_str;
-    struct wordset output;
-    char name[64];
-};
+struct filter;
 
-void filter_init(struct filter * f, enum filter_type type, size_t n, const char * str);
-int filter_parse(struct filter * f, const char * spec);
-int filter_apply(struct filter * f, struct wordset * input);
-void filter_term(struct filter * f);
+struct filter * filter_create(enum filter_type type, size_t n_arg, const char * str_arg);
+struct filter * filter_parse(const char * spec);
+void filter_apply(struct filter * f, struct wordset * input, struct wordset * output);
+void filter_destroy(struct filter * f);

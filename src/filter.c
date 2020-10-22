@@ -1,41 +1,6 @@
 #include "filter.h"
 #include <regex.h>
 
-int filter_regex(const char * regex, const struct wordset * src, struct wordset * dst) {
-    char regex_modified[1024];
-    if (strlen(regex) + 1 > sizeof(regex_modified)) {
-        return -1;
-    }
-    snprintf(regex_modified, sizeof(regex_modified) - 1, "^%s$", regex);
-
-    regex_t preg;
-    int rc = regcomp(&preg, regex_modified, REG_EXTENDED | REG_ICASE | REG_NOSUB);
-    if (rc != 0) {
-        return -1;
-    }
-
-    for (size_t i = 0; i < src->words_count; i++) {
-        if (regexec(&preg, str_str(&src->words[i]->canonical), 0, NULL, 0) == 0) {
-            wordset_add(dst, src->words[i]);
-        }
-    }
-
-    regfree(&preg);
-    return 0;
-}
-
-void filter_anagram(const char * letters, const struct wordset * src, struct wordset * dst) {
-    struct word w;
-    word_init(&w, letters, 0);
-    const char * sorted_letters = str_str(&w.sorted);
-    for (size_t i = 0; i < src->words_count; i++) {
-        if (strcmp(sorted_letters, str_str(&src->words[i]->sorted)) == 0) {
-            wordset_add(dst, src->words[i]);
-        }
-    }
-    word_term(&w);
-}
-
 static bool difference_size_less_than(const char * superset, const char * subset, size_t max_size) {
     ASSERT(superset != NULL && subset != NULL);
     size_t size = 0;
@@ -66,100 +31,230 @@ static bool difference_size_less_than(const char * superset, const char * subset
     return true;
 }
 
-void filter_subanagram(const char * letters, const struct wordset * src, struct wordset * dst) {
+struct filter;
+struct filter_vtbl {
+    enum filter_type type;
+    const char * name;
+    int (*init)(struct filter * f);
+    void (*term)(struct filter * f);
+    const struct word * (*apply)(struct filter * f, const struct word * w, const struct wordset * ws);
+};
+
+struct filter {
+    const struct filter_vtbl * vtbl;
+    char * arg_str;
+    size_t arg_n;
+    char name[64];
+
+    // Internal
+    regex_t preg;
     struct word w;
-    word_init(&w, letters, 0);
-    const char * sorted_letters = str_str(&w.sorted);
-    for (size_t i = 0; i < src->words_count; i++) {
-        if (difference_size_less_than(sorted_letters, str_str(&src->words[i]->sorted), -1ul)) {
-            wordset_add(dst, src->words[i]);
-        }
+};
+
+//
+
+int filter_regex_init(struct filter * f) {
+    if (f->arg_n != -1ul) {
+        LOG("%s filter does not take a numeric argument", f->vtbl->name);
+        return -1;
     }
-    word_term(&w);
+
+    const char * regex = f->arg_str;
+    char regex_modified[1024];
+    if (strlen(regex) + 1 > sizeof(regex_modified)) {
+        return -1;
+    }
+    snprintf(regex_modified, sizeof(regex_modified) - 1, "^%s$", regex);
+
+    return regcomp(&f->preg, regex_modified, REG_EXTENDED | REG_ICASE);
 }
 
-void filter_superanagram(const char * letters, const struct wordset * src, struct wordset * dst) {
-    struct word w;
-    word_init(&w, letters, 0);
-    const char * sorted_letters = str_str(&w.sorted);
-    for (size_t i = 0; i < src->words_count; i++) {
-        if (difference_size_less_than(str_str(&src->words[i]->sorted), sorted_letters, -1ul)) {
-            wordset_add(dst, src->words[i]);
-        }
-    }
-    word_term(&w);
-}
+void filter_regex_term(struct filter * f) { regfree(&f->preg); }
 
-void filter_transdelete(size_t n, const char * letters, const struct wordset * src, struct wordset * dst) {
-    struct word w;
-    word_init(&w, letters, 0);
-    const char * sorted_letters = str_str(&w.sorted);
-    for (size_t i = 0; i < src->words_count; i++) {
-        const char * item = str_str(&src->words[i]->sorted);
-        if (strlen(item) + n != strlen(sorted_letters)) {
-            continue;
-        }
-        if (difference_size_less_than(sorted_letters, item, n)) {
-            wordset_add(dst, src->words[i]);
-        }
+const struct word * filter_regex_apply(struct filter * f, const struct word * w, const struct wordset * ws) {
+    (void)ws;
+    if (regexec(&f->preg, str_str(&w->canonical), 0, NULL, 0) == 0) {
+        return w;
     }
-    word_term(&w);
-}
-
-void filter_transadd(size_t n, const char * letters, const struct wordset * src, struct wordset * dst) {
-    struct word w;
-    word_init(&w, letters, 0);
-    const char * sorted_letters = str_str(&w.sorted);
-    for (size_t i = 0; i < src->words_count; i++) {
-        const char * item = str_str(&src->words[i]->sorted);
-        if (strlen(item) != strlen(sorted_letters) + n) {
-            continue;
-        }
-        if (difference_size_less_than(item, sorted_letters, n)) {
-            wordset_add(dst, src->words[i]);
-        }
-    }
-    word_term(&w);
-}
-
-void filter_bank(const char * letters, const struct wordset * src, struct wordset * dst) {
-    for (size_t i = 0; i < src->words_count; i++) {
-        const char * s = str_str(&src->words[i]->sorted);
-        for (; *s != '\0'; s++) {
-            if (strchr(letters, *s) == NULL) {
-                break;
-            }
-        }
-        if (*s == '\0') {
-            wordset_add(dst, src->words[i]);
-        }
-    }
+    return NULL;
 }
 
 //
-const char * const filter_type_names[] = {
-        [FILTER_REGEX] = "regex",
-        [FILTER_ANAGRAM] = "anagram",
-        [FILTER_SUBANAGRAM] = "subanagram",
-        [FILTER_SUPERANAGRAM] = "superanagram",
-        [FILTER_TRANSADD] = "transadd",
-        [FILTER_TRANSDELETE] = "transdelete",
-        [FILTER_BANK] = "bank",
+
+int filter_anagram_init(struct filter * f) {
+    if (f->arg_n != -1ul) {
+        LOG("%s filter does not take a numeric argument", f->vtbl->name);
+        return -1;
+    }
+    word_init(&f->w, f->arg_str, 0);
+    return 0;
+}
+
+void filter_anagram_term(struct filter * f) { word_term(&f->w); }
+
+const struct word * filter_anagram_apply(struct filter * f, const struct word * w, const struct wordset * ws) {
+    (void)ws;
+    if (strcmp(str_str(&w->sorted), str_str(&f->w.sorted)) == 0) {
+        return w;
+    }
+    return NULL;
+}
+
+#define filter_subanagram_init filter_anagram_init
+#define filter_subanagram_term filter_anagram_term
+
+static const struct word * filter_subanagram_apply(struct filter * f, const struct word * w,
+                                                   const struct wordset * ws) {
+    (void)ws;
+    if (difference_size_less_than(str_str(&f->w.sorted), str_str(&w->sorted), -1ul)) {
+        return w;
+    }
+    return NULL;
+}
+
+#define filter_superanagram_init filter_anagram_init
+#define filter_superanagram_term filter_anagram_term
+
+static const struct word * filter_superanagram_apply(struct filter * f, const struct word * w,
+                                                     const struct wordset * ws) {
+    (void)ws;
+    if (difference_size_less_than(str_str(&w->sorted), str_str(&f->w.sorted), -1ul)) {
+        return w;
+    }
+    return NULL;
+}
+
+#define filter_transdelete_init filter_anagram_init
+#define filter_transdelete_term filter_anagram_term
+
+static const struct word * filter_transdelete_apply(struct filter * f, const struct word * w,
+                                                    const struct wordset * ws) {
+    (void)ws;
+    const char * x = str_str(&w->sorted);
+    const char * y = str_str(&f->w.sorted);
+    if (strlen(x) + f->arg_n != strlen(y)) {
+        return NULL;
+    }
+    if (difference_size_less_than(y, x, f->arg_n)) {
+        return w;
+    }
+    return NULL;
+}
+
+#define filter_transadd_init filter_anagram_init
+#define filter_transadd_term filter_anagram_term
+
+static const struct word * filter_transadd_apply(struct filter * f, const struct word * w, const struct wordset * ws) {
+    (void)ws;
+    const char * x = str_str(&w->sorted);
+    const char * y = str_str(&f->w.sorted);
+    if (strlen(x) != strlen(y) + f->arg_n) {
+        return NULL;
+    }
+    if (difference_size_less_than(x, y, f->arg_n)) {
+        return w;
+    }
+    return NULL;
+}
+
+#define filter_bank_init NULL
+#define filter_bank_term NULL
+
+static const struct word * filter_bank_apply(struct filter * f, const struct word * w, const struct wordset * ws) {
+    (void)ws;
+    const char * s = str_str(&w->sorted);
+    for (; *s != '\0'; s++) {
+        if (strchr(f->arg_str, *s) == NULL) {
+            break;
+        }
+    }
+    if (*s == '\0') {
+        return w;
+    }
+    return NULL;
+}
+
+#define filter_extract_init filter_regex_init
+#define filter_extract_term filter_regex_term
+
+const struct word * filter_extract_apply(struct filter * f, const struct word * w, const struct wordset * ws) {
+    (void)ws;
+    const char * s = str_str(&w->canonical);
+
+    regmatch_t matches[2];
+    if (regexec(&f->preg, s, 2, matches, 0) == 0) {
+        static char buffer[1024];
+        size_t len = (size_t)(matches[1].rm_eo - matches[1].rm_so);
+        if (len == 0 || len >= sizeof(buffer)) {
+            return NULL;
+        }
+        memcpy(buffer, &s[matches[1].rm_so], len);
+        buffer[len] = '\0';
+        struct str str_buffer = {.large = buffer};
+        const struct word * r = wordset_find(ws, &str_buffer);
+        if (r != NULL) {
+            LOG("> %s", str_str(&r->canonical));
+        }
+        return r;
+    }
+    return NULL;
+}
+
+//
+
+#define FILTERS                                                                                                        \
+    X(REGEX, regex)                                                                                                    \
+    X(ANAGRAM, anagram)                                                                                                \
+    X(SUBANAGRAM, subanagram)                                                                                          \
+    X(SUPERANAGRAM, superanagram)                                                                                      \
+    X(TRANSADD, transadd)                                                                                              \
+    X(TRANSDELETE, transdelete)                                                                                        \
+    X(BANK, bank)                                                                                                      \
+    X(EXTRACT, extract)
+
+const struct filter_vtbl filter_vtbls[] = {
+#define X(N, n)                                                                                                        \
+    [CONCAT(FILTER_, N)] = (struct filter_vtbl){                                                                       \
+        .name = STRINGIFY(n),                                                                                          \
+        .type = CONCAT(FILTER_, N),                                                                                    \
+        .init = CONCAT(CONCAT(filter_, n), _init),                                                                     \
+        .term = CONCAT(CONCAT(filter_, n), _term),                                                                     \
+        .apply = CONCAT(CONCAT(filter_, n), _apply),                                                                   \
+    },
+    FILTERS
+#undef X
 };
 
-void filter_init(struct filter * f, enum filter_type type, size_t n, const char * str) {
-    f->type = type;
+struct filter * filter_create(enum filter_type type, size_t n, const char * str) {
+    if (type < 0 || type >= _FILTER_TYPE_MAX) {
+        return NULL;
+    }
+
+    struct filter * f = NONNULL(calloc(1, sizeof(*f)));
+    f->vtbl = &filter_vtbls[type];
     f->arg_n = n;
     f->arg_str = NONNULL(strdup(str));
 
     if (f->arg_n != -1ul) {
-        snprintf(f->name, sizeof(f->name), "%s %zu: %s", filter_type_names[f->type], f->arg_n, f->arg_str);
+        snprintf(f->name, sizeof(f->name), "%s %zu: %s", f->vtbl->name, f->arg_n, f->arg_str);
     } else {
-        snprintf(f->name, sizeof(f->name), "%s: %s", filter_type_names[f->type], f->arg_str);
+        snprintf(f->name, sizeof(f->name), "%s: %s", f->vtbl->name, f->arg_str);
     }
+
+    int rc = 0;
+    if (f->vtbl->init != NULL) {
+        f->vtbl->init(f);
+    }
+    if (rc != 0) {
+        free(f->arg_str);
+        free(f);
+        return NULL;
+    }
+
+    return f;
 }
 
-int filter_parse(struct filter * f, const char * spec) {
+struct filter * filter_parse(const char * spec) {
     regex_t preg;
     const char * regex = "^\\s*([a-z]+)\\s*([0-9]*)\\s*:\\s*(\\S+)\\s*$";
     ASSERT(regcomp(&preg, regex, REG_EXTENDED | REG_ICASE) == 0);
@@ -168,7 +263,7 @@ int filter_parse(struct filter * f, const char * spec) {
     int rc = regexec(&preg, spec, 4, matches, 0);
     if (rc != 0) {
         LOG("filter does not match regex '%s' !~ /%s/", spec, regex);
-        return -1;
+        return NULL;
     }
 
     size_t size = strlen(spec) + 1;
@@ -178,7 +273,7 @@ int filter_parse(struct filter * f, const char * spec) {
     memcpy(buffer, &spec[matches[1].rm_so], (size_t)(matches[1].rm_eo - matches[1].rm_so));
     enum filter_type type = _FILTER_TYPE_MAX;
     for (size_t i = 0; i < _FILTER_TYPE_MAX; i++) {
-        if (strcmp(filter_type_names[i], buffer) == 0) {
+        if (strcmp(NONNULL(filter_vtbls[i].name), buffer) == 0) {
             type = i;
             break;
         }
@@ -207,47 +302,30 @@ int filter_parse(struct filter * f, const char * spec) {
         goto fail;
     }
 
-    filter_init(f, type, n, buffer);
+    struct filter * f = filter_create(type, n, buffer);
     free(buffer);
-    return 0;
+    return f;
 
 fail:
     free(buffer);
-    return -1;
+    return NULL;
 }
 
-int filter_apply(struct filter * f, struct wordset * input) {
-    wordset_init(&f->output, f->name);
-    int rc = 0;
-    switch (f->type) {
-    case FILTER_REGEX:
-        rc = filter_regex(f->arg_str, input, &f->output);
-        break;
-    case FILTER_ANAGRAM:
-        filter_anagram(f->arg_str, input, &f->output);
-        break;
-    case FILTER_SUBANAGRAM:
-        filter_subanagram(f->arg_str, input, &f->output);
-        break;
-    case FILTER_SUPERANAGRAM:
-        filter_superanagram(f->arg_str, input, &f->output);
-        break;
-    case FILTER_TRANSADD:
-        filter_transadd(f->arg_n, f->arg_str, input, &f->output);
-        break;
-    case FILTER_TRANSDELETE:
-        filter_transdelete(f->arg_n, f->arg_str, input, &f->output);
-        break;
-    case FILTER_BANK:
-        filter_bank(f->arg_str, input, &f->output);
-        break;
-    default:
-        ASSERT(false);
+void filter_apply(struct filter * f, struct wordset * input, struct wordset * output) {
+    for (size_t i = 0; i < input->words_count; i++) {
+        const struct word * w = f->vtbl->apply(f, input->words[i], input);
+        if (w != NULL) {
+            wordset_add(output, w);
+        }
     }
-    return rc;
+    return;
 }
 
-void filter_term(struct filter * f) {
+void filter_destroy(struct filter * f) {
+    if (f->vtbl->term != NULL) {
+        f->vtbl->term(f);
+    }
     free(f->arg_str);
-    wordset_term(&f->output);
+    free(f);
+    (void)difference_size_less_than;
 }

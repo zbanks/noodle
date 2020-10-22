@@ -2,15 +2,18 @@
 
 static bool str_is_small(const struct str * s) { return s->small[0] != 0; }
 
-void str_init(struct str * s, const char * c) {
+void str_init(struct str * s, const char * c, size_t len) {
     *s = (struct str){0};
 
-    size_t len = strlen(c) + 1;
-    if (len > sizeof(s->small)) {
-        s->large = NONNULL(calloc(1, len));
-        memcpy(s->large, c, len);
+    if (len + 1 > sizeof(s->small)) {
+        s->large = NONNULL(calloc(1, len + 1));
+        if (c != NULL) {
+            memcpy(s->large, c, len);
+        }
     } else {
-        memcpy(s->small, c, len);
+        if (c != NULL) {
+            memcpy(s->small, c, len);
+        }
     }
 }
 
@@ -42,6 +45,18 @@ static char * str_mutstr(struct str * s) {
     }
 }
 
+int str_cmp(const void * _x, const void * _y) {
+    const struct str * x = _x;
+    const struct str * y = _y;
+    return strcmp(str_str(x), str_str(y));
+}
+
+int str_ptrcmp(const void * _x, const void * _y) {
+    const struct str * const * x = _x;
+    const struct str * const * y = _y;
+    return strcmp(str_str(*x), str_str(*y));
+}
+
 static bool is_lower(char c) { return c >= 'a' && c <= 'z'; }
 
 static bool is_upper(char c) { return c >= 'A' && c <= 'Z'; }
@@ -64,10 +79,10 @@ static int cmp_letter(const void * _x, const void * _y) {
 
 void word_init(struct word * w, const char * original, int value) {
     w->value = value;
-    str_init(&w->original, original);
+    str_init(&w->original, original, strlen(original));
 
     // Convert to lowercase, stripping out all non-letters
-    str_init(&w->canonical, original);
+    str_init(&w->canonical, original, strlen(original));
     for (char * c = str_mutstr(&w->canonical); *c != '\0'; c++) {
         if (is_lower(*c)) {
             continue;
@@ -82,7 +97,7 @@ void word_init(struct word * w, const char * original, int value) {
     }
 
     // Create sorted representation
-    str_init(&w->sorted, str_str(&w->canonical));
+    str_init(&w->sorted, str_str(&w->canonical), strlen(original));
     char * s = str_mutstr(&w->sorted);
     qsort(s, strlen(s), 1, &cmp_letter);
 }
@@ -91,18 +106,6 @@ void word_term(struct word * w) {
     str_term(&w->original);
     str_term(&w->canonical);
     str_term(&w->sorted);
-}
-
-int word_canonical_cmp(const void * _x, const void * _y) {
-    const struct word * x = _x;
-    const struct word * y = _y;
-    return strcmp(str_str(&x->canonical), str_str(&y->canonical));
-}
-
-int word_canonical_ptrcmp(const void * _x, const void * _y) {
-    const struct word * const * x = _x;
-    const struct word * const * y = _y;
-    return strcmp(str_str(&(*x)->canonical), str_str(&(*y)->canonical));
 }
 
 int word_value_cmp(const void * _x, const void * _y) {
@@ -115,4 +118,45 @@ int word_value_ptrcmp(const void * _x, const void * _y) {
     const struct word * const * x = _x;
     const struct word * const * y = _y;
     return cmp((*y)->value, (*x)->value);
+}
+
+void wordtuple_init(struct wordtuple * wt, const struct word * const * words, size_t n_words) {
+    NONNULL(wt);
+    NONNULL(words);
+    ASSERT(n_words <= WORDTUPLE_N);
+
+    *wt = (struct wordtuple){0};
+
+    size_t total_len = 0;
+    for (size_t i = 0; i < n_words; i++) {
+        wt->words[i] = words[i];
+        total_len += strlen(str_str(&words[i]->canonical));
+    }
+    str_init(&wt->canonical, NULL, total_len);
+    char * s = str_mutstr(&wt->canonical);
+    for (size_t i = 0; i < n_words; i++) {
+        const char * w = str_str(&words[i]->canonical);
+        size_t n = strlen(w);
+        memcpy(s, w, n);
+        s += n;
+    }
+}
+
+void wordtuple_term(struct wordtuple * wt) { str_term(&wt->canonical); }
+
+const char * wordtuple_original(struct wordtuple * wt) {
+    static char buffer[2048];
+    char * b = buffer;
+    char * e = &buffer[sizeof(buffer)];
+    for (size_t i = 0; i < WORDTUPLE_N; i++) {
+        if (wt->words[i] == NULL) {
+            break;
+        }
+        if (b > e) {
+            break;
+        }
+        const char * c = str_str(&wt->words[i]->canonical);
+        b += snprintf(b, (size_t)(e - b), "%s ", c);
+    }
+    return buffer;
 }

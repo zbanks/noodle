@@ -7,6 +7,7 @@ struct wordset {
     size_t words_count;
     size_t words_capacity;
     struct wordset * next;
+    bool is_canonically_sorted;
     char name[64];
 };
 
@@ -15,7 +16,8 @@ void wordset_add(struct wordset * ws, const struct word * w);
 void wordset_sort_value(struct wordset * ws);
 void wordset_sort_canonical(struct wordset * ws);
 void wordset_term(struct wordset * ws);
-const struct word * wordset_get(struct wordset * ws, size_t i);
+const struct word * wordset_get(const struct wordset * ws, size_t i);
+const struct word * wordset_find(const struct wordset * ws, const struct str * s);
 
 #define WORDLIST_CHUNK_SIZE ((size_t)256)
 struct wordlist {

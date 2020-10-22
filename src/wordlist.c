@@ -1,4 +1,5 @@
 #include "wordlist.h"
+#include <search.h>
 
 void wordset_init(struct wordset * ws, const char * name) {
     *ws = (struct wordset){0};
@@ -18,23 +19,40 @@ void wordset_add(struct wordset * ws, const struct word * w) {
     }
 
     ws->words[ws->words_count++] = w;
+    ws->is_canonically_sorted = false;
 }
 
 void wordset_sort_value(struct wordset * ws) {
     qsort(ws->words, ws->words_count, sizeof(*ws->words), &word_value_ptrcmp);
+    ws->is_canonically_sorted = false;
 }
 
 void wordset_sort_canonical(struct wordset * ws) {
-    qsort(ws->words, ws->words_count, sizeof(*ws->words), &word_canonical_ptrcmp);
+    qsort(ws->words, ws->words_count, sizeof(*ws->words), &str_ptrcmp);
+    ws->is_canonically_sorted = true;
 }
 
 void wordset_term(struct wordset * ws) { free(ws->words); }
 
-const struct word * wordset_get(struct wordset * ws, size_t i) {
+const struct word * wordset_get(const struct wordset * ws, size_t i) {
     if (i >= ws->words_count) {
         return NULL;
     }
     return ws->words[i];
+}
+
+const struct word * wordset_find(const struct wordset * ws, const struct str * s) {
+    struct word ** w;
+    if (ws->is_canonically_sorted) {
+        w = bsearch(&s, ws->words, ws->words_count, sizeof(*ws->words), str_ptrcmp);
+    } else {
+        size_t count = ws->words_count;
+        w = lfind(&s, ws->words, &count, sizeof(*ws->words), str_ptrcmp);
+    }
+    if (w != NULL) {
+        return *w;
+    }
+    return NULL;
 }
 
 void wordlist_init(struct wordlist * wl, const char * name) {
