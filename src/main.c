@@ -36,8 +36,8 @@ int main() {
     wordlist_init(&buffer, "buffer");
 
     struct filter * f1 = NONNULL(filter_parse("extract: ab(.{7})"));
-    //struct filter * f2 = NONNULL(filter_parse("extractq: .*e(..).*"));
-    struct filter * f2 = NONNULL(filter_parse("extractq: ...(.*)"));
+    struct filter * f2 = NONNULL(filter_parse("extractq: .(.*)."));
+    //struct filter * f3 = NONNULL(filter_parse("anagram: .*e(..).*"));
     struct wordset wso;
     wordset_init(&wso, "filter matches");
     filter_chain_apply((struct filter * const []){f1, f2}, 2, ws, &wso, &buffer);
@@ -52,6 +52,7 @@ int main() {
     filter_destroy(f1);
     filter_destroy(f2);
 
+    wordlist_term(&buffer);
     wordlist_term(&wl);
     return 0;
 }

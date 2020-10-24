@@ -189,18 +189,15 @@ const struct word * filter_extract_apply(struct filter * f, const struct word * 
         }
         memcpy(buffer, &s[matches[1].rm_so], len);
         buffer[len] = '\0';
-        struct str str_buffer = {.large = buffer};
-        return wordset_find(ws, &str_buffer);
+        // XXX should use str_init_buffer instead?
+        struct str s = {._padding = {(char) 0xFF}, .large = buffer};
+        return wordset_find(ws, &s);
     }
     return NULL;
 }
 
-#define filter_extractq_init filter_extract_init
-
-void filter_extractq_term(struct filter * f) { 
-    regfree(&f->preg); 
-    word_term(&f->w);
-}
+#define filter_extractq_init filter_regex_init
+#define filter_extractq_term filter_extract_term
 
 const struct word * filter_extractq_apply(struct filter * f, const struct word * w, const struct wordset * ws) {
     (void) ws;
@@ -208,11 +205,16 @@ const struct word * filter_extractq_apply(struct filter * f, const struct word *
 
     regmatch_t matches[2];
     if (regexec(&f->preg, s, 2, matches, 0) == 0) {
-        if (matches[1].rm_eo == matches[1].rm_so) {
+        static char buffer[1024];
+        size_t len = (size_t)(matches[1].rm_eo - matches[1].rm_so);
+        if (len == 0 || len >= sizeof(buffer)) {
             return NULL;
         }
+        memcpy(buffer, &s[matches[1].rm_so], len);
+        buffer[len] = '\0';
+
         word_term(&f->w);
-        word_init(&f->w, &s[matches[1].rm_so], w->value);
+        word_init(&f->w, buffer, w->value);
         return &f->w;
     }
     return NULL;
@@ -283,6 +285,8 @@ struct filter * filter_parse(const char * spec) {
 
     regmatch_t matches[4];
     int rc = regexec(&preg, spec, 4, matches, 0);
+    regfree(&preg);
+
     if (rc != 0) {
         LOG("filter does not match regex '%s' !~ /%s/", spec, regex);
         return NULL;

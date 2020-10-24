@@ -1,11 +1,16 @@
 #include "word.h"
 
-static bool str_is_small(const struct str * s) { return s->small[0] != 0; }
+#define STR_LARGE ((char) 0xFF)
+static bool str_is_small(const struct str * s) { return s->small[0] != STR_LARGE; }
 
 char * str_init(struct str * s, const char * c, size_t len) {
+    ASSERT(s != NULL);
+    ASSERT(c == NULL || c[0] != STR_LARGE);
+
     *s = (struct str){0};
 
     if (len + 1 > sizeof(s->small)) {
+        s->small[0] = STR_LARGE;
         s->large = NONNULL(calloc(1, len + 1));
         if (c != NULL) {
             memcpy(s->large, c, len);
@@ -26,6 +31,14 @@ void str_init_copy(struct str * dst, const struct str *src) {
         const char *c = str_str(src);
         str_init(dst, c, strlen(c));
     }
+}
+
+char * str_init_buffer(struct str * s, size_t len) {
+    ASSERT(s != NULL);
+    *s = (struct str){0};
+    s->small[0] = STR_LARGE;
+    s->large = NONNULL(calloc(1, len));
+    return s->large;
 }
 
 void str_term(struct str * s) {
@@ -80,6 +93,7 @@ static int cmp_letter(const void * _x, const void * _y) {
 
 void word_init(struct word * w, const char * original, int value) {
     w->value = value;
+    w->is_tuple = false;
     str_init(&w->original, original, strlen(original));
 
     // Convert to lowercase, stripping out all non-letters
@@ -160,6 +174,10 @@ const char * word_debug(const struct word * w) {
     if (w == NULL) {
         return "\"\"";
     } else if (w->is_tuple) {
+        if (w->tuple_words[0] == NULL) {
+            return "[]";
+        }
+
         char * b = buffer;
         char * e = &buffer[sizeof(buffer)];
         *b++ = '[';
@@ -173,7 +191,9 @@ const char * word_debug(const struct word * w) {
             const char * c = str_str(&w->tuple_words[i]->canonical);
             b += snprintf(b, (size_t)(e - b), "%s ", c);
         }
-        *--b = ']';
+        b--;
+        *b++ = ']';
+        *b++ = '\0';
     } else {
         snprintf(buffer, sizeof(buffer), "%s [\"%s\" %d]",
                 str_str(&w->canonical), str_str(&w->original), w->value);

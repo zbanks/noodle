@@ -13,6 +13,7 @@ struct str {
 
 char * str_init(struct str * s, const char * c, size_t len);
 void str_init_copy(struct str * dst, const struct str *src);
+char * str_init_buffer(struct str * s, size_t len);
 void str_term(struct str * s);
 const char * str_str(const struct str * s);
 int str_cmp(const void * x, const void * y);
