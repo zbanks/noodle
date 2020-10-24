@@ -10,6 +10,8 @@ void wordset_init(struct wordset * ws, const char * name) {
 }
 
 void wordset_add(struct wordset * ws, const struct word * w) {
+    ASSERT(w->owned);
+
     if (ws->words_count >= ws->words_capacity) {
         ASSERT(ws->words_capacity > 0);
         ws->words_capacity *= 2;
@@ -55,6 +57,15 @@ const struct word * wordset_find(const struct wordset * ws, const struct str * s
     return NULL;
 }
 
+void wordset_print(struct wordset * ws) {
+    LOG("Wordset \"%s\" (%zu):", ws->name, ws->words_count);
+    for (size_t i = 0; i < 20 && i < ws->words_count; i++) {
+        LOG("  - %s", word_debug(ws->words[i]));
+    }
+}
+
+//
+
 void wordlist_init(struct wordlist * wl, const char * name) {
     *wl = (struct wordlist){0};
     wl->chunks = NULL;
@@ -85,7 +96,7 @@ int wordlist_init_from_file(struct wordlist * wl, const char * filename) {
     return 0;
 }
 
-void wordlist_add(struct wordlist * wl, const char * s, int v) {
+static struct word *wordlist_alloc(struct wordlist *wl) {
     size_t i = wl->insert_index / WORDLIST_CHUNK_SIZE;
     size_t j = wl->insert_index % WORDLIST_CHUNK_SIZE;
     if (j == 0) {
@@ -94,9 +105,44 @@ void wordlist_add(struct wordlist * wl, const char * s, int v) {
     }
     wl->insert_index++;
 
-    struct word * w = &wl->chunks[i][j];
+    return &wl->chunks[i][j];
+}
+
+void wordlist_add(struct wordlist * wl, const char * s, int v) {
+    struct word *w = wordlist_alloc(wl);
     word_init(w, s, v);
+    w->owned = true;
     wordset_add(&wl->self_set, w);
+}
+
+const struct word * wordlist_ensure_owned(struct wordlist *wl, const struct word *src) {
+    if (src->owned) {
+        // XXX This assertion only checks the "top" layer; theoretically we should 
+        // recurse down to the lower layers; but in general we should never end up
+        // with an owned word being formed from a tuple of un-owned words!
+        for (size_t i = 0; src->is_tuple && i < WORD_TUPLE_N; i++) {
+            ASSERT(src->tuple_words[i]->owned);
+        }
+        return src;
+    }
+
+    LOG("Unowned: %s", word_debug(src));
+
+    struct word *w = wordlist_alloc(wl);
+    word_init_copy(w, src);
+
+    w->owned = true;
+    wordset_add(&wl->self_set, w);
+
+    for (size_t i = 0; w->is_tuple && i < WORD_TUPLE_N; i++) {
+        if (w->tuple_words[i] == NULL) {
+            break;
+        }
+        if (!w->tuple_words[i]->owned) {
+            w->tuple_words[i] = wordlist_ensure_owned(wl, w->tuple_words[i]);
+        }
+    }
+    return w;
 }
 
 void wordlist_term(struct wordlist * wl) {

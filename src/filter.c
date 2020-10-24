@@ -178,7 +178,6 @@ static const struct word * filter_bank_apply(struct filter * f, const struct wor
 #define filter_extract_term filter_regex_term
 
 const struct word * filter_extract_apply(struct filter * f, const struct word * w, const struct wordset * ws) {
-    (void)ws;
     const char * s = str_str(&w->canonical);
 
     regmatch_t matches[2];
@@ -191,11 +190,30 @@ const struct word * filter_extract_apply(struct filter * f, const struct word * 
         memcpy(buffer, &s[matches[1].rm_so], len);
         buffer[len] = '\0';
         struct str str_buffer = {.large = buffer};
-        const struct word * r = wordset_find(ws, &str_buffer);
-        if (r != NULL) {
-            LOG("> %s", str_str(&r->canonical));
+        return wordset_find(ws, &str_buffer);
+    }
+    return NULL;
+}
+
+#define filter_extractq_init filter_extract_init
+
+void filter_extractq_term(struct filter * f) { 
+    regfree(&f->preg); 
+    word_term(&f->w);
+}
+
+const struct word * filter_extractq_apply(struct filter * f, const struct word * w, const struct wordset * ws) {
+    (void) ws;
+    const char * s = str_str(&w->canonical);
+
+    regmatch_t matches[2];
+    if (regexec(&f->preg, s, 2, matches, 0) == 0) {
+        if (matches[1].rm_eo == matches[1].rm_so) {
+            return NULL;
         }
-        return r;
+        word_term(&f->w);
+        word_init(&f->w, &s[matches[1].rm_so], w->value);
+        return &f->w;
     }
     return NULL;
 }
@@ -210,7 +228,8 @@ const struct word * filter_extract_apply(struct filter * f, const struct word * 
     X(TRANSADD, transadd)                                                                                              \
     X(TRANSDELETE, transdelete)                                                                                        \
     X(BANK, bank)                                                                                                      \
-    X(EXTRACT, extract)
+    X(EXTRACT, extract) \
+    X(EXTRACTQ, extractq) \
 
 const struct filter_vtbl filter_vtbls[] = {
 #define X(N, n)                                                                                                        \
@@ -226,6 +245,7 @@ const struct filter_vtbl filter_vtbls[] = {
 };
 
 struct filter * filter_create(enum filter_type type, size_t n, const char * str) {
+    ASSERT(str != NULL);
     if (type < 0 || type >= _FILTER_TYPE_MAX) {
         return NULL;
     }
@@ -255,6 +275,8 @@ struct filter * filter_create(enum filter_type type, size_t n, const char * str)
 }
 
 struct filter * filter_parse(const char * spec) {
+    ASSERT(spec != NULL);
+
     regex_t preg;
     const char * regex = "^\\s*([a-z]+)\\s*([0-9]*)\\s*:\\s*(\\S+)\\s*$";
     ASSERT(regcomp(&preg, regex, REG_EXTENDED | REG_ICASE) == 0);
@@ -311,10 +333,31 @@ fail:
     return NULL;
 }
 
-void filter_apply(struct filter * f, struct wordset * input, struct wordset * output) {
+/*
+void filter_apply(struct filter * f, struct wordlist * input, struct wordset * output) {
+    return filter_chain_apply((struct filter * const []){f}, 1, input, output);
+}
+*/
+
+void filter_chain_apply(struct filter * const * fs, size_t n_fs, struct wordset * input, struct wordset * output, struct wordlist * buffer) {
+    ASSERT(fs != NULL);
+    ASSERT(input != NULL);
+    ASSERT(output != NULL);
+    ASSERT(buffer != NULL);
+    ASSERT(input != output);
+
     for (size_t i = 0; i < input->words_count; i++) {
-        const struct word * w = f->vtbl->apply(f, input->words[i], input);
+        const struct word * w = input->words[i];
+        for (size_t j = 0; j < n_fs; j++) {
+            w = fs[j]->vtbl->apply(fs[j], w, input);
+            if (w == NULL) {
+                break;
+            }
+        }
         if (w != NULL) {
+            if (!w->owned) {
+                w = wordlist_ensure_owned(buffer, w);
+            }
             wordset_add(output, w);
         }
     }
@@ -322,10 +365,12 @@ void filter_apply(struct filter * f, struct wordset * input, struct wordset * ou
 }
 
 void filter_destroy(struct filter * f) {
+    if (f == NULL) {
+        return;
+    }
     if (f->vtbl->term != NULL) {
         f->vtbl->term(f);
     }
     free(f->arg_str);
     free(f);
-    (void)difference_size_less_than;
 }

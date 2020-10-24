@@ -2,7 +2,7 @@
 
 static bool str_is_small(const struct str * s) { return s->small[0] != 0; }
 
-void str_init(struct str * s, const char * c, size_t len) {
+char * str_init(struct str * s, const char * c, size_t len) {
     *s = (struct str){0};
 
     if (len + 1 > sizeof(s->small)) {
@@ -10,10 +10,21 @@ void str_init(struct str * s, const char * c, size_t len) {
         if (c != NULL) {
             memcpy(s->large, c, len);
         }
+        return s->large;
     } else {
         if (c != NULL) {
             memcpy(s->small, c, len);
         }
+        return s->small;
+    }
+}
+
+void str_init_copy(struct str * dst, const struct str *src) {
+    if (str_is_small(src)) {
+        *dst = *src;
+    } else {
+        const char *c = str_str(src);
+        str_init(dst, c, strlen(c));
     }
 }
 
@@ -27,16 +38,6 @@ const char * str_str(const struct str * s) {
     if (s == NULL) {
         return "";
     } else if (str_is_small(s)) {
-        return s->small;
-    } else if (s->large != NULL) {
-        return s->large;
-    } else {
-        return "";
-    }
-}
-
-static char * str_mutstr(struct str * s) {
-    if (str_is_small(s)) {
         return s->small;
     } else if (s->large != NULL) {
         return s->large;
@@ -82,8 +83,8 @@ void word_init(struct word * w, const char * original, int value) {
     str_init(&w->original, original, strlen(original));
 
     // Convert to lowercase, stripping out all non-letters
-    str_init(&w->canonical, original, strlen(original));
-    for (char * c = str_mutstr(&w->canonical); *c != '\0'; c++) {
+    char * c = str_init(&w->canonical, original, strlen(original));
+    for (; *c != '\0'; c++) {
         if (is_lower(*c)) {
             continue;
         }
@@ -97,9 +98,22 @@ void word_init(struct word * w, const char * original, int value) {
     }
 
     // Create sorted representation
-    str_init(&w->sorted, str_str(&w->canonical), strlen(original));
-    char * s = str_mutstr(&w->sorted);
+    char * s = str_init(&w->sorted, str_str(&w->canonical), strlen(original));
     qsort(s, strlen(s), 1, &cmp_letter);
+}
+
+void word_init_copy(struct word * dst, const struct word * src) {
+    *dst = (struct word) {
+        .is_tuple = src->is_tuple,
+    };
+    str_init_copy(&dst->canonical, &src->canonical);
+    if (src->is_tuple) {
+        memcpy(dst->tuple_words, src->tuple_words, sizeof(src->tuple_words));
+    } else {
+        dst->value = src->value;
+        str_init_copy(&dst->original, &src->original);
+        str_init_copy(&dst->sorted, &src->sorted);
+    }
 }
 
 void word_term(struct word * w) {
@@ -120,43 +134,49 @@ int word_value_ptrcmp(const void * _x, const void * _y) {
     return cmp((*y)->value, (*x)->value);
 }
 
-void wordtuple_init(struct wordtuple * wt, const struct word * const * words, size_t n_words) {
-    NONNULL(wt);
-    NONNULL(words);
-    ASSERT(n_words <= WORDTUPLE_N);
+void word_tuple_init(struct word * w, const struct word * const * tuple_words, size_t n_tuple_words) {
+    NONNULL(w);
+    NONNULL(tuple_words);
+    ASSERT(n_tuple_words <= WORD_TUPLE_N);
 
-    *wt = (struct wordtuple){0};
+    *w = (struct word){ .is_tuple = true };
 
     size_t total_len = 0;
-    for (size_t i = 0; i < n_words; i++) {
-        wt->words[i] = words[i];
-        total_len += strlen(str_str(&words[i]->canonical));
+    for (size_t i = 0; i < n_tuple_words; i++) {
+        w->tuple_words[i] = tuple_words[i];
+        total_len += strlen(str_str(&tuple_words[i]->canonical));
     }
-    str_init(&wt->canonical, NULL, total_len);
-    char * s = str_mutstr(&wt->canonical);
-    for (size_t i = 0; i < n_words; i++) {
-        const char * w = str_str(&words[i]->canonical);
+    char * s = str_init(&w->canonical, NULL, total_len);
+    for (size_t i = 0; i < n_tuple_words; i++) {
+        const char * w = str_str(&tuple_words[i]->canonical);
         size_t n = strlen(w);
         memcpy(s, w, n);
         s += n;
     }
 }
 
-void wordtuple_term(struct wordtuple * wt) { str_term(&wt->canonical); }
-
-const char * wordtuple_original(struct wordtuple * wt) {
+const char * word_debug(const struct word * w) {
     static char buffer[2048];
-    char * b = buffer;
-    char * e = &buffer[sizeof(buffer)];
-    for (size_t i = 0; i < WORDTUPLE_N; i++) {
-        if (wt->words[i] == NULL) {
-            break;
+    if (w == NULL) {
+        return "\"\"";
+    } else if (w->is_tuple) {
+        char * b = buffer;
+        char * e = &buffer[sizeof(buffer)];
+        *b++ = '[';
+        for (size_t i = 0; i < WORD_TUPLE_N; i++) {
+            if (w->tuple_words[i] == NULL) {
+                break;
+            }
+            if (b > e) {
+                break;
+            }
+            const char * c = str_str(&w->tuple_words[i]->canonical);
+            b += snprintf(b, (size_t)(e - b), "%s ", c);
         }
-        if (b > e) {
-            break;
-        }
-        const char * c = str_str(&wt->words[i]->canonical);
-        b += snprintf(b, (size_t)(e - b), "%s ", c);
+        *--b = ']';
+    } else {
+        snprintf(buffer, sizeof(buffer), "%s [\"%s\" %d]",
+                str_str(&w->canonical), str_str(&w->original), w->value);
     }
     return buffer;
 }
