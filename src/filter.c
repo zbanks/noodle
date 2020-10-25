@@ -190,7 +190,7 @@ const struct word * filter_extract_apply(struct filter * f, const struct word * 
         memcpy(buffer, &s[matches[1].rm_so], len);
         buffer[len] = '\0';
         // XXX should use str_init_buffer instead?
-        struct str s = {._padding = {(char) 0xFF}, .large = buffer};
+        struct str s = {._padding = {(char)0xFF}, .large = buffer};
         return wordset_find(ws, &s);
     }
     return NULL;
@@ -200,7 +200,7 @@ const struct word * filter_extract_apply(struct filter * f, const struct word * 
 #define filter_extractq_term filter_extract_term
 
 const struct word * filter_extractq_apply(struct filter * f, const struct word * w, const struct wordset * ws) {
-    (void) ws;
+    (void)ws;
     const char * s = str_str(&w->canonical);
 
     regmatch_t matches[2];
@@ -230,8 +230,8 @@ const struct word * filter_extractq_apply(struct filter * f, const struct word *
     X(TRANSADD, transadd)                                                                                              \
     X(TRANSDELETE, transdelete)                                                                                        \
     X(BANK, bank)                                                                                                      \
-    X(EXTRACT, extract) \
-    X(EXTRACTQ, extractq) \
+    X(EXTRACT, extract)                                                                                                \
+    X(EXTRACTQ, extractq)
 
 const struct filter_vtbl filter_vtbls[] = {
 #define X(N, n)                                                                                                        \
@@ -343,7 +343,8 @@ void filter_apply(struct filter * f, struct wordlist * input, struct wordset * o
 }
 */
 
-void filter_chain_apply(struct filter * const * fs, size_t n_fs, struct wordset * input, struct wordset * output, struct wordlist * buffer) {
+void filter_chain_apply(struct filter * const * fs, size_t n_fs, struct wordset * input, struct wordset * output,
+                        struct wordlist * buffer) {
     ASSERT(fs != NULL);
     ASSERT(input != NULL);
     ASSERT(output != NULL);

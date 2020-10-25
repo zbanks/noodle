@@ -28,7 +28,7 @@ struct wordlist {
 };
 
 void wordlist_init(struct wordlist * wl, const char * name);
-int wordlist_init_from_file(struct wordlist * wl, const char * filename);
+int wordlist_init_from_file(struct wordlist * wl, const char * filename, bool has_weight);
 void wordlist_add(struct wordlist * wl, const char * s, int v);
-const struct word * wordlist_ensure_owned(struct wordlist * wl, const struct word *w);
+const struct word * wordlist_ensure_owned(struct wordlist * wl, const struct word * w);
 void wordlist_term(struct wordlist * wl);

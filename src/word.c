@@ -1,6 +1,6 @@
 #include "word.h"
 
-#define STR_LARGE ((char) 0xFF)
+#define STR_LARGE ((char)0xFF)
 static bool str_is_small(const struct str * s) { return s->small[0] != STR_LARGE; }
 
 char * str_init(struct str * s, const char * c, size_t len) {
@@ -24,11 +24,11 @@ char * str_init(struct str * s, const char * c, size_t len) {
     }
 }
 
-void str_init_copy(struct str * dst, const struct str *src) {
+void str_init_copy(struct str * dst, const struct str * src) {
     if (str_is_small(src)) {
         *dst = *src;
     } else {
-        const char *c = str_str(src);
+        const char * c = str_str(src);
         str_init(dst, c, strlen(c));
     }
 }
@@ -113,11 +113,13 @@ void word_init(struct word * w, const char * original, int value) {
 
     // Create sorted representation
     char * s = str_init(&w->sorted, str_str(&w->canonical), strlen(original));
-    qsort(s, strlen(s), 1, &cmp_letter);
+    (void)s;
+    (void)cmp_letter;
+    // qsort(s, strlen(s), 1, &cmp_letter);
 }
 
 void word_init_copy(struct word * dst, const struct word * src) {
-    *dst = (struct word) {
+    *dst = (struct word){
         .is_tuple = src->is_tuple,
     };
     str_init_copy(&dst->canonical, &src->canonical);
@@ -153,7 +155,7 @@ void word_tuple_init(struct word * w, const struct word * const * tuple_words, s
     NONNULL(tuple_words);
     ASSERT(n_tuple_words <= WORD_TUPLE_N);
 
-    *w = (struct word){ .is_tuple = true };
+    *w = (struct word){.is_tuple = true};
 
     size_t total_len = 0;
     for (size_t i = 0; i < n_tuple_words; i++) {
@@ -195,8 +197,7 @@ const char * word_debug(const struct word * w) {
         *b++ = ']';
         *b++ = '\0';
     } else {
-        snprintf(buffer, sizeof(buffer), "%s [\"%s\" %d]",
-                str_str(&w->canonical), str_str(&w->original), w->value);
+        snprintf(buffer, sizeof(buffer), "%s [\"%s\" %d]", str_str(&w->canonical), str_str(&w->original), w->value);
     }
     return buffer;
 }

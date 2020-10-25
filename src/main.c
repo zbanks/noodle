@@ -1,7 +1,15 @@
+#include "anatree.h"
 #include "filter.h"
 #include "prelude.h"
 #include "word.h"
 #include "wordlist.h"
+#include <time.h>
+
+int64_t now() {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1000000000 + t.tv_nsec;
+}
 
 int main() {
     struct word w;
@@ -10,12 +18,21 @@ int main() {
     word_term(&w);
 
     struct wordlist wl;
-    ASSERT(wordlist_init_from_file(&wl, "/usr/share/dict/words") == 0);
+    // ASSERT(wordlist_init_from_file(&wl, "/usr/share/dict/words", false) == 0);
+    ASSERT(wordlist_init_from_file(&wl, "consolidated.txt", true) == 0);
     struct wordset * ws = &wl.self_set;
     LOG("Wordlist: %zu words from %s", ws->words_count, ws->name);
     LOG("wl[1000] = %s", word_debug(ws->words[1000]));
     wordset_sort_value(&wl.self_set);
     LOG("top score = %s", word_debug(ws->words[0]));
+
+    struct anatree * at = anatree_create(ws);
+    int64_t start_ns = now();
+    const struct anatree_node * atn = anatree_lookup(at, "smiles");
+    int64_t end_ns = now();
+    anatree_node_print(atn);
+    LOG("Lookup in %lu ns", end_ns - start_ns);
+    anatree_destory(at);
 
     /*
     struct wordset regex_matches;
@@ -35,12 +52,13 @@ int main() {
     struct wordlist buffer;
     wordlist_init(&buffer, "buffer");
 
-    struct filter * f1 = NONNULL(filter_parse("extract: ab(.{7})"));
+    // struct filter * f1 = NONNULL(filter_parse("extract: ab(.{7})"));
+    struct filter * f1 = NONNULL(filter_parse("superanagram: eeeeeeeee"));
     struct filter * f2 = NONNULL(filter_parse("extractq: .(.*)."));
-    //struct filter * f3 = NONNULL(filter_parse("anagram: .*e(..).*"));
+    // struct filter * f3 = NONNULL(filter_parse("anagram: .*e(..).*"));
     struct wordset wso;
     wordset_init(&wso, "filter matches");
-    filter_chain_apply((struct filter * const []){f1, f2}, 2, ws, &wso, &buffer);
+    filter_chain_apply((struct filter * const[]){f1, f2}, 1, ws, &wso, &buffer);
     wordset_print(&wso);
 
     struct word wt;

@@ -73,7 +73,7 @@ void wordlist_init(struct wordlist * wl, const char * name) {
     wordset_init(&wl->self_set, name);
 }
 
-int wordlist_init_from_file(struct wordlist * wl, const char * filename) {
+int wordlist_init_from_file(struct wordlist * wl, const char * filename, bool has_weight) {
     FILE * f = fopen(filename, "r");
     if (f == NULL) {
         PLOG("unable to open %s", filename);
@@ -88,7 +88,16 @@ int wordlist_init_from_file(struct wordlist * wl, const char * filename) {
     size_t i = 0;
     while ((rc = getline(&line, &len, f)) != -1) {
         line[rc - 1] = '\0';
-        wordlist_add(wl, line, (int)((int)rc * 100000 + (int)i));
+        if (has_weight) {
+            char * word = strchr(line, ' ');
+            *word++ = '\0';
+            if (strlen(word) > 20) {
+                continue;
+            }
+            wordlist_add(wl, word, (int)strtoul(line, NULL, 10));
+        } else {
+            wordlist_add(wl, line, 1000);
+        }
         i++;
     }
     free(line);
@@ -96,7 +105,7 @@ int wordlist_init_from_file(struct wordlist * wl, const char * filename) {
     return 0;
 }
 
-static struct word *wordlist_alloc(struct wordlist *wl) {
+static struct word * wordlist_alloc(struct wordlist * wl) {
     size_t i = wl->insert_index / WORDLIST_CHUNK_SIZE;
     size_t j = wl->insert_index % WORDLIST_CHUNK_SIZE;
     if (j == 0) {
@@ -109,15 +118,15 @@ static struct word *wordlist_alloc(struct wordlist *wl) {
 }
 
 void wordlist_add(struct wordlist * wl, const char * s, int v) {
-    struct word *w = wordlist_alloc(wl);
+    struct word * w = wordlist_alloc(wl);
     word_init(w, s, v);
     w->owned = true;
     wordset_add(&wl->self_set, w);
 }
 
-const struct word * wordlist_ensure_owned(struct wordlist *wl, const struct word *src) {
+const struct word * wordlist_ensure_owned(struct wordlist * wl, const struct word * src) {
     if (src->owned) {
-        // XXX This assertion only checks the "top" layer; theoretically we should 
+        // XXX This assertion only checks the "top" layer; theoretically we should
         // recurse down to the lower layers; but in general we should never end up
         // with an owned word being formed from a tuple of un-owned words!
         for (size_t i = 0; src->is_tuple && i < WORD_TUPLE_N; i++) {
@@ -126,9 +135,7 @@ const struct word * wordlist_ensure_owned(struct wordlist *wl, const struct word
         return src;
     }
 
-    LOG("Unowned: %s", word_debug(src));
-
-    struct word *w = wordlist_alloc(wl);
+    struct word * w = wordlist_alloc(wl);
     word_init_copy(w, src);
 
     w->owned = true;
