@@ -4,6 +4,7 @@
 #include "prelude.h"
 #include "word.h"
 #include "wordlist.h"
+#include <regex.h>
 #include <time.h>
 
 int64_t now() {
@@ -29,7 +30,10 @@ int main() {
     wordset_sort_value(&wl.self_set);
     LOG("top score = %s", word_debug(ws->words[0]));
 
-    struct nx * nx = nx_compile("(test|hello|as|pen|world|[asdf][asdf]|a?b?c?d?e?f?g?h?i?)+");
+    const char * regex = "^\\(test\\|hello\\|as\\|pen\\|world\\|[isdf][isdf]\\|a\\?b\\?c\\?d\\?e\\?\\)\\+$";
+    // const char *regex = "^\\([asdf][asdf]\\)\\+$";
+    // const char *regex = "h(e|ow)l*o?";
+    struct nx * nx = nx_compile(regex);
     int64_t t = now();
     size_t n_matches[32] = {0};
     for (size_t i = 0; i < ws->words_count; i++) {
@@ -39,11 +43,25 @@ int main() {
         // if (rc == 0) LOG("> match: %s", s);
     }
     t = now() - t;
-    LOG("> %zu misses; %zu perfect matches; %zu 1-off matches: %ld ns (%ld ms)", n_matches[0], n_matches[1],
-        n_matches[2], t, t / (long)1e6);
+    LOG("> %zu misses; %zu perfect matches; %zu 1-off matches: %ld ns (%ld ms; %0.1lf ns/word)", n_matches[0],
+        n_matches[1], n_matches[2], t, t / (long)1e6, (double)t / (double)ws->words_count);
     LOG("> [%zu, %zu, %zu, %zu, %zu, %zu, %zu, %zu, ...]", n_matches[0], n_matches[1], n_matches[2], n_matches[3],
         n_matches[4], n_matches[5], n_matches[6], n_matches[7]);
 
+    regex_t preg;
+    regcomp(&preg, regex, REG_ICASE | REG_NOSUB);
+    size_t n_mismatches = 0;
+    for (size_t i = 0; i < ws->words_count; i++) {
+        const char * s = str_str(&ws->words[i]->canonical);
+        int rc1 = nx_match(nx, s, 0);
+        int rc2 = regexec(&preg, s, 0, NULL, 0);
+        if ((rc1 == 0) != (rc2 == 0)) {
+            LOG("Mismatch on \"%s\": nx=%d, regexec=%d", s, rc1, rc2);
+            n_mismatches++;
+        }
+    }
+    LOG("# mismatches against regexec: %zu", n_mismatches);
+    regfree(&preg);
     return 0;
 
     struct anatree * at = anatree_create(ws);
