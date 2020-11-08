@@ -1,21 +1,23 @@
 #include "nx.h"
 #include <time.h>
 
-#if 0
+#if 1
 #define NX_SET_SIZE ((size_t)64)
 struct nx_set {
-    uint64_t xs[NX_SET_SIZE/64];
+    uint64_t xs[NX_SET_SIZE / 64];
 };
 
-static bool nx_set_test(const struct nx_set *s, size_t i) {
+static const struct nx_set NX_SET_START = {{1}};
+
+static bool nx_set_test(const struct nx_set * s, size_t i) {
     if (i >= NX_SET_SIZE) {
         return false;
     }
-    return (s->xs[i/64] & (1ul << (i % 64))) != 0;
+    return (s->xs[i / 64] & (1ul << (i % 64))) != 0;
 }
 
-static bool nx_set_isempty(const struct nx_set *s) {
-    for (size_t i = 0; i < NX_SET_SIZE/64; i++) {
+static bool nx_set_isempty(const struct nx_set * s) {
+    for (size_t i = 0; i < NX_SET_SIZE / 64; i++) {
         if (s->xs[i]) {
             return false;
         }
@@ -23,19 +25,19 @@ static bool nx_set_isempty(const struct nx_set *s) {
     return true;
 }
 
-static bool nx_set_add(struct nx_set *s, size_t i) {
+static bool nx_set_add(struct nx_set * s, size_t i) {
     if (i >= NX_SET_SIZE) {
         return false;
     }
     if (nx_set_test(s, i)) {
         return false;
     }
-    s->xs[i/64] |= (1ul << (i % 64));
+    s->xs[i / 64] |= (1ul << (i % 64));
     return true;
 }
 
 static void nx_set_orequal(struct nx_set * restrict s, const struct nx_set * restrict t) {
-    for (size_t i = 0; i < NX_SET_SIZE/64; i++) {
+    for (size_t i = 0; i < NX_SET_SIZE / 64; i++) {
         s->xs[i] |= t->xs[i];
     }
 }
@@ -44,6 +46,8 @@ static void nx_set_orequal(struct nx_set * restrict s, const struct nx_set * res
 struct nx_set {
     uint64_t x;
 };
+
+static const struct nx_set NX_SET_START = {1};
 
 static inline bool nx_set_test(const struct nx_set * s, size_t i) {
     if (i >= NX_SET_SIZE) {
@@ -105,6 +109,7 @@ enum nx_transition {
 };
 
 #define NX_STATE_MAX (NX_SET_SIZE - 2)
+_Static_assert(NX_STATE_MAX < UINT16_MAX, "NX_STATE_MAX too big for a uint16_t");
 
 struct nx_state {
     enum {
@@ -292,7 +297,7 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             previous_initial_state = nx->n_states;
             nx->n_states++;
             break;
-        case '*':
+        case '*': {
             s->type = STATE_TRANSITION;
             if (previous_initial_state == TRANSITION_FAIL) {
                 LOG("nx parse error: '%c' without preceeding group", *c);
@@ -321,9 +326,10 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
                 }
             }
 
-            previous_initial_state = nx->n_states;
+            // previous_initial_state = nx->n_states;
             nx->n_states++;
             break;
+        }
         case '+':
             s->type = STATE_TRANSITION;
             if (previous_initial_state == TRANSITION_FAIL) {
@@ -344,9 +350,34 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
                 }
             }
 
-            previous_initial_state = nx->n_states;
+            // previous_initial_state = nx->n_states;
             nx->n_states++;
             break;
+        case '?': {
+            s->type = STATE_TRANSITION;
+            if (previous_initial_state == TRANSITION_FAIL) {
+                LOG("nx parse error: '%c' without preceeding group", *c);
+                return -1;
+            }
+
+            struct nx_state * epsilon_s = nx_state_insert(nx, previous_initial_state++);
+            if (previous_initial_state < subexpression_final_state && subexpression_final_state != TRANSITION_FAIL) {
+                subexpression_final_state++;
+            }
+            epsilon_s->type = STATE_TRANSITION;
+            for (enum nx_char i = 0; i < _NX_CHAR_MAX; i++) {
+                if (i == NX_CHAR_EPSILON1) {
+                    epsilon_s->transition_table[i] = (uint16_t)(previous_initial_state);
+                } else if (i == NX_CHAR_EPSILON2) {
+                    epsilon_s->transition_table[i] = (uint16_t)(nx->n_states);
+                } else {
+                    epsilon_s->transition_table[i] = TRANSITION_FAIL;
+                }
+            }
+
+            // previous_initial_state = nx->n_states;
+            break;
+        }
         case '(':
             c++;
             consumed_characters++;
@@ -460,39 +491,38 @@ void nx_destroy(struct nx * nx) {
     free(nx);
 }
 
-static bool nx_match_transition2(const struct nx * nx, enum nx_char b, const struct nx_set * restrict ss,
-                                 struct nx_set * restrict new_ss_out) {
-    bool new = false;
+static struct nx_set nx_match_transition2(const struct nx * nx, enum nx_char b, const struct nx_set ss) {
+    struct nx_set new_ss = {0};
     for (size_t si = 0; si < NX_STATE_MAX; si++) {
-        if (!nx_set_test(ss, si)) {
+        if (!nx_set_test(&ss, si)) {
             continue;
         }
         const struct nx_state * s = &nx->states[si];
         ASSERT(s->type == STATE_TRANSITION);
 
         if (b == NX_CHAR_EPSILON1 || b == NX_CHAR_EPSILON2) {
-            new |= nx_set_add(new_ss_out, s->transition_table[NX_CHAR_EPSILON1]);
-            new |= nx_set_add(new_ss_out, s->transition_table[NX_CHAR_EPSILON2]);
+            nx_set_add(&new_ss, s->transition_table[NX_CHAR_EPSILON1]);
+            nx_set_add(&new_ss, s->transition_table[NX_CHAR_EPSILON2]);
         } else {
-            new |= nx_set_add(new_ss_out, s->transition_table[b]);
+            nx_set_add(&new_ss, s->transition_table[b]);
         }
     }
-    return new;
+    return new_ss;
 }
 
 static struct nx_set nx_match_transition(const struct nx * nx, enum nx_char b, struct nx_set ss) {
-    struct nx_set new_ss = {0};
     if (nx_set_isempty(&ss)) {
-        return new_ss;
+        return ss;
     }
 
-    nx_match_transition2(nx, b, &ss, &new_ss);
+    struct nx_set new_ss = nx_match_transition2(nx, b, ss);
     while (true) {
-        struct nx_set next = new_ss;
-        if (!nx_match_transition2(nx, NX_CHAR_EPSILON1, &new_ss, &next)) {
+        ss = new_ss;
+        const struct nx_set epsilon_ss = nx_match_transition2(nx, NX_CHAR_EPSILON1, ss);
+        nx_set_orequal(&new_ss, &epsilon_ss);
+        if (memcmp(&ss, &new_ss, sizeof(ss)) == 0) {
             break;
         }
-        new_ss = next;
     }
     return new_ss;
 }
@@ -542,6 +572,7 @@ static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, siz
                     return rc + 1;
                 }
             }
+            // LOG("No matches after state %s", nx_set_debug(&ss));
             return -1;
         }
 
@@ -562,10 +593,8 @@ int nx_match(const struct nx * nx, const char * input, size_t n_errors) {
         }
     }
 
-    // struct nx_set start_ss = {{1}};
-    struct nx_set start_ss = {1};
-    struct nx_set ss = nx_match_transition(nx, NX_CHAR_EPSILON1, start_ss);
-    nx_set_orequal(&ss, &start_ss);
+    struct nx_set ss = nx_match_transition(nx, NX_CHAR_EPSILON1, NX_SET_START);
+    nx_set_orequal(&ss, &NX_SET_START);
     return nx_match_fuzzy(nx, buffer, 0, ss, n_errors);
 }
 
@@ -576,16 +605,19 @@ static int64_t now() {
 }
 
 void nx_test(void) {
-    struct nx * nx = nx_compile("([^asdfzyxwv]el([lw]o)+r[lheld]*)+");
+    // struct nx * nx = nx_compile("([^asdfzyxwv]el([lw]o)+r[lheld]*)+");
+    struct nx * nx = nx_compile("he?a?z?l+?oworld");
     // struct nx * nx = nx_compile("(thing|hello|asdf|world)*");
+    // struct nx * nx = nx_compile("helloworld");
     nx_print_nfa(nx);
     const char * s[] = {
         "helloworld",  "hello",     "helloworldhello", "helloworldhelloworld", "h e l l o w o r l d",  "helloworl",
-        "helloworlda", "heloworld", "hellloworld",     "hellaworld",           "aaaaasdfawjeojworkld", NULL,
+        "helloworlda", "heloworld", "hellloworld",     "hellaworld",           "aaaaasdfawjeojworkld", "heoworld",
+        NULL,
     };
     for (size_t i = 0; s[i] != NULL; i++) {
         int64_t t = now();
-        int rc = nx_match(nx, s[i], 2);
+        int rc = nx_match(nx, s[i], 0);
         t = now() - t;
         LOG("> \"%s\": %d in %ld ns", s[i], rc, t);
     }
