@@ -1,5 +1,6 @@
 #include "anatree.h"
 #include "filter.h"
+#include "nx.h"
 #include "prelude.h"
 #include "word.h"
 #include "wordlist.h"
@@ -12,6 +13,9 @@ int64_t now() {
 }
 
 int main() {
+    nx_test();
+    return 0;
+
     struct word w;
     word_init(&w, "Hello, World!", 10);
     LOG("> %s", word_debug(&w));

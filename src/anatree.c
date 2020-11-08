@@ -60,8 +60,8 @@ struct anatree_node * anatree_construct(struct anatree_hist * hists, size_t n_hi
     struct anatree_node * atn = NONNULL(calloc(1, sizeof(struct anatree_node) + n_edges * sizeof(atn->edge_nodes[0])));
     atn->n_edges = n_edges;
     atn->n_words = n_words;
-    atn->words = NONNULL(calloc(n_words, sizeof(*atn->words)));
-    atn->edge_nodes = NONNULL(calloc(n_edges, sizeof(*atn->edge_nodes)));
+    atn->words = NONNULL(calloc(n_words + 1, sizeof(*atn->words)));
+    atn->edge_nodes = NONNULL(calloc(n_edges + 1, sizeof(*atn->edge_nodes)));
 
     size_t word_index = 0;
     size_t edge_index = 0;

@@ -6,7 +6,7 @@ struct wordset {
     const struct word ** words;
     size_t words_count;
     size_t words_capacity;
-    struct wordset * next;
+    struct anatree * anatree;
     bool is_canonically_sorted;
     char name[64];
 };
