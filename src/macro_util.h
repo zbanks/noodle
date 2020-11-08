@@ -4,6 +4,7 @@
 #define LOG(msg, ...) fprintf(stderr, "[%s:%s:%d] " msg "\n", __FILE__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #define PLOG(msg, ...) LOG(msg " (%s)", ##__VA_ARGS__, strerror(errno))
 
+#ifdef DEBUG
 #define ASSERT(x)                                                                                                      \
     ({                                                                                                                 \
         if (!(x)) {                                                                                                    \
@@ -11,6 +12,10 @@
             abort();                                                                                                   \
         }                                                                                                              \
     })
+#else
+#define ASSERT(x) ((void)(x))
+#endif
+
 #define NONNULL(x)                                                                                                     \
     ({                                                                                                                 \
         typeof(x) _x = (x);                                                                                            \

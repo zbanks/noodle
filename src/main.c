@@ -1,6 +1,7 @@
 #include "anatree.h"
 #include "filter.h"
 #include "nx.h"
+#include "nx_combo.h"
 #include "prelude.h"
 #include "word.h"
 #include "wordlist.h"
@@ -25,14 +26,18 @@ int main() {
     ASSERT(wordlist_init_from_file(&wl, "/usr/share/dict/words", false) == 0);
     // ASSERT(wordlist_init_from_file(&wl, "consolidated.txt", true) == 0);
     struct wordset * ws = &wl.self_set;
+    /*
     LOG("Wordlist: %zu words from %s", ws->words_count, ws->name);
     LOG("wl[1000] = %s", word_debug(ws->words[1000]));
     wordset_sort_value(&wl.self_set);
     LOG("top score = %s", word_debug(ws->words[0]));
+    */
 
-    const char * regex = "^\\(test\\|hello\\|as\\|pen\\|world\\|[isdf][isdf]\\|a\\?b\\?c\\?d\\?e\\?\\)\\+$";
+    // const char * regex = "^\\(test\\|hello\\|as\\|pen\\|world\\|[isdf][isdf]\\|a\\?b\\?c\\?d\\?e\\?\\)\\+$";
+    // const char * regex = "^hellt?oworld$";
     // const char *regex = "^\\([asdf][asdf]\\)\\+$";
-    // const char *regex = "h(e|ow)l*o?";
+    const char * regex = "^h\\(e\\|ow\\)l*o\\?w*[orza]\\+l\\?d*$";
+    // const char *regex = "^helloworld$";
     struct nx * nx = nx_compile(regex);
     int64_t t = now();
     size_t n_matches[32] = {0};
@@ -50,6 +55,19 @@ int main() {
 
     regex_t preg;
     regcomp(&preg, regex, REG_ICASE | REG_NOSUB);
+
+    t = now();
+    size_t n_matches_regexec = 0;
+    for (size_t i = 0; i < ws->words_count; i++) {
+        const char * s = str_str(&ws->words[i]->canonical);
+        int rc = regexec(&preg, s, 0, NULL, 0);
+        if (rc == 0) {
+            n_matches_regexec++;
+        }
+    }
+    t = now() - t;
+    LOG("Time for regexec evaluation: %ld ns (%ld ms)", t, t / (long)1e6);
+
     size_t n_mismatches = 0;
     for (size_t i = 0; i < ws->words_count; i++) {
         const char * s = str_str(&ws->words[i]->canonical);
@@ -62,6 +80,18 @@ int main() {
     }
     LOG("# mismatches against regexec: %zu", n_mismatches);
     regfree(&preg);
+
+    // I've gotten sloppy with my resource management here; there's some leaks
+    struct wordlist buffer;
+    wordlist_init(&buffer, "buffer");
+    struct wordset combo_ws;
+    wordset_init(&combo_ws, "combo matches");
+    t = now();
+    int rc = nx_combo_match(nx, ws, 5, &combo_ws, &buffer);
+    t = now() - t;
+    LOG("Combo match found %zu matches (rc = %d) in %ld ns (%ld ms)", combo_ws.words_count, rc, t, t / (long)1e6);
+
+    nx_destroy(nx);
     return 0;
 
     struct anatree * at = anatree_create(ws);
@@ -87,8 +117,6 @@ int main() {
     LOG("top score for filter '%s' = " PRIWORD, f.name, PRIWORDF(*f.output.words[0]));
     filter_term(&f);
     */
-    struct wordlist buffer;
-    wordlist_init(&buffer, "buffer");
 
     // struct filter * f1 = NONNULL(filter_parse("extract: ab(.{7})"));
     struct filter * f1 = NONNULL(filter_parse("superanagram: eeeeeeeee"));

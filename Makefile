@@ -7,6 +7,7 @@ CFLAGS += -Wall -Wextra -Wconversion -Werror
 CFLAGS += -ggdb3
 CFLAGS += -O3
 CFLAGS += -Isrc/
+CFLAGS += -DDEBUG
 LFLAGS = 
 
 $(shell mkdir -p build)

@@ -1,24 +1,15 @@
 #include "nx.h"
-#include <time.h>
-
-#if 1
-#define NX_SET_SIZE ((size_t)256)
-#define NX_SET_ARRAYLEN ((NX_SET_SIZE + 63) / 64)
-
-struct nx_set {
-    uint64_t xs[NX_SET_ARRAYLEN];
-};
 
 static const struct nx_set NX_SET_START = {{1}};
 
-static bool nx_set_test(const struct nx_set * s, size_t i) {
+bool nx_set_test(const struct nx_set * s, size_t i) {
     if (i >= NX_SET_SIZE) {
         return false;
     }
     return (s->xs[i / 64] & (1ul << (i % 64))) != 0;
 }
 
-static bool nx_set_isempty(const struct nx_set * s) {
+bool nx_set_isempty(const struct nx_set * s) {
     for (size_t i = 0; i < NX_SET_ARRAYLEN; i++) {
         if (s->xs[i]) {
             return false;
@@ -27,7 +18,7 @@ static bool nx_set_isempty(const struct nx_set * s) {
     return true;
 }
 
-static bool nx_set_add(struct nx_set * s, size_t i) {
+bool nx_set_add(struct nx_set * s, size_t i) {
     if (i >= NX_SET_SIZE) {
         return false;
     }
@@ -43,36 +34,6 @@ static void nx_set_orequal(struct nx_set * restrict s, const struct nx_set * res
         s->xs[i] |= t->xs[i];
     }
 }
-#else
-#define NX_SET_SIZE ((size_t)64)
-struct nx_set {
-    uint64_t x;
-};
-
-static const struct nx_set NX_SET_START = {1};
-
-static inline bool nx_set_test(const struct nx_set * s, size_t i) {
-    if (i >= NX_SET_SIZE) {
-        return false;
-    }
-    return (s->x & (1ul << i)) != 0;
-}
-
-static inline bool nx_set_isempty(const struct nx_set * s) { return s->x == 0; }
-
-static inline bool nx_set_add(struct nx_set * s, size_t i) {
-    if (i >= NX_SET_SIZE) {
-        return false;
-    }
-    if (nx_set_test(s, i)) {
-        return false;
-    }
-    s->x |= (1ul << i);
-    return true;
-}
-
-static inline void nx_set_orequal(struct nx_set * restrict s, const struct nx_set * restrict t) { s->x |= t->x; }
-#endif
 
 const char * nx_set_debug(const struct nx_set * s) {
     static char buffer[NX_SET_SIZE * 6];
@@ -93,71 +54,15 @@ const char * nx_set_debug(const struct nx_set * s) {
     return buffer;
 }
 
-enum nx_char {
-    NX_CHAR_END = 0,
-    NX_CHAR_EPSILON,
-    NX_CHAR_INVALID,
-    NX_CHAR_SPACE,
-
-    NX_CHAR_A,
-    NX_CHAR_Z = NX_CHAR_A + 25,
-
-    _NX_CHAR_MAX,
-};
-
-_Static_assert(_NX_CHAR_MAX <= 31, "Unexpectedly large enum nx_char");
+_Static_assert(_NX_CHAR_MAX < 32, "Unexpectedly large enum nx_char");
 
 enum {
     STATE_SUCCESS = NX_SET_SIZE - 1,
     STATE_FAILURE = (uint16_t)-1, // NX_SET_SIZE,
 };
 
-#define NX_STATE_MAX (NX_SET_SIZE - 2)
 _Static_assert(NX_STATE_MAX < UINT16_MAX, "NX_STATE_MAX too big for a uint16_t");
-
-#define NX_BRANCH_COUNT ((size_t)2)
 _Static_assert(_NX_CHAR_MAX < 32, "_NX_CHAR_MAX cannot fit in a uint32_t");
-
-struct nx_state {
-    enum {
-        STATE_TYPE_TRANSITION,
-        STATE_ANAGRAM_EXACT,
-        STATE_ANAGRAM_LIMIT,
-    } type;
-    union {
-        struct {
-            // This representation is optimized to be performant when
-            // evaluating "unoptimized" NFAs, e.g. the results of
-            // Thompson's Construction.
-            //
-            // Although this *could* represent the DFA form, a DFA
-            // would have significantly more branching, and would probably
-            // be better represented as a lookup table.
-            uint16_t next_state[NX_BRANCH_COUNT];
-            uint32_t char_bitset[NX_BRANCH_COUNT];
-
-            // The set of states reachable from this state through epsilon
-            // transitions is pre-computed, so that the NFA can be
-            // evalutated in linear time.
-            struct nx_set epsilon_states;
-        };
-        /*
-        struct {
-            uint16_t transition_fail;
-            uint16_t transition_success;
-            int16_t anagram_arg;
-            uint8_t anagram_letters[(_NX_CHAR_MAX - 4) * 2];
-        };
-        */
-    };
-};
-
-struct nx {
-    char * expression;
-
-    size_t n_states;
-    struct nx_state states[NX_STATE_MAX];
-};
 
 static enum nx_char nx_char(char c) {
     switch (c) {
@@ -203,6 +108,21 @@ static const char * nx_char_set_debug(uint32_t cs) {
     }
     b += sprintf(b, "]");
     return buffer;
+}
+
+void nx_char_translate(const char * input, enum nx_char * output, size_t output_size) {
+    /*
+    for (size_t i = 0; i < output_size; i++) {
+        output[i] = NX_CHAR_END;
+    }
+    */
+    for (size_t i = 0;; i++) {
+        ASSERT(i < output_size);
+        output[i] = nx_char(input[i]);
+        if (output[i] == NX_CHAR_END) {
+            break;
+        }
+    }
 }
 
 static void nx_nfa_debug(const struct nx * nx) {
@@ -278,6 +198,7 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
         case '\\':
         case '^':
         case '$':
+        case ' ':
             break;
         case ')':
             if (subexpression_final_state != STATE_FAILURE) {
@@ -289,8 +210,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             s->type = STATE_TYPE_TRANSITION;
             s->next_state[0] = STATE_SUCCESS;
             s->char_bitset[0] = nx_char_bit(NX_CHAR_END);
-            s->next_state[1] = (uint16_t)(nx->n_states);
-            s->char_bitset[1] = nx_char_bit(NX_CHAR_EPSILON);
 
             nx->n_states++;
             if (subexpression_final_state != STATE_FAILURE) {
@@ -303,18 +222,24 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             s->type = STATE_TYPE_TRANSITION;
             s->next_state[0] = (uint16_t)(nx->n_states + 1);
             s->char_bitset[0] = nx_char_bit(nc);
-            s->next_state[1] = (uint16_t)(nx->n_states);
-            s->char_bitset[1] = nx_char_bit(NX_CHAR_SPACE);
 
             previous_initial_state = nx->n_states;
             nx->n_states++;
-            break;
-        case ' ':
             break;
         case '_': // Explicit space
             s->type = STATE_TYPE_TRANSITION;
             s->next_state[0] = (uint16_t)(nx->n_states + 1);
             s->char_bitset[0] = nx_char_bit(NX_CHAR_SPACE);
+
+            previous_initial_state = nx->n_states;
+            nx->n_states++;
+            break;
+        case '.':
+            s->type = STATE_TYPE_TRANSITION;
+            s->next_state[0] = (uint16_t)(nx->n_states + 1);
+            for (enum nx_char j = NX_CHAR_SPACE; j <= NX_CHAR_Z; j++) {
+                s->char_bitset[0] |= nx_char_bit(j);
+            }
 
             previous_initial_state = nx->n_states;
             nx->n_states++;
@@ -332,11 +257,9 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             s->type = STATE_TYPE_TRANSITION;
             s->next_state[0] = (uint16_t)(nx->n_states + 1);
             s->char_bitset[0] = 0;
-            s->next_state[1] = (uint16_t)(nx->n_states);
-            s->char_bitset[1] = nx_char_bit(NX_CHAR_SPACE);
 
             while (*c != ']' && *c != '\0') {
-                if (nx_char(*c) >= NX_CHAR_A && nx_char(*c) <= NX_CHAR_Z) {
+                if (nx_char(*c) >= NX_CHAR_SPACE && nx_char(*c) <= NX_CHAR_Z) {
                     s->char_bitset[0] |= nx_char_bit(nx_char(*c));
                 } else {
                     LOG("Parse error; invalid character '%c' in [...] group", *c);
@@ -467,7 +390,8 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             break;
         }
         default:
-            break;
+            LOG("Invalid character in nx expression: '%c'", *c);
+            return -1;
         }
 
         consumed_characters++;
@@ -529,6 +453,19 @@ struct nx * nx_compile(const char * expression) {
         }
     }
 
+    // Many states are reachable through other states via epsilon transitions
+    // Use a greedy heursitic to reduce the number of states we will
+    // need to check when computing combo matches
+    struct nx_set covered_states = {0};
+    for (size_t i = 0; i < nx->n_states; i++) {
+        if (nx_set_test(&covered_states, i)) {
+            continue;
+        }
+        nx_set_add(&nx->head_states, i);
+        nx_set_orequal(&covered_states, &nx->states[i].epsilon_states);
+    }
+    LOG("Head states: %s", nx_set_debug(&nx->head_states));
+
     LOG("Created NFA for \"%s\" with %zu states", expression, nx->n_states);
     nx_nfa_debug(nx);
 
@@ -574,6 +511,19 @@ static struct nx_set nx_match_transition(const struct nx * nx, uint32_t bset, st
         nx_set_orequal(&new_ss, &s->epsilon_states);
     }
     return new_ss;
+}
+
+struct nx_set nx_match_partial(const struct nx * nx, const enum nx_char * buffer, uint16_t si) {
+    struct nx_set ss = {0};
+    nx_set_add(&ss, si);
+    nx_set_orequal(&ss, &nx->states[si].epsilon_states);
+    for (size_t bi = 0; buffer[bi] != NX_CHAR_END; bi++) {
+        ss = nx_match_transition(nx, nx_char_bit(buffer[bi]), ss);
+        if (nx_set_isempty(&ss)) {
+            break;
+        }
+    }
+    return ss;
 }
 
 static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, size_t bi, struct nx_set ss,
@@ -640,31 +590,18 @@ static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, siz
 
 int nx_match(const struct nx * nx, const char * input, size_t n_errors) {
     enum nx_char buffer[256];
-    _Static_assert(NX_CHAR_END == 0, "expected NX_CHAR_END == 0 to initialize buffer correctly");
-    memset(buffer, 0, sizeof(buffer));
-    for (size_t i = 0;; i++) {
-        buffer[i] = nx_char(input[i]);
-        if (buffer[i] == NX_CHAR_END) {
-            break;
-        }
-    }
+    nx_char_translate(input, buffer, 256);
 
     struct nx_set ss = nx->states[0].epsilon_states;
     nx_set_orequal(&ss, &NX_SET_START);
     return nx_match_fuzzy(nx, buffer, 0, ss, n_errors);
 }
 
-static int64_t now() {
-    struct timespec t;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    return t.tv_sec * 1000000000 + t.tv_nsec;
-}
-
 void nx_test(void) {
     // struct nx * nx = nx_compile("([^asdfzyxwv]el([lw]o)+r[lheld]*)+");
     // struct nx * nx = nx_compile("he?a?z?l+?oworld");
-    // struct nx * nx = nx_compile("(thing|hello|asdf|world|a?b?c?d?e?)+");
-    struct nx * nx = nx_compile("helloworld");
+    struct nx * nx = nx_compile("(thing|hello|asdf|world|a?b?c?d?e?)+");
+    // struct nx * nx = nx_compile("helloworld");
     const char * s[] = {
         "helloworld",
         "hello",
@@ -684,9 +621,12 @@ void nx_test(void) {
     };
     // LOG("rc = %d", nx_match(nx, "hellowor", 0));
     for (size_t i = 0; s[i] != NULL; i++) {
-        int64_t t = now();
         int rc = nx_match(nx, s[i], 3);
-        t = now() - t;
-        LOG("> \"%s\": %d in %ld ns", s[i], rc, t);
+        LOG("> \"%s\": %d", s[i], rc);
+
+        enum nx_char buffer[256];
+        nx_char_translate(s[i], buffer, 256);
+        struct nx_set ps = nx_match_partial(nx, buffer, 0);
+        LOG("Partial: %s", nx_set_debug(&ps));
     }
 }

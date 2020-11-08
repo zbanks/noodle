@@ -171,33 +171,40 @@ void word_tuple_init(struct word * w, const struct word * const * tuple_words, s
     }
 }
 
-const char * word_debug(const struct word * w) {
-    static char buffer[2048];
+ssize_t word_debug_iter(const struct word * w, char * buf) {
     if (w == NULL) {
-        return "\"\"";
+        return sprintf(buf, "\"\"");
     } else if (w->is_tuple) {
         if (w->tuple_words[0] == NULL) {
-            return "[]";
+            sprintf(buf, "[]");
         }
 
-        char * b = buffer;
-        char * e = &buffer[sizeof(buffer)];
+        ssize_t rc = 0;
+        char * b = buf;
         *b++ = '[';
+        rc++;
         for (size_t i = 0; i < WORD_TUPLE_N; i++) {
             if (w->tuple_words[i] == NULL) {
                 break;
             }
-            if (b > e) {
-                break;
-            }
-            const char * c = str_str(&w->tuple_words[i]->canonical);
-            b += snprintf(b, (size_t)(e - b), "%s ", c);
+            ssize_t k = word_debug_iter(w->tuple_words[i], b);
+            rc += k;
+            b += k;
+            *b++ = ' ';
+            rc++;
         }
         b--;
         *b++ = ']';
         *b++ = '\0';
+        return rc;
     } else {
-        snprintf(buffer, sizeof(buffer), "%s [\"%s\" %d]", str_str(&w->canonical), str_str(&w->original), w->value);
+        // return sprintf(buf, "%s [\"%s\" %d]", str_str(&w->canonical), str_str(&w->original), w->value);
+        return sprintf(buf, "%s", str_str(&w->original));
     }
+}
+
+const char * word_debug(const struct word * w) {
+    static char buffer[2048];
+    word_debug_iter(w, buffer);
     return buffer;
 }
