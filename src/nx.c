@@ -85,6 +85,9 @@ const char * nx_set_debug(const struct nx_set * s) {
             first = false;
         }
     }
+    if (first) {
+        b += sprintf(b, "(empty)");
+    }
     return buffer;
 }
 
@@ -123,6 +126,7 @@ struct nx_state {
         struct {
             uint16_t next_state[NX_BRANCH_COUNT];
             uint32_t char_bitset[NX_BRANCH_COUNT];
+            struct nx_set epsilon_states;
         };
         /*
         struct {
@@ -179,7 +183,7 @@ static const char * nx_char_set_debug(uint32_t cs) {
     static char buffer[1024];
     char * b = buffer;
     b += sprintf(b, "[");
-    for (enum nx_char c = NX_CHAR_END + 1; c <= NX_CHAR_Z; c++) {
+    for (enum nx_char c = 0; c <= _NX_CHAR_MAX; c++) {
         if (cs & nx_char_bit(c)) {
             b += sprintf(b, "%c", nx_char_rev_print(c));
         }
@@ -217,6 +221,7 @@ static void nx_nfa_debug(const struct nx * nx) {
             }
             printf("      ");
         }
+        printf("epsilon: %s", nx_set_debug(&s->epsilon_states));
         printf("\n");
     }
     printf("\n");
@@ -462,6 +467,39 @@ struct nx * nx_compile(const char * expression) {
         goto fail;
     ASSERT(rc == (ssize_t)strlen(nx->expression));
 
+    // Calculate epsilon transitions
+    for (size_t i = 0; i < nx->n_states; i++) {
+        struct nx_state * s = &nx->states[i];
+        struct nx_set next_ss;
+        memset(&next_ss, 0, sizeof(next_ss));
+        for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
+            if (nx_char_bit(NX_CHAR_EPSILON) & s->char_bitset[j]) {
+                nx_set_add(&next_ss, s->next_state[j]);
+            }
+        }
+        for (size_t k = 0; k < 10; k++) {
+            struct nx_set ss = next_ss;
+            for (size_t si = 0; si < nx->n_states; si++) {
+                if (!nx_set_test(&next_ss, si)) {
+                    continue;
+                }
+                const struct nx_state * s2 = &nx->states[si];
+                ASSERT(s2->type == STATE_TYPE_TRANSITION);
+
+                for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
+                    if (nx_char_bit(NX_CHAR_EPSILON) & s2->char_bitset[j]) {
+                        nx_set_add(&ss, s2->next_state[j]);
+                    }
+                }
+            }
+            nx_set_orequal(&next_ss, &ss);
+            if (memcmp(&ss, &next_ss, sizeof(ss)) == 0) {
+                break;
+            }
+        }
+        s->epsilon_states = next_ss;
+    }
+
     LOG("Created NFA for \"%s\" with %zu states", expression, nx->n_states);
     nx_nfa_debug(nx);
 
@@ -480,36 +518,22 @@ void nx_destroy(struct nx * nx) {
     free(nx);
 }
 
-static struct nx_set nx_match_transition2(const struct nx * nx, enum nx_char b, const struct nx_set ss) {
+static struct nx_set nx_match_transition(const struct nx * nx, enum nx_char b, struct nx_set ss) {
     struct nx_set new_ss = {0};
+    if (nx_set_isempty(&ss)) {
+        return new_ss;
+    }
     for (size_t si = 0; si < NX_STATE_MAX; si++) {
         if (!nx_set_test(&ss, si)) {
             continue;
         }
         const struct nx_state * s = &nx->states[si];
         ASSERT(s->type == STATE_TYPE_TRANSITION);
-
+        nx_set_orequal(&new_ss, &s->epsilon_states);
         for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
             if (nx_char_bit(b) & s->char_bitset[j]) {
                 nx_set_add(&new_ss, s->next_state[j]);
             }
-        }
-    }
-    return new_ss;
-}
-
-static struct nx_set nx_match_transition(const struct nx * nx, enum nx_char b, struct nx_set ss) {
-    if (nx_set_isempty(&ss)) {
-        return ss;
-    }
-
-    struct nx_set new_ss = nx_match_transition2(nx, b, ss);
-    while (true) {
-        ss = new_ss;
-        const struct nx_set epsilon_ss = nx_match_transition2(nx, NX_CHAR_EPSILON, ss);
-        nx_set_orequal(&new_ss, &epsilon_ss);
-        if (memcmp(&ss, &new_ss, sizeof(ss)) == 0) {
-            break;
         }
     }
     return new_ss;
@@ -553,7 +577,7 @@ static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, siz
             }
         }
 
-        if (nx_set_isempty(&next_ss)) {
+        if (nx_set_isempty(&next_ss) || buffer[bi] == NX_CHAR_END) {
             if (n_errors > 0) {
                 int rc = nx_match_fuzzy(nx, buffer, next_bi, next_err_ss, n_errors - 1);
                 if (rc >= 0) {

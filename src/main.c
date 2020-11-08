@@ -29,7 +29,7 @@ int main() {
     wordset_sort_value(&wl.self_set);
     LOG("top score = %s", word_debug(ws->words[0]));
 
-    struct nx * nx = nx_compile("(test|hello|as|pen|world|[asdf][asdf])+");
+    struct nx * nx = nx_compile("(test|hello|as|pen|world|[asdf][asdf]|a?b?c?d?e?f?g?h?i?)+");
     int64_t t = now();
     size_t n_matches[32] = {0};
     for (size_t i = 0; i < ws->words_count; i++) {
