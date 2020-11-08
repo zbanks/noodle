@@ -14,7 +14,6 @@ int64_t now() {
 
 int main() {
     nx_test();
-    return 0;
 
     struct word w;
     word_init(&w, "Hello, World!", 10);
@@ -22,13 +21,30 @@ int main() {
     word_term(&w);
 
     struct wordlist wl;
-    // ASSERT(wordlist_init_from_file(&wl, "/usr/share/dict/words", false) == 0);
-    ASSERT(wordlist_init_from_file(&wl, "consolidated.txt", true) == 0);
+    ASSERT(wordlist_init_from_file(&wl, "/usr/share/dict/words", false) == 0);
+    // ASSERT(wordlist_init_from_file(&wl, "consolidated.txt", true) == 0);
     struct wordset * ws = &wl.self_set;
     LOG("Wordlist: %zu words from %s", ws->words_count, ws->name);
     LOG("wl[1000] = %s", word_debug(ws->words[1000]));
     wordset_sort_value(&wl.self_set);
     LOG("top score = %s", word_debug(ws->words[0]));
+
+    struct nx * nx = nx_compile("(test|hello|as|pen|world|[asdf][asdf])+");
+    int64_t t = now();
+    size_t n_matches[32] = {0};
+    for (size_t i = 0; i < ws->words_count; i++) {
+        const char * s = str_str(&ws->words[i]->canonical);
+        int rc = nx_match(nx, s, 0);
+        n_matches[(size_t)(rc + 1)]++;
+        // if (rc == 0) LOG("> match: %s", s);
+    }
+    t = now() - t;
+    LOG("> %zu misses; %zu perfect matches; %zu 1-off matches: %ld ns (%ld ms)", n_matches[0], n_matches[1],
+        n_matches[2], t, t / (long)1e6);
+    LOG("> [%zu, %zu, %zu, %zu, %zu, %zu, %zu, %zu, ...]", n_matches[0], n_matches[1], n_matches[2], n_matches[3],
+        n_matches[4], n_matches[5], n_matches[6], n_matches[7]);
+
+    return 0;
 
     struct anatree * at = anatree_create(ws);
     int64_t start_ns = now();

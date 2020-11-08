@@ -90,8 +90,7 @@ const char * nx_set_debug(const struct nx_set * s) {
 
 enum nx_char {
     NX_CHAR_END = 0,
-    NX_CHAR_EPSILON1,
-    NX_CHAR_EPSILON2,
+    NX_CHAR_EPSILON,
     NX_CHAR_INVALID,
     NX_CHAR_SPACE,
 
@@ -103,28 +102,36 @@ enum nx_char {
 
 _Static_assert(_NX_CHAR_MAX <= 31, "Unexpectedly large enum nx_char");
 
-enum nx_transition {
-    TRANSITION_SUCCESS = NX_SET_SIZE - 1,
-    TRANSITION_FAIL = NX_SET_SIZE,
+enum {
+    STATE_SUCCESS = NX_SET_SIZE - 1,
+    STATE_FAILURE = NX_SET_SIZE,
 };
 
 #define NX_STATE_MAX (NX_SET_SIZE - 2)
 _Static_assert(NX_STATE_MAX < UINT16_MAX, "NX_STATE_MAX too big for a uint16_t");
 
+#define NX_BRANCH_COUNT ((size_t)2)
+_Static_assert(_NX_CHAR_MAX < 32, "_NX_CHAR_MAX cannot fit in a uint32_t");
+
 struct nx_state {
     enum {
-        STATE_TRANSITION,
+        STATE_TYPE_TRANSITION,
         STATE_ANAGRAM_EXACT,
         STATE_ANAGRAM_LIMIT,
     } type;
     union {
-        uint16_t transition_table[_NX_CHAR_MAX];
+        struct {
+            uint16_t next_state[NX_BRANCH_COUNT];
+            uint32_t char_bitset[NX_BRANCH_COUNT];
+        };
+        /*
         struct {
             uint16_t transition_fail;
             uint16_t transition_success;
             int16_t anagram_arg;
             uint8_t anagram_letters[(_NX_CHAR_MAX - 4) * 2];
         };
+        */
     };
 };
 
@@ -135,7 +142,7 @@ struct nx {
     struct nx_state states[NX_STATE_MAX];
 };
 
-enum nx_char nx_char(char c) {
+static enum nx_char nx_char(char c) {
     switch (c) {
     case '\0':
         return NX_CHAR_END;
@@ -150,34 +157,69 @@ enum nx_char nx_char(char c) {
     }
 }
 
-char nx_char_rev(enum nx_char c) {
-    switch (c) {
-    case NX_CHAR_END:
-        return '\0';
-    case NX_CHAR_SPACE:
-        return ' ';
-    case NX_CHAR_A... NX_CHAR_Z:
-        return (char)('a' + (c - NX_CHAR_A));
-    default:
-        return '?';
-    }
-}
-
-char nx_char_rev_print(enum nx_char c) {
+static char nx_char_rev_print(enum nx_char c) {
     switch (c) {
     case NX_CHAR_END:
         return '$';
-    case NX_CHAR_EPSILON1:
-        return '1';
-    case NX_CHAR_EPSILON2:
-        return '2';
+    case NX_CHAR_EPSILON:
+        return '*';
     case NX_CHAR_SPACE:
         return '_';
     case NX_CHAR_A... NX_CHAR_Z:
         return (char)('a' + (c - NX_CHAR_A));
     default:
+        LOG("Unknown char: %d", c);
         return '?';
     }
+}
+
+static uint32_t nx_char_bit(enum nx_char c) { return (1u << ((uint8_t)c)); }
+
+static const char * nx_char_set_debug(uint32_t cs) {
+    static char buffer[1024];
+    char * b = buffer;
+    b += sprintf(b, "[");
+    for (enum nx_char c = NX_CHAR_END + 1; c <= NX_CHAR_Z; c++) {
+        if (cs & nx_char_bit(c)) {
+            b += sprintf(b, "%c", nx_char_rev_print(c));
+        }
+    }
+    b += sprintf(b, "]");
+    return buffer;
+}
+
+static void nx_nfa_debug(const struct nx * nx) {
+    LOG("NX NFA: %zu states", nx->n_states);
+    for (size_t i = 0; i < nx->n_states; i++) {
+        const struct nx_state * s = &nx->states[i];
+        ASSERT(s->type == STATE_TYPE_TRANSITION);
+
+        printf("     %3zu: ", i);
+        for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
+            if (s->char_bitset[j] == 0) {
+                // These two cases are just to catch potentially-invalid representations
+                if (j + 1 < NX_BRANCH_COUNT && s->char_bitset[j + 1] != 0) {
+                    printf("(missing %zu)    ", j);
+                }
+                // 0 is technically a valid state; this just catches _most_ errors
+                if (s->next_state[j] != 0) {
+                    printf("(null) -> %hu    ", s->next_state[j]);
+                }
+                continue;
+            }
+            printf("%s -> ", nx_char_set_debug(s->char_bitset[j]));
+            if (s->next_state[j] > STATE_SUCCESS) {
+                printf("!!!%hu", s->next_state[j]);
+            } else if (s->next_state[j] == STATE_SUCCESS) {
+                printf("MATCH");
+            } else {
+                printf("%-3hu", s->next_state[j]);
+            }
+            printf("      ");
+        }
+        printf("\n");
+    }
+    printf("\n");
 }
 
 struct nx_state * nx_state_insert(struct nx * nx, size_t insert_index) {
@@ -185,15 +227,17 @@ struct nx_state * nx_state_insert(struct nx * nx, size_t insert_index) {
     ASSERT(insert_index < nx->n_states);
     size_t remaining_states = nx->n_states - insert_index;
     memmove(&nx->states[insert_index + 1], &nx->states[insert_index], remaining_states * sizeof(*nx->states));
+    memset(&nx->states[insert_index], 0, sizeof(*nx->states));
 
     nx->n_states++;
     ASSERT(nx->n_states <= NX_STATE_MAX);
 
     for (size_t i = insert_index + 1; i < nx->n_states; i++) {
-        ASSERT(nx->states[i].type == STATE_TRANSITION);
-        for (enum nx_char j = 0; j < _NX_CHAR_MAX; j++) {
-            if (nx->states[i].transition_table[j] >= insert_index && nx->states[i].transition_table[j] < nx->n_states) {
-                nx->states[i].transition_table[j]++;
+        ASSERT(nx->states[i].type == STATE_TYPE_TRANSITION);
+        for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
+            if (nx->states[i].next_state[j] >= insert_index && nx->states[i].next_state[j] < nx->n_states &&
+                nx->states[i].char_bitset[j] != 0) {
+                nx->states[i].next_state[j]++;
             }
         }
     }
@@ -202,9 +246,9 @@ struct nx_state * nx_state_insert(struct nx * nx, size_t insert_index) {
 
 ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
     ssize_t consumed_characters = 0;
-    size_t previous_initial_state = TRANSITION_FAIL;
+    size_t previous_initial_state = STATE_FAILURE;
     size_t subexpression_initial_state = nx->n_states;
-    size_t subexpression_final_state = TRANSITION_FAIL;
+    size_t subexpression_final_state = STATE_FAILURE;
     for (const char * c = subexpression;; c++) {
         struct nx_state * s = &nx->states[nx->n_states];
         ASSERT(nx->n_states < NX_STATE_MAX);
@@ -212,52 +256,40 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
         enum nx_char nc = nx_char(*c);
         switch (*c) {
         case ')':
-            if (subexpression_final_state != TRANSITION_FAIL) {
+            if (subexpression_final_state != STATE_FAILURE) {
                 LOG("Subexpression %zu", subexpression_final_state);
-                nx->states[subexpression_final_state].transition_table[NX_CHAR_EPSILON1] = (uint16_t)(nx->n_states);
+                nx->states[subexpression_final_state].next_state[0] = (uint16_t)(nx->n_states);
             }
             return consumed_characters;
         case '\0':
-            s->type = STATE_TRANSITION;
-            for (enum nx_char i = 0; i < _NX_CHAR_MAX; i++) {
-                if (i == NX_CHAR_END) {
-                    s->transition_table[i] = TRANSITION_SUCCESS;
-                } else {
-                    s->transition_table[i] = TRANSITION_FAIL;
-                }
-            }
+            s->type = STATE_TYPE_TRANSITION;
+            s->next_state[0] = STATE_SUCCESS;
+            s->char_bitset[0] = nx_char_bit(NX_CHAR_END);
+
             nx->n_states++;
-            if (subexpression_final_state != TRANSITION_FAIL) {
+            if (subexpression_final_state != STATE_FAILURE) {
                 LOG("Subexpression %zu", subexpression_final_state);
-                nx->states[subexpression_final_state].transition_table[NX_CHAR_EPSILON1] = TRANSITION_SUCCESS;
+                nx->states[subexpression_final_state].next_state[0] = (uint16_t)(nx->n_states);
             }
             return consumed_characters;
         case 'A' ... 'Z':
         case 'a' ... 'z':
-            s->type = STATE_TRANSITION;
-            for (enum nx_char i = 0; i < _NX_CHAR_MAX; i++) {
-                if (i == nc) {
-                    s->transition_table[i] = (uint16_t)(nx->n_states + 1);
-                } else if (i == NX_CHAR_SPACE) {
-                    s->transition_table[i] = (uint16_t)nx->n_states;
-                } else {
-                    s->transition_table[i] = TRANSITION_FAIL;
-                }
-            }
+            s->type = STATE_TYPE_TRANSITION;
+            s->next_state[0] = (uint16_t)(nx->n_states + 1);
+            s->char_bitset[0] = nx_char_bit(nc);
+            s->next_state[1] = (uint16_t)(nx->n_states);
+            s->char_bitset[1] = nx_char_bit(NX_CHAR_SPACE);
+
             previous_initial_state = nx->n_states;
             nx->n_states++;
             break;
         case ' ':
             break;
         case '_': // Explicit space
-            s->type = STATE_TRANSITION;
-            for (enum nx_char i = 0; i < _NX_CHAR_MAX; i++) {
-                if (i == NX_CHAR_SPACE) {
-                    s->transition_table[i] = (uint16_t)(nx->n_states + 1);
-                } else {
-                    s->transition_table[i] = TRANSITION_FAIL;
-                }
-            }
+            s->type = STATE_TYPE_TRANSITION;
+            s->next_state[0] = (uint16_t)(nx->n_states + 1);
+            s->char_bitset[0] = nx_char_bit(NX_CHAR_SPACE);
+
             previous_initial_state = nx->n_states;
             nx->n_states++;
             break;
@@ -271,21 +303,18 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
                 consumed_characters++;
             }
 
-            s->type = STATE_TRANSITION;
-            for (enum nx_char i = 0; i < _NX_CHAR_MAX; i++) {
-                if (i == NX_CHAR_SPACE) {
-                    s->transition_table[i] = (uint16_t)nx->n_states;
-                } else if (i >= NX_CHAR_A && i <= NX_CHAR_Z) {
-                    s->transition_table[i] = inverse ? (uint16_t)(nx->n_states + 1) : TRANSITION_FAIL;
-                } else {
-                    s->transition_table[i] = TRANSITION_FAIL;
-                }
-            }
+            s->type = STATE_TYPE_TRANSITION;
+            s->next_state[0] = (uint16_t)(nx->n_states + 1);
+            s->char_bitset[0] = 0;
+            s->next_state[1] = (uint16_t)(nx->n_states);
+            s->char_bitset[1] = nx_char_bit(NX_CHAR_SPACE);
+
             while (*c != ']' && *c != '\0') {
-                for (enum nx_char i = 0; i < _NX_CHAR_MAX; i++) {
-                    if (i == nx_char(*c)) {
-                        s->transition_table[i] = inverse ? TRANSITION_FAIL : (uint16_t)(nx->n_states + 1);
-                    }
+                if (nx_char(*c) >= NX_CHAR_A && nx_char(*c) <= NX_CHAR_Z) {
+                    s->char_bitset[0] |= nx_char_bit(nx_char(*c));
+                } else {
+                    LOG("Parse error; invalid character '%c' in [...] group", *c);
+                    return -1;
                 }
                 c++;
                 consumed_characters++;
@@ -294,88 +323,74 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
                 LOG("Parse error; unterminated [");
                 return -1;
             }
+            if (inverse) {
+                for (enum nx_char j = NX_CHAR_A; j <= NX_CHAR_Z; j++) {
+                    s->char_bitset[0] ^= nx_char_bit(j);
+                }
+            }
             previous_initial_state = nx->n_states;
             nx->n_states++;
             break;
         case '*': {
-            s->type = STATE_TRANSITION;
-            if (previous_initial_state == TRANSITION_FAIL) {
+            s->type = STATE_TYPE_TRANSITION;
+            if (previous_initial_state == STATE_FAILURE) {
                 LOG("nx parse error: '%c' without preceeding group", *c);
                 return -1;
             }
 
             struct nx_state * epsilon_s = nx_state_insert(nx, previous_initial_state++);
-            if (previous_initial_state < subexpression_final_state && subexpression_final_state != TRANSITION_FAIL) {
+            if (previous_initial_state < subexpression_final_state && subexpression_final_state != STATE_FAILURE) {
                 subexpression_final_state++;
             }
-            epsilon_s->type = STATE_TRANSITION;
+            epsilon_s->type = STATE_TYPE_TRANSITION;
+            epsilon_s->next_state[0] = (uint16_t)previous_initial_state;
+            epsilon_s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
+            epsilon_s->next_state[1] = (uint16_t)(nx->n_states + 1);
+            epsilon_s->char_bitset[1] = nx_char_bit(NX_CHAR_EPSILON);
 
             s = &nx->states[nx->n_states];
-            s->type = STATE_TRANSITION;
+            s->type = STATE_TYPE_TRANSITION;
+            s->next_state[0] = (uint16_t)previous_initial_state;
+            s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
+            s->next_state[1] = (uint16_t)(nx->n_states + 1);
+            s->char_bitset[1] = nx_char_bit(NX_CHAR_EPSILON);
 
-            for (enum nx_char i = 0; i < _NX_CHAR_MAX; i++) {
-                if (i == NX_CHAR_EPSILON1) {
-                    epsilon_s->transition_table[i] = (uint16_t)(previous_initial_state);
-                    s->transition_table[i] = (uint16_t)(previous_initial_state);
-                } else if (i == NX_CHAR_EPSILON2) {
-                    epsilon_s->transition_table[i] = (uint16_t)(nx->n_states + 1);
-                    s->transition_table[i] = (uint16_t)(nx->n_states + 1);
-                } else {
-                    epsilon_s->transition_table[i] = TRANSITION_FAIL;
-                    s->transition_table[i] = TRANSITION_FAIL;
-                }
-            }
-
-            // previous_initial_state = nx->n_states;
             nx->n_states++;
             break;
         }
         case '+':
-            s->type = STATE_TRANSITION;
-            if (previous_initial_state == TRANSITION_FAIL) {
+            s->type = STATE_TYPE_TRANSITION;
+            if (previous_initial_state == STATE_FAILURE) {
                 LOG("nx parse error: '%c' without preceeding group", *c);
                 return -1;
             }
 
             s = &nx->states[nx->n_states];
-            s->type = STATE_TRANSITION;
+            s->type = STATE_TYPE_TRANSITION;
+            s->next_state[0] = (uint16_t)previous_initial_state;
+            s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
+            s->next_state[1] = (uint16_t)(nx->n_states + 1);
+            s->char_bitset[1] = nx_char_bit(NX_CHAR_EPSILON);
 
-            for (enum nx_char i = 0; i < _NX_CHAR_MAX; i++) {
-                if (i == NX_CHAR_EPSILON1) {
-                    s->transition_table[i] = (uint16_t)(previous_initial_state);
-                } else if (i == NX_CHAR_EPSILON2) {
-                    s->transition_table[i] = (uint16_t)(nx->n_states + 1);
-                } else {
-                    s->transition_table[i] = TRANSITION_FAIL;
-                }
-            }
-
-            // previous_initial_state = nx->n_states;
             nx->n_states++;
             break;
         case '?': {
-            s->type = STATE_TRANSITION;
-            if (previous_initial_state == TRANSITION_FAIL) {
+            s->type = STATE_TYPE_TRANSITION;
+            if (previous_initial_state == STATE_FAILURE) {
                 LOG("nx parse error: '%c' without preceeding group", *c);
                 return -1;
             }
 
             struct nx_state * epsilon_s = nx_state_insert(nx, previous_initial_state++);
-            if (previous_initial_state < subexpression_final_state && subexpression_final_state != TRANSITION_FAIL) {
+            if (previous_initial_state < subexpression_final_state && subexpression_final_state != STATE_FAILURE) {
                 subexpression_final_state++;
             }
-            epsilon_s->type = STATE_TRANSITION;
-            for (enum nx_char i = 0; i < _NX_CHAR_MAX; i++) {
-                if (i == NX_CHAR_EPSILON1) {
-                    epsilon_s->transition_table[i] = (uint16_t)(previous_initial_state);
-                } else if (i == NX_CHAR_EPSILON2) {
-                    epsilon_s->transition_table[i] = (uint16_t)(nx->n_states);
-                } else {
-                    epsilon_s->transition_table[i] = TRANSITION_FAIL;
-                }
-            }
+            epsilon_s->type = STATE_TYPE_TRANSITION;
+            epsilon_s->next_state[0] = (uint16_t)previous_initial_state;
+            epsilon_s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
+            epsilon_s->next_state[1] = (uint16_t)(nx->n_states);
+            epsilon_s->char_bitset[1] = nx_char_bit(NX_CHAR_EPSILON);
 
-            // previous_initial_state = nx->n_states;
             break;
         }
         case '(':
@@ -394,41 +409,35 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             break;
         case '|': {
             struct nx_state * epsilon_s = nx_state_insert(nx, subexpression_initial_state);
-            if (subexpression_final_state != TRANSITION_FAIL) {
+            if (subexpression_final_state != STATE_FAILURE) {
                 subexpression_final_state++;
             }
 
-            epsilon_s->type = STATE_TRANSITION;
-            for (enum nx_char i = 0; i < _NX_CHAR_MAX; i++) {
-                if (i == NX_CHAR_EPSILON1) {
-                    epsilon_s->transition_table[i] = (uint16_t)(subexpression_initial_state + 1);
-                } else if (i == NX_CHAR_EPSILON2) {
-                    epsilon_s->transition_table[i] = (uint16_t)(nx->n_states);
-                } else {
-                    epsilon_s->transition_table[i] = TRANSITION_FAIL;
-                }
-            }
+            epsilon_s->type = STATE_TYPE_TRANSITION;
+            epsilon_s->next_state[0] = (uint16_t)(subexpression_initial_state + 1);
+            epsilon_s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
+            epsilon_s->next_state[1] = (uint16_t)(nx->n_states);
+            epsilon_s->char_bitset[1] = nx_char_bit(NX_CHAR_EPSILON);
 
-            if (subexpression_final_state == TRANSITION_FAIL) {
+            if (subexpression_final_state == STATE_FAILURE) {
                 subexpression_final_state = nx->n_states;
-                s = &nx->states[nx->n_states];
-                s->type = STATE_TRANSITION;
-                for (enum nx_char i = 0; i < _NX_CHAR_MAX; i++) {
-                    s->transition_table[i] = TRANSITION_FAIL;
-                }
-                epsilon_s->transition_table[NX_CHAR_EPSILON2]++;
+                s = &nx->states[subexpression_final_state];
+                s->type = STATE_TYPE_TRANSITION;
+                s->next_state[0] = STATE_FAILURE; // This is filled in at the end
+                s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
+                epsilon_s->next_state[1]++;
                 nx->n_states++;
             } else {
                 ASSERT(nx->n_states > 0);
                 struct nx_state * last_s = &nx->states[nx->n_states - 1];
-                for (enum nx_char i = 0; i < _NX_CHAR_MAX; i++) {
-                    if (last_s->transition_table[i] == (uint16_t)nx->n_states) {
-                        last_s->transition_table[i] = (uint16_t)subexpression_final_state;
+                for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
+                    if (last_s->next_state[j] == (uint16_t)nx->n_states) {
+                        last_s->next_state[j] = (uint16_t)subexpression_final_state;
                     }
                 }
             }
 
-            previous_initial_state = TRANSITION_FAIL;
+            previous_initial_state = STATE_FAILURE;
             break;
         }
         default:
@@ -454,33 +463,13 @@ struct nx * nx_compile(const char * expression) {
     ASSERT(rc == (ssize_t)strlen(nx->expression));
 
     LOG("Created NFA for \"%s\" with %zu states", expression, nx->n_states);
+    nx_nfa_debug(nx);
 
     return nx;
 
 fail:
     nx_destroy(nx);
     return NULL;
-}
-
-void nx_print_nfa(const struct nx * nx) {
-    LOG("NX NFA: %zu states", nx->n_states);
-    for (size_t i = 0; i < nx->n_states; i++) {
-        const struct nx_state * s = &nx->states[i];
-        ASSERT(s->type == STATE_TRANSITION);
-
-        printf("     [%3zu]: ", i);
-        for (enum nx_char j = 0; j < _NX_CHAR_MAX; j++) {
-            if (s->transition_table[j] == TRANSITION_FAIL) {
-                continue;
-            } else if (s->transition_table[j] == TRANSITION_SUCCESS) {
-                printf("%c->MATCH  ", nx_char_rev_print(j));
-            } else if (j != NX_CHAR_SPACE) {
-                printf("%c->%hu  ", nx_char_rev_print(j), s->transition_table[j]);
-            }
-        }
-        printf("\n");
-    }
-    printf("\n");
 }
 
 void nx_destroy(struct nx * nx) {
@@ -498,13 +487,12 @@ static struct nx_set nx_match_transition2(const struct nx * nx, enum nx_char b, 
             continue;
         }
         const struct nx_state * s = &nx->states[si];
-        ASSERT(s->type == STATE_TRANSITION);
+        ASSERT(s->type == STATE_TYPE_TRANSITION);
 
-        if (b == NX_CHAR_EPSILON1 || b == NX_CHAR_EPSILON2) {
-            nx_set_add(&new_ss, s->transition_table[NX_CHAR_EPSILON1]);
-            nx_set_add(&new_ss, s->transition_table[NX_CHAR_EPSILON2]);
-        } else {
-            nx_set_add(&new_ss, s->transition_table[b]);
+        for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
+            if (nx_char_bit(b) & s->char_bitset[j]) {
+                nx_set_add(&new_ss, s->next_state[j]);
+            }
         }
     }
     return new_ss;
@@ -518,7 +506,7 @@ static struct nx_set nx_match_transition(const struct nx * nx, enum nx_char b, s
     struct nx_set new_ss = nx_match_transition2(nx, b, ss);
     while (true) {
         ss = new_ss;
-        const struct nx_set epsilon_ss = nx_match_transition2(nx, NX_CHAR_EPSILON1, ss);
+        const struct nx_set epsilon_ss = nx_match_transition2(nx, NX_CHAR_EPSILON, ss);
         nx_set_orequal(&new_ss, &epsilon_ss);
         if (memcmp(&ss, &new_ss, sizeof(ss)) == 0) {
             break;
@@ -529,7 +517,7 @@ static struct nx_set nx_match_transition(const struct nx * nx, enum nx_char b, s
 
 static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, size_t bi, struct nx_set ss,
                           size_t n_errors) {
-    if (nx_set_test(&ss, TRANSITION_SUCCESS)) {
+    if (nx_set_test(&ss, STATE_SUCCESS)) {
         return 0;
     }
     struct nx_set err_ss = {0};
@@ -537,10 +525,10 @@ static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, siz
         struct nx_set next_ss = nx_match_transition(nx, buffer[bi], ss);
         struct nx_set next_err_ss = nx_match_transition(nx, buffer[bi], err_ss);
         size_t next_bi = bi + 1;
-        if (nx_set_test(&next_ss, TRANSITION_SUCCESS)) {
+        if (nx_set_test(&next_ss, STATE_SUCCESS)) {
             return 0;
         }
-        if (nx_set_test(&next_err_ss, TRANSITION_SUCCESS)) {
+        if (nx_set_test(&next_err_ss, STATE_SUCCESS)) {
             return 1;
         }
         if (n_errors > 0) {
@@ -593,7 +581,7 @@ int nx_match(const struct nx * nx, const char * input, size_t n_errors) {
         }
     }
 
-    struct nx_set ss = nx_match_transition(nx, NX_CHAR_EPSILON1, NX_SET_START);
+    struct nx_set ss = nx_match_transition(nx, NX_CHAR_EPSILON, NX_SET_START);
     nx_set_orequal(&ss, &NX_SET_START);
     return nx_match_fuzzy(nx, buffer, 0, ss, n_errors);
 }
@@ -606,10 +594,9 @@ static int64_t now() {
 
 void nx_test(void) {
     // struct nx * nx = nx_compile("([^asdfzyxwv]el([lw]o)+r[lheld]*)+");
-    struct nx * nx = nx_compile("he?a?z?l+?oworld");
+    // struct nx * nx = nx_compile("he?a?z?l+?oworld");
     // struct nx * nx = nx_compile("(thing|hello|asdf|world)*");
-    // struct nx * nx = nx_compile("helloworld");
-    nx_print_nfa(nx);
+    struct nx * nx = nx_compile("helloworld");
     const char * s[] = {
         "helloworld",  "hello",     "helloworldhello", "helloworldhelloworld", "h e l l o w o r l d",  "helloworl",
         "helloworlda", "heloworld", "hellloworld",     "hellaworld",           "aaaaasdfawjeojworkld", "heoworld",
