@@ -1,4 +1,5 @@
 #include "filter.h"
+#include "nx.h"
 #include <regex.h>
 
 static bool difference_size_less_than(const char * superset, const char * subset, size_t max_size) {
@@ -48,6 +49,7 @@ struct filter {
 
     // Internal
     regex_t preg;
+    struct nx * nx;
     struct word w;
 };
 
@@ -220,6 +222,28 @@ const struct word * filter_extractq_apply(struct filter * f, const struct word *
     return NULL;
 }
 
+int filter_nx_init(struct filter * f) {
+    if (f->arg_n == -1ul) {
+        f->arg_n = 0;
+    }
+
+    f->nx = nx_compile(f->arg_str);
+    if (f->nx == NULL) {
+        return -1;
+    }
+    return 0;
+}
+
+void filter_nx_term(struct filter * f) { nx_destroy(f->nx); }
+
+const struct word * filter_nx_apply(struct filter * f, const struct word * w, const struct wordset * ws) {
+    (void)ws;
+    if (nx_match(f->nx, str_str(&w->canonical), f->arg_n) >= 0) {
+        return w;
+    }
+    return NULL;
+}
+
 //
 
 #define FILTERS                                                                                                        \
@@ -231,7 +255,8 @@ const struct word * filter_extractq_apply(struct filter * f, const struct word *
     X(TRANSDELETE, transdelete)                                                                                        \
     X(BANK, bank)                                                                                                      \
     X(EXTRACT, extract)                                                                                                \
-    X(EXTRACTQ, extractq)
+    X(EXTRACTQ, extractq)                                                                                              \
+    X(NX, nx)
 
 const struct filter_vtbl filter_vtbls[] = {
 #define X(N, n)                                                                                                        \

@@ -35,9 +35,13 @@ int main() {
 
     // const char * regex = "^\\(test\\|hello\\|as\\|pen\\|world\\|[isdf][isdf]\\|a\\?b\\?c\\?d\\?e\\?\\)\\+$";
     // const char * regex = "^hellt?oworld$";
+    // const char * regex = "T?E?R?O?L?K?C?I?L?S?T?G?O?N?C?I?L?B?K?S?M?A?G?T?F?O?D?N?I?K?O?P?G?A?E?E?H?T?H?E?R?C?";
+    // const char * regex =
+    // "MO?R?E?N?O?S?P?O?O?K?Y?I?S?N?O?E?R?P?A?D?I?G?S?T?U?N?R?I?T?C?E?L?L?O?B?C?I?N?N?O?S?R?G?E?P?";
     // const char *regex = "^\\([asdf][asdf]\\)\\+$";
-    const char * regex = "^h\\(e\\|ow\\)l*o\\?w*[orza]\\+l\\?d*$";
+    // const char * regex = "^h\\(e\\|ow\\)l*o\\?w*[orza]\\+l\\?d*$";
     // const char *regex = "^helloworld$";
+    const char * regex = "^(goodbye|(hellt?o)+)worq?[aild]*d$";
     struct nx * nx = nx_compile(regex);
     int64_t t = now();
     size_t n_matches[32] = {0};
@@ -74,7 +78,7 @@ int main() {
         int rc1 = nx_match(nx, s, 0);
         int rc2 = regexec(&preg, s, 0, NULL, 0);
         if ((rc1 == 0) != (rc2 == 0)) {
-            LOG("Mismatch on \"%s\": nx=%d, regexec=%d", s, rc1, rc2);
+            // LOG("Mismatch on \"%s\": nx=%d, regexec=%d", s, rc1, rc2);
             n_mismatches++;
         }
     }
@@ -87,12 +91,12 @@ int main() {
     struct wordset combo_ws;
     wordset_init(&combo_ws, "combo matches");
     t = now();
-    int rc = nx_combo_match(nx, ws, 5, &combo_ws, &buffer);
+    int rc = nx_combo_match(nx, ws, 3, &combo_ws, &buffer);
     t = now() - t;
     LOG("Combo match found %zu matches (rc = %d) in %ld ns (%ld ms)", combo_ws.words_count, rc, t, t / (long)1e6);
 
     nx_destroy(nx);
-    return 0;
+    // return 0;
 
     struct anatree * at = anatree_create(ws);
     int64_t start_ns = now();
@@ -118,13 +122,14 @@ int main() {
     filter_term(&f);
     */
 
-    // struct filter * f1 = NONNULL(filter_parse("extract: ab(.{7})"));
-    struct filter * f1 = NONNULL(filter_parse("superanagram: eeeeeeeee"));
+    struct filter * f1 = NONNULL(filter_parse("extract: ab(.{7})"));
+    // struct filter * f1 = NONNULL(filter_parse("superanagram: eeee"));
     struct filter * f2 = NONNULL(filter_parse("extractq: .(.*)."));
-    // struct filter * f3 = NONNULL(filter_parse("anagram: .*e(..).*"));
+    struct filter * f3 = NONNULL(filter_parse("nx 1: .*in"));
+    // struct filter * f4 = NONNULL(filter_parse("anagram: .*e(..).*"));
     struct wordset wso;
     wordset_init(&wso, "filter matches");
-    filter_chain_apply((struct filter * const[]){f1, f2}, 1, ws, &wso, &buffer);
+    filter_chain_apply((struct filter * const[]){f1, f2, f3}, 3, ws, &wso, &buffer);
     wordset_print(&wso);
 
     struct word wt;

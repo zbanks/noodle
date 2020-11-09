@@ -12,6 +12,7 @@ enum filter_type {
     FILTER_BANK,
     FILTER_EXTRACT,
     FILTER_EXTRACTQ,
+    FILTER_NX,
     _FILTER_TYPE_MAX,
 };
 

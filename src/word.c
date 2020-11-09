@@ -115,7 +115,7 @@ void word_init(struct word * w, const char * original, int value) {
     char * s = str_init(&w->sorted, str_str(&w->canonical), strlen(original));
     (void)s;
     (void)cmp_letter;
-    // qsort(s, strlen(s), 1, &cmp_letter);
+    qsort(s, strlen(s), 1, &cmp_letter);
 }
 
 void word_init_copy(struct word * dst, const struct word * src) {
