@@ -1,10 +1,4 @@
-#include "anatree.h"
-#include "filter.h"
-#include "nx.h"
-#include "nx_combo.h"
-#include "prelude.h"
-#include "word.h"
-#include "wordlist.h"
+#include "libnoodle.h"
 #include <regex.h>
 #include <time.h>
 

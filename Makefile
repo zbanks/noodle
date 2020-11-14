@@ -1,4 +1,4 @@
-TARGETS = libnoodle.so noodle
+TARGETS = libnoodle.so noodle noodle.cpython-39-x86_64-linux-gnu.so
 
 CC=gcc
 
@@ -10,9 +10,9 @@ CFLAGS += -flto
 CFLAGS += -fPIC -fvisibility=hidden
 CFLAGS += -Isrc/
 CFLAGS += -DDEBUG
-LFLAGS = -Wl,-rpath,"."
+LFLAGS = -Wl,-z,origin '-Wl,-rpath=$$ORIGIN'
 
-SRCS = \
+LIB_SRCS = \
 	src/anatree.c \
 	src/filter.c \
 	src/nx.c \
@@ -20,10 +20,16 @@ SRCS = \
 	src/word.c \
 	src/wordlist.c \
 
+# Disable built-in rules
+MAKEFLAGS += --no-builtin-rules
+.SUFFIXES:
+
+# Create a folder for intermediate build artifacts
 $(shell mkdir -p build)
-OBJECTS = $(patsubst src/%.c,build/%.o,$(SRCS))
+
+OBJECTS = $(patsubst src/%.c,build/%.o,$(LIB_SRCS))
 DEPS = $(OBJECTS:.o=.d) build/main.d
--include $(DEPS)
+include $(DEPS)
 
 build/%.o: src/%.c
 	$(CC) -c $(CFLAGS) src/$*.c -o build/$*.o
@@ -34,8 +40,11 @@ build/%.d: src/%.c
 libnoodle.so: $(OBJECTS) | $(DEPS)
 	$(CC) $^ -shared $(CFLAGS) $(LFLAGS) -o $@
 
-noodle: src/main.c libnoodle.so | $(DEPS)
+noodle: src/main.o libnoodle.so | $(DEPS)
 	$(CC) $^ $(CFLAGS) $(LFLAGS) -o $@
+
+noodle.cpython-39-x86_64-linux-gnu.so: libnoodle.so
+	python3.9 build_cffi.py && cp build/$@ $@
 
 .PHONY: format clean all
 format:

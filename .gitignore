@@ -53,3 +53,15 @@ dkms.conf
 
 # Binaries
 noodle
+
+# Python
+__pycache__
+
+# Temporary files
+build/
+
+# Perf output
+perf.data*
+
+# Word lists
+consolidated.txt
