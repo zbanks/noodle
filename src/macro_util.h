@@ -42,4 +42,4 @@
 #define CONCAT(x, y) CONCAT2(x, y)
 #define CONCAT2(x, y) x##y
 
-#define NOODLE_EXPORT __attribute__ ((visibility("default")))
+#define NOODLE_EXPORT __attribute__((visibility("default")))

@@ -22,6 +22,6 @@ struct filter;
 
 NOODLE_EXPORT struct filter * filter_create(enum filter_type type, size_t n_arg, const char * str_arg);
 NOODLE_EXPORT struct filter * filter_parse(const char * spec);
-NOODLE_EXPORT void filter_chain_apply(struct filter * const * fs, size_t n_fs, struct wordset * input, struct wordset * output,
-                        struct wordlist * buffer);
+NOODLE_EXPORT void filter_chain_apply(struct filter * const * fs, size_t n_fs, struct wordset * input,
+                                      struct wordset * output, struct wordlist * buffer);
 NOODLE_EXPORT void filter_destroy(struct filter * f);

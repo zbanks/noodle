@@ -1,4 +1,4 @@
-TARGETS = libnoodle.so noodle noodle.cpython-39-x86_64-linux-gnu.so
+TARGETS = libnoodle.so noodle noodle_ffi.cpython-39-x86_64-linux-gnu.so
 
 CC=gcc
 
@@ -29,7 +29,7 @@ $(shell mkdir -p build)
 
 OBJECTS = $(patsubst src/%.c,build/%.o,$(LIB_SRCS))
 DEPS = $(OBJECTS:.o=.d) build/main.d
-include $(DEPS)
+-include $(DEPS)
 
 build/%.o: src/%.c
 	$(CC) -c $(CFLAGS) src/$*.c -o build/$*.o
@@ -43,12 +43,13 @@ libnoodle.so: $(OBJECTS) | $(DEPS)
 noodle: src/main.o libnoodle.so | $(DEPS)
 	$(CC) $^ $(CFLAGS) $(LFLAGS) -o $@
 
-noodle.cpython-39-x86_64-linux-gnu.so: libnoodle.so
-	python3.9 build_cffi.py && cp build/$@ $@
+noodle_ffi.cpython-39-x86_64-linux-gnu.so: build_cffi.py | libnoodle.so
+	python3.9 $< && cp build/$@ $@
 
 .PHONY: format clean all
 format:
 	clang-format -i src/*.c src/*.h
+	black -q .
 
 clean:
 	-rm -rf build $(TARGETS)

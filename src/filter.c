@@ -216,7 +216,7 @@ const struct word * filter_extractq_apply(struct filter * f, const struct word *
         buffer[len] = '\0';
 
         word_term(&f->w);
-        word_init(&f->w, buffer, w->value);
+        word_init(&f->w, buffer, word_value(w));
         return &f->w;
     }
     return NULL;

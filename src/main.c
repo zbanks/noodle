@@ -128,10 +128,10 @@ int main() {
     filter_chain_apply((struct filter * const[]){f1, f2, f3}, 3, ws, &wso, &buffer);
     wordset_print(&wso);
 
-    //struct word wt;
-    //word_tuple_init(&wt, wso.words, 3);
-    //LOG("wordtuple: %s", word_debug(&wt));
-    //word_term(&wt);
+    // struct word wt;
+    // word_tuple_init(&wt, wso.words, 3);
+    // LOG("wordtuple: %s", word_debug(&wt));
+    // word_term(&wt);
 
     wordset_term(&wso);
     filter_destroy(f1);

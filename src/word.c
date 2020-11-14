@@ -138,16 +138,31 @@ void word_term(struct word * w) {
     str_term(&w->sorted);
 }
 
+int word_value(const struct word * w) {
+    if (w == NULL) {
+        return 0;
+    } else if (!w->is_tuple) {
+        return w->value;
+    } else {
+        // Take max over all words, recursively
+        int value = word_value(w->tuple_words[0]);
+        for (size_t i = 1; i < WORD_TUPLE_N; i++) {
+            value = MAX(value, word_value(w->tuple_words[i]));
+        }
+        return value;
+    }
+}
+
 int word_value_cmp(const void * _x, const void * _y) {
     const struct word * x = _x;
     const struct word * y = _y;
-    return cmp(y->value, x->value);
+    return cmp(word_value(y), word_value(x));
 }
 
 int word_value_ptrcmp(const void * _x, const void * _y) {
     const struct word * const * x = _x;
     const struct word * const * y = _y;
-    return cmp((*y)->value, (*x)->value);
+    return cmp(word_value(*y), word_value(*x));
 }
 
 void word_tuple_init(struct word * w, const struct word * const * tuple_words, size_t n_tuple_words) {
@@ -209,6 +224,4 @@ const char * word_debug(const struct word * w) {
     return buffer;
 }
 
-const char * word_canonical(const struct word * w) {
-    return str_str(&w->canonical);
-}
+const char * word_canonical(const struct word * w) { return str_str(&w->canonical); }

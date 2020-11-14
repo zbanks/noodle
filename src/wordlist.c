@@ -117,11 +117,12 @@ static struct word * wordlist_alloc(struct wordlist * wl) {
     return &wl->chunks[i][j];
 }
 
-void wordlist_add(struct wordlist * wl, const char * s, int v) {
+const struct word * wordlist_add(struct wordlist * wl, const char * s, int v) {
     struct word * w = wordlist_alloc(wl);
     word_init(w, s, v);
     w->owned = true;
     wordset_add(&wl->self_set, w);
+    return w;
 }
 
 const struct word * wordlist_ensure_owned(struct wordlist * wl, const struct word * src) {

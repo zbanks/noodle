@@ -5,7 +5,10 @@
 #define NX_SET_SIZE ((size_t)256)
 #define NX_BRANCH_COUNT ((size_t)2)
 
-#define NX_SET_ARRAYLEN ((NX_SET_SIZE + 63) / 64)
+#define NX_SET_ARRAYLEN ((size_t)4)
+//#define NX_SET_ARRAYLEN ((NX_SET_SIZE + 63) / 64)
+_Static_assert(NX_SET_ARRAYLEN == ((NX_SET_SIZE + 63) / 64), "Invalid NX_SET_ARRAYLEN");
+
 struct nx_set {
     uint64_t xs[NX_SET_ARRAYLEN];
 };
@@ -51,18 +54,18 @@ struct nx_state {
             // evalutated in linear time.
             struct nx_set epsilon_states;
         };
-        /*
-        struct {
-            uint16_t transition_fail;
-            uint16_t transition_success;
-            int16_t anagram_arg;
-            uint8_t anagram_letters[(_NX_CHAR_MAX - 4) * 2];
-        };
-        */
+        // struct {
+        //    uint16_t transition_fail;
+        //    uint16_t transition_success;
+        //    int16_t anagram_arg;
+        //    uint8_t anagram_letters[(_NX_CHAR_MAX - 4) * 2];
+        //};
     };
 };
 
-#define NX_STATE_MAX (NX_SET_SIZE - 2)
+#define NX_STATE_MAX ((size_t)254)
+//#define NX_STATE_MAX (NX_SET_SIZE - 2)
+_Static_assert(NX_STATE_MAX == (NX_SET_SIZE - 2), "Invalid NX_STATE_MAX");
 struct nx {
     size_t n_states;
     struct nx_state states[NX_STATE_MAX];
@@ -73,7 +76,7 @@ struct nx {
 
 NOODLE_EXPORT struct nx * nx_compile(const char * expression);
 NOODLE_EXPORT void nx_destroy(struct nx * nx);
-NOODLE_EXPORT int nx_match(const struct nx * nx, const char * input, size_t n_errors);
-NOODLE_EXPORT struct nx_set nx_match_partial(const struct nx * nx, const enum nx_char * buffer, uint16_t si);
-
 NOODLE_EXPORT void nx_test(void);
+NOODLE_EXPORT int nx_match(const struct nx * nx, const char * input, size_t n_errors);
+
+struct nx_set nx_match_partial(const struct nx * nx, const enum nx_char * buffer, uint16_t si);
