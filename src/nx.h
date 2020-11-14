@@ -29,8 +29,8 @@ void nx_char_translate(const char * input, enum nx_char * output, size_t output_
 struct nx_state {
     enum {
         STATE_TYPE_TRANSITION,
-        STATE_ANAGRAM_EXACT,
-        STATE_ANAGRAM_LIMIT,
+        // STATE_ANAGRAM_EXACT,
+        // STATE_ANAGRAM_LIMIT,
     } type;
     union {
         struct {
@@ -41,6 +41,8 @@ struct nx_state {
             // Although this *could* represent the DFA form, a DFA
             // would have significantly more branching, and would probably
             // be better represented as a lookup table.
+            //
+            // This form is also very condusive to "fuzzy" matching
             uint16_t next_state[NX_BRANCH_COUNT];
             uint32_t char_bitset[NX_BRANCH_COUNT];
 
@@ -68,9 +70,10 @@ struct nx {
     char * expression;
     struct nx_set head_states;
 };
-struct nx * nx_compile(const char * expression);
-void nx_destroy(struct nx * nx);
-int nx_match(const struct nx * nx, const char * input, size_t n_errors);
-struct nx_set nx_match_partial(const struct nx * nx, const enum nx_char * buffer, uint16_t si);
 
-void nx_test(void);
+NOODLE_EXPORT struct nx * nx_compile(const char * expression);
+NOODLE_EXPORT void nx_destroy(struct nx * nx);
+NOODLE_EXPORT int nx_match(const struct nx * nx, const char * input, size_t n_errors);
+NOODLE_EXPORT struct nx_set nx_match_partial(const struct nx * nx, const enum nx_char * buffer, uint16_t si);
+
+NOODLE_EXPORT void nx_test(void);

@@ -16,8 +16,8 @@ struct anatree {
     struct anatree_node * root;
 };
 
-struct anatree * anatree_create(const struct wordset * ws);
-void anatree_destory(struct anatree * at);
+NOODLE_EXPORT struct anatree * anatree_create(const struct wordset * ws);
+NOODLE_EXPORT void anatree_destory(struct anatree * at);
+NOODLE_EXPORT void anatree_node_print(const struct anatree_node * atn);
 
-const struct anatree_node * anatree_lookup(const struct anatree * at, const char * s);
-void anatree_node_print(const struct anatree_node * atn);
+NOODLE_EXPORT const struct anatree_node * anatree_lookup(const struct anatree * at, const char * s);

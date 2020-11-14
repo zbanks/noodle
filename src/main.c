@@ -42,11 +42,12 @@ int main() {
     // const char * regex = "^h\\(e\\|ow\\)l*o\\?w*[orza]\\+l\\?d*$";
     // const char *regex = "^helloworld$";
     const char * regex = "^(goodbye|(hellt?o)+)worq?[aild]*d$";
+    // const char *regex = "^..i..e.$";
     struct nx * nx = nx_compile(regex);
     int64_t t = now();
     size_t n_matches[32] = {0};
     for (size_t i = 0; i < ws->words_count; i++) {
-        const char * s = str_str(&ws->words[i]->canonical);
+        const char * s = word_canonical(ws->words[i]);
         int rc = nx_match(nx, s, 0);
         n_matches[(size_t)(rc + 1)]++;
         // if (rc == 0) LOG("> match: %s", s);
@@ -63,7 +64,7 @@ int main() {
     t = now();
     size_t n_matches_regexec = 0;
     for (size_t i = 0; i < ws->words_count; i++) {
-        const char * s = str_str(&ws->words[i]->canonical);
+        const char * s = word_canonical(ws->words[i]);
         int rc = regexec(&preg, s, 0, NULL, 0);
         if (rc == 0) {
             n_matches_regexec++;
@@ -74,7 +75,7 @@ int main() {
 
     size_t n_mismatches = 0;
     for (size_t i = 0; i < ws->words_count; i++) {
-        const char * s = str_str(&ws->words[i]->canonical);
+        const char * s = word_canonical(ws->words[i]);
         int rc1 = nx_match(nx, s, 0);
         int rc2 = regexec(&preg, s, 0, NULL, 0);
         if ((rc1 == 0) != (rc2 == 0)) {
@@ -94,6 +95,7 @@ int main() {
     int rc = nx_combo_match(nx, ws, 3, &combo_ws, &buffer);
     t = now() - t;
     LOG("Combo match found %zu matches (rc = %d) in %ld ns (%ld ms)", combo_ws.words_count, rc, t, t / (long)1e6);
+    wordset_print(&combo_ws);
 
     nx_destroy(nx);
     // return 0;
@@ -132,10 +134,10 @@ int main() {
     filter_chain_apply((struct filter * const[]){f1, f2, f3}, 3, ws, &wso, &buffer);
     wordset_print(&wso);
 
-    struct word wt;
-    word_tuple_init(&wt, wso.words, 3);
-    LOG("wordtuple: %s", word_debug(&wt));
-    word_term(&wt);
+    //struct word wt;
+    //word_tuple_init(&wt, wso.words, 3);
+    //LOG("wordtuple: %s", word_debug(&wt));
+    //word_term(&wt);
 
     wordset_term(&wso);
     filter_destroy(f1);

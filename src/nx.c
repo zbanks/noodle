@@ -58,7 +58,7 @@ _Static_assert(_NX_CHAR_MAX < 32, "Unexpectedly large enum nx_char");
 
 enum {
     STATE_SUCCESS = NX_SET_SIZE - 1,
-    STATE_FAILURE = (uint16_t)-1, // NX_SET_SIZE,
+    STATE_FAILURE = (uint16_t)-1,
 };
 
 _Static_assert(NX_STATE_MAX < UINT16_MAX, "NX_STATE_MAX too big for a uint16_t");
@@ -111,11 +111,6 @@ static const char * nx_char_set_debug(uint32_t cs) {
 }
 
 void nx_char_translate(const char * input, enum nx_char * output, size_t output_size) {
-    /*
-    for (size_t i = 0; i < output_size; i++) {
-        output[i] = NX_CHAR_END;
-    }
-    */
     for (size_t i = 0;; i++) {
         ASSERT(i < output_size);
         output[i] = nx_char(input[i]);
@@ -404,12 +399,10 @@ struct nx * nx_compile(const char * expression) {
     struct nx * nx = NONNULL(calloc(1, sizeof(*nx)));
     nx->expression = NONNULL(strdup(expression));
 
-    if (0)
-        goto fail;
-
     ssize_t rc = nx_compile_subexpression(nx, nx->expression);
-    if (rc < 0)
+    if (rc < 0) {
         goto fail;
+    }
     ASSERT(rc == (ssize_t)strlen(nx->expression));
 
     // Calculate epsilon transitions
@@ -495,7 +488,6 @@ static struct nx_set nx_match_transition(const struct nx * nx, uint32_t bset, st
         }
         const struct nx_state * s = &nx->states[si];
         ASSERT(s->type == STATE_TYPE_TRANSITION);
-        // nx_set_orequal(&new_ss, &s->epsilon_states);
         for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
             if (bset & s->char_bitset[j]) {
                 nx_set_add(&new_ss, s->next_state[j]);
@@ -544,7 +536,6 @@ static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, siz
         struct nx_set next_ss = nx_match_transition(nx, nx_char_bit(buffer[bi]), ss);
         struct nx_set next_err_ss = nx_match_transition(nx, nx_char_bit(buffer[bi]), err_ss);
         size_t next_bi = bi + 1;
-        // LOG("[%zu] %zu = %c: %s", n_errors,  bi, nx_char_rev_print(buffer[bi]), nx_set_debug(&ss));
         if (nx_set_test(&next_ss, STATE_SUCCESS)) {
             ASSERT(buffer[bi] == NX_CHAR_END);
             return 0;
@@ -576,7 +567,6 @@ static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, siz
                     return rc + 1;
                 }
             }
-            // LOG("No matches after state %s", nx_set_debug(&ss));
             return -1;
         }
 

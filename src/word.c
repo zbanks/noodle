@@ -208,3 +208,7 @@ const char * word_debug(const struct word * w) {
     word_debug_iter(w, buffer);
     return buffer;
 }
+
+const char * word_canonical(const struct word * w) {
+    return str_str(&w->canonical);
+}
