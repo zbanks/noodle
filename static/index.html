@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+    <head>
+        <title>Noodle</title>
+        <style>
+            body {
+            }
+            textarea {
+                width: min(600px, 90%);
+                height: 300px;
+                font-family: Monospace;
+                font-size: 1.4rem;
+            }
+            #output {
+                font-family: Monospace;
+                font-size: 1.2rem;
+                white-space: pre;
+            }
+            .column-container {
+                display: flex;
+            }
+            .column {
+                flex-grow: 1;
+                margin: 10px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Noodle</h1>
+        <div class="column-container">
+            <div class="column">
+                <h2>Input</h2>
+                <textarea id="input"></textarea>
+                <div>
+                    <button id="send">Send</button>
+                </div>
+            </div>
+            <div class="column">
+                <h2>Output</h2>
+                <div id="output">
+                </div>
+            </div>
+            <div class="column">
+                <h2>Help</h2>
+<!-- generated from `pandoc help.md` -->
+<p>Specify filters in the input textbox. Each line is treated as a filter.</p>
+<p>The filters are &quot;chained&quot; together, in order. The output pane shows which words matched the entire filter chain.</p>
+<h4><code>nx [N]: &lt;noodlex&gt;</code></h4>
+<p>Evalute noodle expression</p>
+<p>If <code>N</code> is provided, perform a fuzzy match with up to <code>N</code> edits. (NB: consecutive inserts are not allowed)</p>
+<p>Supported regex features: <code>[...]</code>, <code>[^...]</code>, <code>.</code>, <code>*</code>, <code>+</code>, <code>?</code>, <code>(...)</code>, <code>|</code>.</p>
+<p>Matches are case-insentive. Spaces are ignored both in the expression, and the matched word. An <code>_</code> in the expression matches an space character in a word.</p>
+<h4><code>regex: &lt;regex&gt;</code></h4>
+<p>Evaluate regular expression. Matches are case-insentive. The whole word must match, it is implicitly wrapped in <code>^...$</code>.</p>
+<h4><code>extract: &lt;regex&gt;</code></h4>
+<p>Evalulate regular expression, but return the first capture group (it must also be a word)</p>
+<h4><code>extractq: &lt;regex&gt;</code></h4>
+<p>Evalulate regular expression, but return the first capture group (it does not have to be a word)</p>
+<h4><code>anagram: &lt;letters&gt;</code></h4>
+<p>Anagram</p>
+<h4><code>subanagram: &lt;letters&gt;</code></h4>
+<p>Contains at most the given letters</p>
+<h4><code>superanagram: &lt;letters&gt;</code></h4>
+<p>Contains at least the given letters</p>
+<h4><code>transadd N: &lt;letters&gt;</code></h4>
+<p>Contains the given letters, plus <code>N</code> extras</p>
+<h4><code>transdelete N: &lt;letters&gt;</code></h4>
+<p>Contains the given letters, except <code>N</code> of them</p>
+<h4><code>bank: &lt;letters&gt;</code></h4>
+<p>Only contains the given letters (but with repeats)</p>
+<!-- end help -->
+            </div>
+        </div>
+        <script type="text/javascript">
+            document.querySelector("#send").addEventListener("click", function() {
+                var input = document.querySelector("#input").value;
+                console.log(input);
+                var req = new XMLHttpRequest();
+                req.addEventListener("load", function() {
+                    document.querySelector("#output").innerText = this.responseText;
+                });
+                req.open("POST", "/");
+                req.setRequestHeader("Content-Type", "text/plain");
+                req.send(input);
+            });
+        </script>
+    </body>
+</html>

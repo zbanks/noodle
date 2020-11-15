@@ -224,7 +224,13 @@ const struct word * filter_extractq_apply(struct filter * f, const struct word *
 
 int filter_nx_init(struct filter * f) {
     if (f->arg_n == -1ul) {
-        f->arg_n = 0;
+        f->arg_n = f->vtbl->type == FILTER_NX ? 0 : 2;
+    }
+    if (f->vtbl->type == FILTER_NXN) {
+        if (f->arg_n > WORD_TUPLE_N) {
+            LOG("Max number of words for nxn is %zu", WORD_TUPLE_N);
+            return -1;
+        }
     }
 
     f->nx = nx_compile(f->arg_str);
@@ -244,6 +250,18 @@ const struct word * filter_nx_apply(struct filter * f, const struct word * w, co
     return NULL;
 }
 
+#define filter_nxn_init filter_nx_init
+#define filter_nxn_term filter_nx_term
+
+const struct word * filter_nxn_apply(struct filter * f, const struct word * w, const struct wordset * ws) {
+    // TODO
+    (void)f;
+    (void)w;
+    (void)ws;
+    // nx_combo_match(f->nx, ws, f->arg_n, output, buffer);
+    return NULL;
+}
+
 //
 
 #define FILTERS                                                                                                        \
@@ -256,7 +274,8 @@ const struct word * filter_nx_apply(struct filter * f, const struct word * w, co
     X(BANK, bank)                                                                                                      \
     X(EXTRACT, extract)                                                                                                \
     X(EXTRACTQ, extractq)                                                                                              \
-    X(NX, nx)
+    X(NX, nx)                                                                                                          \
+    X(NXN, nxn)
 
 const struct filter_vtbl filter_vtbls[] = {
 #define X(N, n)                                                                                                        \
@@ -290,7 +309,7 @@ struct filter * filter_create(enum filter_type type, size_t n, const char * str)
 
     int rc = 0;
     if (f->vtbl->init != NULL) {
-        f->vtbl->init(f);
+        rc = f->vtbl->init(f);
     }
     if (rc != 0) {
         free(f->arg_str);
@@ -368,15 +387,17 @@ void filter_apply(struct filter * f, struct wordlist * input, struct wordset * o
 }
 */
 
-void filter_chain_apply(struct filter * const * fs, size_t n_fs, struct wordset * input, struct wordset * output,
-                        struct wordlist * buffer) {
+void filter_chain_apply(struct filter * const * fs, size_t n_fs, struct wordset * input, struct cursor * cursor,
+                        struct wordset * output, struct wordlist * buffer) {
     ASSERT(fs != NULL);
     ASSERT(input != NULL);
+    ASSERT(cursor != NULL);
     ASSERT(output != NULL);
     ASSERT(buffer != NULL);
     ASSERT(input != output);
 
-    for (size_t i = 0; i < input->words_count; i++) {
+    cursor->total_input_items = input->words_count;
+    for (size_t i = cursor->input_index; cursor_update_input(cursor, i); i++) {
         const struct word * w = input->words[i];
         for (size_t j = 0; j < n_fs; j++) {
             w = fs[j]->vtbl->apply(fs[j], w, input);
@@ -389,6 +410,7 @@ void filter_chain_apply(struct filter * const * fs, size_t n_fs, struct wordset 
                 w = wordlist_ensure_owned(buffer, w);
             }
             wordset_add(output, w);
+            cursor_update_output(cursor, output->words_count);
         }
     }
     return;
@@ -403,4 +425,18 @@ void filter_destroy(struct filter * f) {
     }
     free(f->arg_str);
     free(f);
+}
+
+NOODLE_EXPORT const char * filter_debug(struct filter * f) {
+    static char buffer[2048];
+    if (f->arg_str == NULL && f->arg_n == -1ul) {
+        return f->vtbl->name;
+    } else if (f->arg_n == -1ul) {
+        snprintf(buffer, sizeof(buffer), "%s: %s", f->vtbl->name, f->arg_str);
+    } else if (f->arg_str == NULL) {
+        snprintf(buffer, sizeof(buffer), "%s %zu:", f->vtbl->name, f->arg_n);
+    } else {
+        snprintf(buffer, sizeof(buffer), "%s %zu: %s", f->vtbl->name, f->arg_n, f->arg_str);
+    }
+    return buffer;
 }

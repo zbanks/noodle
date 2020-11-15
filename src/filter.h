@@ -1,5 +1,6 @@
 #pragma once
 #include "prelude.h"
+#include "time_util.h"
 #include "wordlist.h"
 
 enum filter_type {
@@ -13,15 +14,15 @@ enum filter_type {
     FILTER_EXTRACT,
     FILTER_EXTRACTQ,
     FILTER_NX,
+    FILTER_NXN,
     _FILTER_TYPE_MAX,
 };
 
-extern const char * const filter_type_names[];
-
 struct filter;
 
-NOODLE_EXPORT struct filter * filter_create(enum filter_type type, size_t n_arg, const char * str_arg);
+NOODLE_EXPORT struct filter * filter_create(enum filter_type type, size_t arg_n, const char * arg_str);
 NOODLE_EXPORT struct filter * filter_parse(const char * spec);
 NOODLE_EXPORT void filter_chain_apply(struct filter * const * fs, size_t n_fs, struct wordset * input,
-                                      struct wordset * output, struct wordlist * buffer);
+                                      struct cursor * cursor, struct wordset * output, struct wordlist * buffer);
 NOODLE_EXPORT void filter_destroy(struct filter * f);
+NOODLE_EXPORT const char * filter_debug(struct filter * f);

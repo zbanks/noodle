@@ -5,8 +5,8 @@ CC=gcc
 CFLAGS += -std=c11 -D_DEFAULT_SOURCE
 CFLAGS += -Wall -Wextra -Wconversion -Werror
 CFLAGS += -ggdb3
-CFLAGS += -O3
-CFLAGS += -flto
+CFLAGS += -O3 -flto
+CFLAGS += -fwrapv
 CFLAGS += -fPIC -fvisibility=hidden
 CFLAGS += -Isrc/
 CFLAGS += -DDEBUG
@@ -17,6 +17,7 @@ LIB_SRCS = \
 	src/filter.c \
 	src/nx.c \
 	src/nx_combo.c \
+	src/time_util.c \
 	src/word.c \
 	src/wordlist.c \
 
@@ -35,12 +36,12 @@ build/%.o: src/%.c
 	$(CC) -c $(CFLAGS) src/$*.c -o build/$*.o
 
 build/%.d: src/%.c
-	$(CC) -MM $(CFLAGS) src/$*.c > build/$*.d
+	@$(CC) -MM $(CFLAGS) src/$*.c > build/$*.d
 
-libnoodle.so: $(OBJECTS) | $(DEPS)
+libnoodle.so: $(OBJECTS)
 	$(CC) $^ -shared $(CFLAGS) $(LFLAGS) -o $@
 
-noodle: src/main.o libnoodle.so | $(DEPS)
+noodle: build/main.o libnoodle.so
 	$(CC) $^ $(CFLAGS) $(LFLAGS) -o $@
 
 noodle_ffi.cpython-39-x86_64-linux-gnu.so: build_cffi.py | libnoodle.so
@@ -52,7 +53,7 @@ format:
 	black -q .
 
 clean:
-	-rm -rf build $(TARGETS)
+	-rm -rf build __pycache__ $(TARGETS)
 
 .PHONY: all
 all: $(TARGETS)

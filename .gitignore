@@ -59,6 +59,7 @@ __pycache__
 
 # Temporary files
 build/
+tags
 
 # Perf output
 perf.data*

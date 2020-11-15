@@ -1,12 +1,5 @@
 #include "libnoodle.h"
 #include <regex.h>
-#include <time.h>
-
-int64_t now() {
-    struct timespec t;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    return t.tv_sec * 1000000000 + t.tv_nsec;
-}
 
 int main() {
     nx_test();
@@ -36,9 +29,9 @@ int main() {
     // const char * regex = "^h\\(e\\|ow\\)l*o\\?w*[orza]\\+l\\?d*$";
     // const char *regex = "^helloworld$";
     const char * regex = "^(goodbye|(hellt?o)+)worq?[aild]*d$";
-    // const char *regex = "^..i..e.$";
+    // const char *regex = "^...$";
     struct nx * nx = nx_compile(regex);
-    int64_t t = now();
+    int64_t t = now_ns();
     size_t n_matches[32] = {0};
     for (size_t i = 0; i < ws->words_count; i++) {
         const char * s = word_canonical(ws->words[i]);
@@ -46,7 +39,7 @@ int main() {
         n_matches[(size_t)(rc + 1)]++;
         // if (rc == 0) LOG("> match: %s", s);
     }
-    t = now() - t;
+    t = now_ns() - t;
     LOG("> %zu misses; %zu perfect matches; %zu 1-off matches: %ld ns (%ld ms; %0.1lf ns/word)", n_matches[0],
         n_matches[1], n_matches[2], t, t / (long)1e6, (double)t / (double)ws->words_count);
     LOG("> [%zu, %zu, %zu, %zu, %zu, %zu, %zu, %zu, ...]", n_matches[0], n_matches[1], n_matches[2], n_matches[3],
@@ -55,7 +48,7 @@ int main() {
     regex_t preg;
     regcomp(&preg, regex, REG_ICASE | REG_NOSUB);
 
-    t = now();
+    t = now_ns();
     size_t n_matches_regexec = 0;
     for (size_t i = 0; i < ws->words_count; i++) {
         const char * s = word_canonical(ws->words[i]);
@@ -64,7 +57,7 @@ int main() {
             n_matches_regexec++;
         }
     }
-    t = now() - t;
+    t = now_ns() - t;
     LOG("Time for regexec evaluation: %ld ns (%ld ms)", t, t / (long)1e6);
 
     size_t n_mismatches = 0;
@@ -85,19 +78,24 @@ int main() {
     wordlist_init(&buffer, "buffer");
     struct wordset combo_ws;
     wordset_init(&combo_ws, "combo matches");
-    t = now();
-    int rc = nx_combo_match(nx, ws, 3, &combo_ws, &buffer);
-    t = now() - t;
-    LOG("Combo match found %zu matches (rc = %d) in %ld ns (%ld ms)", combo_ws.words_count, rc, t, t / (long)1e6);
+    struct cursor cursor;
+    cursor_init(&cursor);
+    // cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 0);
+    cursor_set_deadline(&cursor, 0, 0);
+    do {
+        cursor.deadline_output_index++;
+        nx_combo_match(nx, ws, 3, &cursor, &combo_ws, &buffer);
+        LOG("Combo match found %zu matches: %s", combo_ws.words_count, cursor_debug(&cursor));
+    } while (cursor.total_input_items != cursor.input_index);
     wordset_print(&combo_ws);
 
     nx_destroy(nx);
-    // return 0;
+    return 0;
 
     struct anatree * at = anatree_create(ws);
-    int64_t start_ns = now();
+    int64_t start_ns = now_ns();
     const struct anatree_node * atn = anatree_lookup(at, "smiles");
-    int64_t end_ns = now();
+    int64_t end_ns = now_ns();
     anatree_node_print(atn);
     LOG("Lookup in %lu ns", end_ns - start_ns);
     anatree_destory(at);
@@ -123,9 +121,15 @@ int main() {
     struct filter * f2 = NONNULL(filter_parse("extractq: .(.*)."));
     struct filter * f3 = NONNULL(filter_parse("nx 1: .*in"));
     // struct filter * f4 = NONNULL(filter_parse("anagram: .*e(..).*"));
+    cursor_init(&cursor);
+    cursor_set_deadline(&cursor, now_ns() + (int)1e9, 0);
     struct wordset wso;
     wordset_init(&wso, "filter matches");
-    filter_chain_apply((struct filter * const[]){f1, f2, f3}, 3, ws, &wso, &buffer);
+    do {
+        cursor.deadline_output_index++;
+        filter_chain_apply((struct filter * const[]){f1, f2, f3}, 3, ws, &cursor, &wso, &buffer);
+        LOG("Cursor state: %s", cursor_debug(&cursor));
+    } while (cursor.input_index != cursor.total_input_items);
     wordset_print(&wso);
 
     // struct word wt;
