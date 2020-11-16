@@ -14,13 +14,14 @@
             #output {
                 font-family: Monospace;
                 font-size: 1.2rem;
-                white-space: pre;
+                white-space: pre-wrap;
             }
             .column-container {
                 display: flex;
+                flex-flow: row wrap;
             }
             .column {
-                flex-grow: 1;
+                width: max(30%, 300px);
                 margin: 10px;
             }
         </style>
@@ -33,6 +34,7 @@
                 <textarea id="input"></textarea>
                 <div>
                     <button id="send">Send</button>
+                    <button id="stop">Stop</button>
                 </div>
             </div>
             <div class="column">
@@ -72,16 +74,52 @@
             </div>
         </div>
         <script type="text/javascript">
-            document.querySelector("#send").addEventListener("click", function() {
+            function stop() {
+                if (window.req) {
+                    console.log("aborting xhr", window.req);
+                    window.req.abort();
+                    window.req = null;
+                }
+            }
+            function processResponse(text) {
+                if (!text) {
+                    return "";
+                }
+                output = "";
+                header = [];
+                var lines = text.split("\n");
+                for (var i = 0; i < lines.length; i++) {
+                    var line = lines[i];
+                    if (line[0] == "#") {
+                        header[+line[1]] = line.slice(3);
+                    } else {
+                        output += line + "\n";
+                    }
+                }
+                return header.join("\n") + "\n" + output;
+            }
+            function submit() {
+                stop();
                 var input = document.querySelector("#input").value;
-                console.log(input);
                 var req = new XMLHttpRequest();
-                req.addEventListener("load", function() {
-                    document.querySelector("#output").innerText = this.responseText;
-                });
+                var updateOutput = function() {
+                    document.querySelector("#output").innerText = processResponse(this.responseText);
+                };
+                updateOutput();
+                req.addEventListener("load", updateOutput);
+                req.addEventListener("loadstart", updateOutput);
+                req.addEventListener("progress", updateOutput);
                 req.open("POST", "/");
                 req.setRequestHeader("Content-Type", "text/plain");
                 req.send(input);
+                window.req = req;
+            }
+            document.querySelector("#stop").addEventListener("click", stop);
+            document.querySelector("#send").addEventListener("click", submit);
+            document.querySelector("#input").addEventListener("keydown", function (e) {
+                if (e.keyCode == 13 && e.ctrlKey) {
+                    submit();
+                }
             });
         </script>
     </body>

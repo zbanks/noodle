@@ -4,7 +4,7 @@ from noodle_ffi import lib as noodle_lib
 from noodle_ffi import ffi
 import itertools
 
-__all__ = ["Word", "WordSet", "WordList", "Filter", "Nx", "now_ns"]
+__all__ = ["Word", "WordSet", "WordList", "Filter", "Nx", "Cursor", "now_ns"]
 
 SIZE_T_MAX = (1 << 64) - 1
 
@@ -202,14 +202,15 @@ class Nx:
             return None
         return rc
 
-    def combo_match(self, input_wordset, n_words=2, output_name=None):
+    def combo_match(self, input_wordset, n_words=2, cursor=None, output_name=None):
         assert input_wordset
         if isinstance(input_wordset, WordList):
             input_wordset = input_wordset.wordset
         if output_name is None:
             output_name = "results of nx combo {}".format(n_words)
         output = WordSetAndBuffer(name=output_name)
-        cursor = Cursor.new(now_ns() + 100e6, 1e5)
+        if cursor is None:
+            cursor = Cursor.new(now_ns() + 1e9, 1e5)
         noodle_lib.nx_combo_match(
             self.p, input_wordset.p, n_words, cursor.p, output.p, output.wordlist.p
         )
@@ -236,15 +237,20 @@ class Cursor:
 
     def set_deadline(self, deadline_ns=None, deadline_output_index=None):
         if deadline_ns is None:
-            deadline_ns = 0
+            deadline_ns = self.p.deadline_ns
         if deadline_output_index is None:
-            deadline_output_index = 0
+            deadline_output_index = self.p.deadline_output_index
         noodle_lib.cursor_set_deadline(
             self.p, int(deadline_ns), int(deadline_output_index)
         )
 
     def debug(self):
         return ffi_string(noodle_lib.cursor_debug(self.p))
+
+    def is_done(self):
+        return (self.p.input_index == self.p.total_input_items) or (
+            self.p.output_index == self.p.deadline_output_index
+        )
 
 
 class WordSetAndBuffer(WordSet):
@@ -261,7 +267,9 @@ class WordSetAndBuffer(WordSet):
         noodle_lib.wordset_term(self.p)
 
 
-def filter_chain_apply(filters, input_wordset, output_name=None):
+def filter_chain_apply(
+    filters, input_wordset, cursor=None, output_name=None, output=None
+):
     assert input_wordset
     if isinstance(input_wordset, WordList):
         input_wordset = input_wordset.wordset
@@ -269,8 +277,10 @@ def filter_chain_apply(filters, input_wordset, output_name=None):
         output_name = "results of {} filter{}".format(
             len(filters), "" if len(filters) == 1 else "s"
         )
-    output = WordSetAndBuffer(name=output_name)
-    cursor = Cursor.new(now_ns() + 100e6, 1e5)
+    if output is None:
+        output = WordSetAndBuffer(name=output_name)
+    if cursor is None:
+        cursor = Cursor.new(now_ns() + 1e9, 1e5)
     noodle_lib.filter_chain_apply(
         [f.p for f in filters],
         len(filters),
@@ -279,7 +289,6 @@ def filter_chain_apply(filters, input_wordset, output_name=None):
         output.p,
         output.wordlist.p,
     )
-    print("cursor result:", cursor)
     return output
 
 
@@ -287,4 +296,30 @@ def now_ns():
     return noodle_lib.now_ns()
 
 
-# nx_combo_match(f->nx, ws, f->arg_n, output, buffer);
+def test():
+    w = Word.new("Hello, world!")
+    print("word:", str(w), repr(w))
+
+    wl = WordList.new_from_file("/usr/share/dict/words")
+    wl.add("Hello, world!", 2000)
+    wl.wordset.sort_value()
+    print(wl.debug())
+
+    f = Filter.new("regex", arg_str="hell?o.*")
+    print(f)
+    print(f.apply(wl.wordset).debug())
+
+    spec = """
+    extract: ab(.{7})
+    extractq: .(.*).
+    nx 1: .*in
+    """.strip()
+    filters = [Filter.new_from_spec(s.strip()) for s in spec.split("\n")]
+    print(filter_chain_apply(filters, wl).debug())
+
+    n = Nx.new("helloworld")
+    print(n.combo_match(wl.wordset, 3).debug())
+
+
+if __name__ == "__main__":
+    test()

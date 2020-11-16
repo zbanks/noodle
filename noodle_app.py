@@ -1,11 +1,53 @@
 #!/usr/bin/env python
 
-from noodle import Word, WordSet, WordList, Filter, Nx, filter_chain_apply
-
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+from noodle import (
+    Word,
+    WordSet,
+    WordList,
+    Filter,
+    Nx,
+    Cursor,
+    filter_chain_apply,
+    now_ns,
+)
 
 global WORDLIST
+
+
+def handle_noodle_input(input_text, cursor):
+    filters = [
+        Filter.new_from_spec(s.strip()) for s in input_text.split("\n") if s.strip()
+    ]
+
+    first = True
+    output = None
+    next_output = 0
+    while True:
+        output = filter_chain_apply(filters, WORDLIST, cursor=cursor, output=output)
+
+        output_text = ""
+        output_text += "#0 {}\n".format(cursor.debug())
+        output_text += "#1 {} match(es) for {} filter(s):\n".format(
+            len(output), len(filters)
+        )
+
+        if first:
+            output_text += "\nInput Query:\n"
+            for f in filters:
+                output_text += "    {}\n".format(f.debug())
+            output_text += "\n"
+            first = False
+
+        for i in range(next_output, len(output)):
+            word = output[i]
+            # output_text += "{:<10}{}\n".format(word.value, str(word))
+            output_text += "{}\n".format(str(word))
+        next_output = len(output)
+
+        yield output_text
 
 
 class NoodleHandler(BaseHTTPRequestHandler):
@@ -25,63 +67,30 @@ class NoodleHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         data = self.rfile.read(length).decode("utf-8")
-        print("Post:", data)
         self.send_response(200)
         self.end_headers()
 
-        filters = [
-            Filter.new_from_spec(s.strip()) for s in data.split("\n") if s.strip()
-        ]
-        output = filter_chain_apply(filters, WORDLIST)
-        output.sort_value()
+        CHUNK_TIME_NS = 50e6  # 50ms
+        TOTAL_TIME_NS = 15e9  # 15s
 
-        self.wfile.write(
-            "{} match(es) for {} filter(s):\n".format(len(output), len(filters)).encode(
-                "utf-8"
-            )
-        )
-        for f in filters:
-            self.wfile.write("    {}\n".format(f.debug()).encode("utf-8"))
-        self.wfile.write(b"\n\n")
+        cursor = Cursor.new()
+        cursor.set_deadline(now_ns() + CHUNK_TIME_NS, deadline_output_index=300)
+        total_deadline_ns = now_ns() + TOTAL_TIME_NS
 
-        if len(output):
-            max_value = output[0].value
-            format_str = "{:<" + str(len(str(max_value)) + 4) + "}{}\n"
-            for word in output:
-                self.wfile.write(
-                    format_str.format(word.value, str(word)).encode("utf-8")
-                )
-
-
-def test():
-    w = Word.new("Hello, world!")
-    print("word:", str(w), repr(w))
-
-    wl = WordList.new_from_file("/usr/share/dict/words")
-    wl.add("Hello, world!", 2000)
-    wl.wordset.sort_value()
-    print(wl.debug())
-
-    f = Filter.new("regex", arg_str="hell?o.*")
-    print(f)
-    print(f.apply(wl.wordset).debug())
-
-    spec = """
-    extract: ab(.{7})
-    extractq: .(.*).
-    nx 1: .*in
-    """.strip()
-    filters = [Filter.new_from_spec(s.strip()) for s in spec.split("\n")]
-    print(filter_chain_apply(filters, wl).debug())
-
-    n = Nx.new("helloworld")
-    print(n.combo_match(wl.wordset, 3).debug())
+        for chunk in handle_noodle_input(data, cursor):
+            try:
+                self.wfile.write(chunk.encode("utf-8"))
+            except BrokenPipeError:
+                print("Connection closed")
+                break
+            if cursor.is_done() or now_ns() > total_deadline_ns:
+                break
+            cursor.set_deadline(now_ns() + CHUNK_TIME_NS)
 
 
 if __name__ == "__main__":
-    test()
-
     WORDLIST = WordList.new_from_file("consolidated.txt", True)
+    # WORDLIST = WordList.new_from_file("/usr/share/dict/words", False)
     print("Loaded wordlist:", WORDLIST.debug())
 
     server = HTTPServer(("localhost", 8080), NoodleHandler)
