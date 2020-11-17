@@ -25,6 +25,7 @@ WORDLIST_SOURCES = [
     ("/usr/share/dict/words", False),
 ]
 
+
 def handle_noodle_input(input_text, cursor):
     nxn_match = re.match(r"^nxn ([0-9]+):(.*)$", input_text)
     if nxn_match:
@@ -103,8 +104,15 @@ class NoodleHandler(BaseHTTPRequestHandler):
                     break
                 cursor.set_deadline(now_ns() + CHUNK_TIME_NS)
         except Exception as e:
-            self.wfile.write("Encountered exception while processing query:\n    {}\n\n".format(e).encode("utf-8"))
-            self.wfile.write("Internal logs:\n\n{}".format(error_get_log()).encode("utf-8"))
+            self.wfile.write(
+                "Encountered exception while processing query:\n    {}\n\n".format(
+                    e
+                ).encode("utf-8")
+            )
+            self.wfile.write(
+                "Internal logs:\n\n{}".format(error_get_log()).encode("utf-8")
+            )
+
 
 def load_wordlist():
     global WORDLIST
@@ -113,7 +121,9 @@ def load_wordlist():
             WORDLIST = WordList.new_from_file(filename, is_scored)
             print("Loaded wordlist:", WORDLIST.debug())
             return
-    raise Exception("No wordlist found from {} candidates".format(len(WORDLIST_SOURCES)))
+    raise Exception(
+        "No wordlist found from {} candidates".format(len(WORDLIST_SOURCES))
+    )
 
 
 if __name__ == "__main__":

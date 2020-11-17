@@ -54,13 +54,13 @@ for filename in include_files:
                 exporting = False
 
 # Build the FFI library & set RPATH to search for libnoodle.so in the same folder (ORIGIN)
-ffi = cffi.FFI()
-ffi.cdef(cdefs)
-ffi.set_source(
+ffibuilder = cffi.FFI()
+ffibuilder.cdef(cdefs)
+ffibuilder.set_source(
     "noodle_ffi",
     '#include "../src/libnoodle.h"',
     libraries=["noodle"],
     extra_link_args=["-L..", "-Wl,-rpath,$ORIGIN"],
 )
 
-ffi.compile(verbose=True, tmpdir="build")
+ffibuilder.compile(verbose=True, tmpdir="build")

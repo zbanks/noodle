@@ -1,3 +1,5 @@
+# This contains pretty-printers for libnoodle data structures for use with GDB
+
 import gdb
 import gdb.printing
 
