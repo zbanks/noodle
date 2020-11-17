@@ -61,3 +61,7 @@ Contains the given letters, except `N` of them
 #### `bank: <letters>`
 
 Only contains the given letters (but with repeats)
+
+#### `score N:`
+
+The word's _score_ is at least `N`. The score is a value hard-coded in the wordlist: common words have high scores, "less real" words have low scores.
