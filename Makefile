@@ -1,8 +1,8 @@
 CC=gcc
 PYTHON=python3.9
 
+TARGET_CFFI_LIB = noodle_ffi$(shell $(PYTHON) -c 'import importlib.machinery as m; print(m.EXTENSION_SUFFIXES[0])')
 TARGETS = libnoodle.so noodle $(TARGET_CFFI_LIB)
-TARGET_CFFI_LIB = noodle_ffi.cpython-$(shell $(PYTHON) -c 'import sys; print("{0.major}{0.minor}".format(sys.version_info))')-$(shell $(CC) -dumpmachine).so
 
 CFLAGS += -std=c11 -D_DEFAULT_SOURCE
 CFLAGS += -Wall -Wextra -Wconversion -Werror
@@ -16,6 +16,7 @@ LFLAGS = -Wl,-z,origin '-Wl,-rpath=$$ORIGIN'
 
 LIB_SRCS = \
 	src/anatree.c \
+	src/error.c \
 	src/filter.c \
 	src/nx.c \
 	src/nx_combo.c \
@@ -46,7 +47,7 @@ libnoodle.so: $(OBJECTS)
 noodle: build/main.o libnoodle.so
 	$(CC) $^ $(CFLAGS) $(LFLAGS) -o $@
 
-noodle_ffi.cpython-39-x86_64-linux-gnu.so: build_cffi.py | libnoodle.so
+$(TARGET_CFFI_LIB): build_cffi.py | libnoodle.so
 	$(PYTHON) $< && cp build/$@ $@
 
 .PHONY: format clean all

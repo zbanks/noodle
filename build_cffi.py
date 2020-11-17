@@ -24,6 +24,7 @@ for filename in include_files:
     with open("src/{}".format(filename)) as f:
         exporting = False
         for line in f:
+            line = line.replace("NOODLE_PRINTF", "")
             if "NOODLE_EXPORT" in line:
                 cdefs += line.replace("NOODLE_EXPORT", "")
                 exporting = True

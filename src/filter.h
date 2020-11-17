@@ -15,6 +15,7 @@ enum filter_type {
     FILTER_EXTRACTQ,
     FILTER_NX,
     FILTER_NXN,
+    FILTER_SCORE,
     _FILTER_TYPE_MAX,
 };
 

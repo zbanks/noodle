@@ -1,7 +1,13 @@
 #pragma once
+
+#define NOODLE_EXPORT __attribute__((visibility("default")))
+
+#include "error.h"
+
 #define typeof __typeof__
 
-#define LOG(msg, ...) fprintf(stderr, "[%s:%s:%d] " msg "\n", __FILE__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+//#define LOG(msg, ...) fprintf(stderr, "[%s:%s:%d] " msg "\n", __FILE__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define LOG(msg, ...) error_write("[%s:%s:%d] " msg "\n", __FILE__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #define PLOG(msg, ...) LOG(msg " (%s)", ##__VA_ARGS__, strerror(errno))
 
 #ifdef DEBUG
@@ -41,5 +47,3 @@
 
 #define CONCAT(x, y) CONCAT2(x, y)
 #define CONCAT2(x, y) x##y
-
-#define NOODLE_EXPORT __attribute__((visibility("default")))

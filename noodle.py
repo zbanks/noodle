@@ -295,6 +295,10 @@ def filter_chain_apply(
     return output
 
 
+def error_get_log():
+    return ffi_string(noodle_lib.error_get_log())
+
+
 def now_ns():
     return noodle_lib.now_ns()
 
@@ -322,6 +326,7 @@ def test():
 
     n = Nx.new("helloworld")
     print(n.combo_match(wl.wordset, 3).debug())
+    print(repr(error_get_log()))
 
 
 if __name__ == "__main__":

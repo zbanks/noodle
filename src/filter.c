@@ -56,6 +56,10 @@ struct filter {
 //
 
 int filter_regex_init(struct filter * f) {
+    if (f->arg_str[0] == '\0') {
+        LOG("%s filter requires a string argument", f->vtbl->name);
+        return -1;
+    }
     if (f->arg_n != -1ul) {
         LOG("%s filter does not take a numeric argument", f->vtbl->name);
         return -1;
@@ -84,6 +88,10 @@ const struct word * filter_regex_apply(struct filter * f, const struct word * w,
 //
 
 int filter_anagram_init(struct filter * f) {
+    if (f->arg_str[0] == '\0') {
+        LOG("%s filter requires a string argument", f->vtbl->name);
+        return -1;
+    }
     if (f->vtbl->type == FILTER_TRANSADD || f->vtbl->type == FILTER_TRANSDELETE) {
         if (f->arg_n == -1ul) {
             LOG("%s filter requires a numeric argument", f->vtbl->name);
@@ -230,6 +238,10 @@ const struct word * filter_extractq_apply(struct filter * f, const struct word *
 }
 
 int filter_nx_init(struct filter * f) {
+    if (f->arg_str[0] == '\0') {
+        LOG("%s filter requires a string argument", f->vtbl->name);
+        return -1;
+    }
     if (f->arg_n == -1ul) {
         f->arg_n = f->vtbl->type == FILTER_NX ? 0 : 2;
     }
@@ -269,6 +281,28 @@ const struct word * filter_nxn_apply(struct filter * f, const struct word * w, c
     return NULL;
 }
 
+int filter_score_init(struct filter * f) {
+    if (f->arg_str[0] != '\0') {
+        LOG("%s filter does not take a string argument", f->vtbl->name);
+        return -1;
+    }
+    if (f->arg_n == -1ul) {
+        LOG("%s filter requires a numeric argument", f->vtbl->name);
+        return -1;
+    }
+    return 0;
+}
+
+#define filter_score_term NULL
+
+const struct word * filter_score_apply(struct filter * f, const struct word * w, const struct wordset * ws) {
+    (void)ws;
+    if (word_value(w) >= (int)f->arg_n) {
+        return w;
+    }
+    return NULL;
+}
+
 //
 
 #define FILTERS                                                                                                        \
@@ -282,7 +316,8 @@ const struct word * filter_nxn_apply(struct filter * f, const struct word * w, c
     X(EXTRACT, extract)                                                                                                \
     X(EXTRACTQ, extractq)                                                                                              \
     X(NX, nx)                                                                                                          \
-    X(NXN, nxn)
+    X(NXN, nxn)                                                                                                        \
+    X(SCORE, score)
 
 const struct filter_vtbl filter_vtbls[] = {
 #define X(N, n)                                                                                                        \
@@ -296,6 +331,7 @@ const struct filter_vtbl filter_vtbls[] = {
     FILTERS
 #undef X
 };
+_Static_assert(sizeof(filter_vtbls) / sizeof(*filter_vtbls) == _FILTER_TYPE_MAX, "Missing filter_vtbl");
 
 struct filter * filter_create(enum filter_type type, size_t n, const char * str) {
     ASSERT(str != NULL);
@@ -331,7 +367,7 @@ struct filter * filter_parse(const char * spec) {
     ASSERT(spec != NULL);
 
     regex_t preg;
-    const char * regex = "^\\s*([a-z]+)\\s*([0-9]*)\\s*:\\s*(\\S+)\\s*$";
+    const char * regex = "^\\s*([a-z]+)\\s*([0-9]*)\\s*:\\s*(\\S*)\\s*$";
     ASSERT(regcomp(&preg, regex, REG_EXTENDED | REG_ICASE) == 0);
 
     regmatch_t matches[4];
@@ -339,7 +375,7 @@ struct filter * filter_parse(const char * spec) {
     regfree(&preg);
 
     if (rc != 0) {
-        LOG("filter does not match regex '%s' !~ /%s/", spec, regex);
+        LOG("filter specification '%s' does not fit expected form: /%s/", spec, regex);
         return NULL;
     }
 
@@ -374,10 +410,6 @@ struct filter * filter_parse(const char * spec) {
 
     memset(buffer, 0, size);
     memcpy(buffer, &spec[matches[3].rm_so], (size_t)(matches[3].rm_eo - matches[3].rm_so));
-    if (*buffer == '\0') {
-        LOG("Missing str argument");
-        goto fail;
-    }
 
     struct filter * f = filter_create(type, n, buffer);
     free(buffer);

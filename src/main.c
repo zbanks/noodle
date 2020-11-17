@@ -80,17 +80,17 @@ int main() {
     wordset_init(&combo_ws, "combo matches");
     struct cursor cursor;
     cursor_init(&cursor);
-    // cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 0);
-    cursor_set_deadline(&cursor, 0, 0);
+    cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 0);
+    // cursor_set_deadline(&cursor, 0, 0);
     do {
         cursor.deadline_output_index++;
         nx_combo_match(nx, ws, 3, &cursor, &combo_ws, &buffer);
         LOG("Combo match found %zu matches: %s", combo_ws.words_count, cursor_debug(&cursor));
-    } while (cursor.total_input_items != cursor.input_index);
+    } while (cursor.total_input_items != cursor.input_index && now_ns() < cursor.deadline_ns);
     wordset_print(&combo_ws);
 
     nx_destroy(nx);
-    return 0;
+    // return 0;
 
     struct anatree * at = anatree_create(ws);
     int64_t start_ns = now_ns();
@@ -120,6 +120,7 @@ int main() {
     // struct filter * f1 = NONNULL(filter_parse("superanagram: eeee"));
     struct filter * f2 = NONNULL(filter_parse("extractq: .(.*)."));
     struct filter * f3 = NONNULL(filter_parse("nx 1: .*in"));
+    struct filter * f4 = NONNULL(filter_parse("score 10: x"));
     // struct filter * f4 = NONNULL(filter_parse("anagram: .*e(..).*"));
     cursor_init(&cursor);
     cursor_set_deadline(&cursor, now_ns() + (int)1e9, 0);
@@ -127,7 +128,7 @@ int main() {
     wordset_init(&wso, "filter matches");
     do {
         cursor.deadline_output_index++;
-        filter_chain_apply((struct filter * const[]){f1, f2, f3}, 3, ws, &cursor, &wso, &buffer);
+        filter_chain_apply((struct filter * const[]){f1, f2, f3, f4}, 4, ws, &cursor, &wso, &buffer);
         LOG("Cursor state: %s", cursor_debug(&cursor));
     } while (cursor.input_index != cursor.total_input_items);
     wordset_print(&wso);

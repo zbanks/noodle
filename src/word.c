@@ -43,7 +43,7 @@ char * str_init_buffer(struct str * s, size_t len) {
 
 void str_term(struct str * s) {
     if (s != NULL && !str_is_small(s) && s->large != NULL) {
-        cfree(s->large);
+        free(s->large);
     }
 }
 
