@@ -84,9 +84,16 @@ const struct word * filter_regex_apply(struct filter * f, const struct word * w,
 //
 
 int filter_anagram_init(struct filter * f) {
-    if (f->arg_n != -1ul) {
-        LOG("%s filter does not take a numeric argument", f->vtbl->name);
-        return -1;
+    if (f->vtbl->type == FILTER_TRANSADD || f->vtbl->type == FILTER_TRANSDELETE) {
+        if (f->arg_n == -1ul) {
+            LOG("%s filter requires a numeric argument", f->vtbl->name);
+            return -1;
+        }
+    } else {
+        if (f->arg_n != -1ul) {
+            LOG("%s filter does not take a numeric argument", f->vtbl->name);
+            return -1;
+        }
     }
     word_init(&f->w, f->arg_str, 0);
     return 0;

@@ -47,11 +47,16 @@
 <!-- generated from `pandoc help.md` -->
 <p>Specify filters in the input textbox. Each line is treated as a filter.</p>
 <p>The filters are &quot;chained&quot; together, in order. The output pane shows which words matched the entire filter chain.</p>
+<p>The query runs until the input wordlist is exhausted, 300 results are returned, or 15 seconds have past.</p>
 <h4><code>nx [N]: &lt;noodlex&gt;</code></h4>
 <p>Evalute noodle expression</p>
 <p>If <code>N</code> is provided, perform a fuzzy match with up to <code>N</code> edits. (NB: consecutive inserts are not allowed)</p>
 <p>Supported regex features: <code>[...]</code>, <code>[^...]</code>, <code>.</code>, <code>*</code>, <code>+</code>, <code>?</code>, <code>(...)</code>, <code>|</code>.</p>
 <p>Matches are case-insentive. Spaces are ignored both in the expression, and the matched word. An <code>_</code> in the expression matches an space character in a word.</p>
+<h4><code>nxn N: &lt;noodlex&gt;</code></h4>
+<p>Evalute noodle expression, matching up to <code>N</code> words.</p>
+<p>The <code>noodlex</code> expression follows the same syntax as the <code>nx</code> command, except multi-word search cannot be combined with fuzzy search.</p>
+<p><strong>Note:</strong> This is handled as a special case for now, and cannot be chained with any other filters.</p>
 <h4><code>regex: &lt;regex&gt;</code></h4>
 <p>Evaluate regular expression. Matches are case-insentive. The whole word must match, it is implicitly wrapped in <code>^...$</code>.</p>
 <h4><code>extract: &lt;regex&gt;</code></h4>

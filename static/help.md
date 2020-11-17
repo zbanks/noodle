@@ -2,6 +2,8 @@ Specify filters in the input textbox. Each line is treated as a filter.
 
 The filters are "chained" together, in order. The output pane shows which words matched the entire filter chain.
 
+The query runs until the input wordlist is exhausted, 300 results are returned, or 15 seconds have past.
+
 #### `nx [N]: <noodlex>`
 
 Evalute noodle expression
@@ -13,6 +15,14 @@ Supported regex features: `[...]`, `[^...]`, `.`, `*`, `+`, `?`, `(...)`, `|`.
 Matches are case-insentive.
 Spaces are ignored both in the expression, and the matched word.
 An `_` in the expression matches an space character in a word.
+
+#### `nxn N: <noodlex>`
+
+Evalute noodle expression, matching up to `N` words.
+
+The `noodlex` expression follows the same syntax as the `nx` command, except multi-word search cannot be combined with fuzzy search.
+
+**Note:** This is handled as a special case for now, and cannot be chained with any other filters.
 
 #### `regex: <regex>`
 

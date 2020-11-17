@@ -202,15 +202,18 @@ class Nx:
             return None
         return rc
 
-    def combo_match(self, input_wordset, n_words=2, cursor=None, output_name=None):
+    def combo_match(
+        self, input_wordset, n_words=2, cursor=None, output_name=None, output=None
+    ):
         assert input_wordset
         if isinstance(input_wordset, WordList):
             input_wordset = input_wordset.wordset
-        if output_name is None:
-            output_name = "results of nx combo {}".format(n_words)
-        output = WordSetAndBuffer(name=output_name)
         if cursor is None:
             cursor = Cursor.new(now_ns() + 1e9, 1e5)
+        if output_name is None:
+            output_name = "results of nx combo {}".format(n_words)
+        if output is None:
+            output = WordSetAndBuffer(name=output_name)
         noodle_lib.nx_combo_match(
             self.p, input_wordset.p, n_words, cursor.p, output.p, output.wordlist.p
         )

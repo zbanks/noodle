@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from noodle import (
@@ -14,31 +15,42 @@ from noodle import (
     now_ns,
 )
 
-global WORDLIST
+global BIG_WORDLIST
+global SMALL_WORDLIST
 
 
 def handle_noodle_input(input_text, cursor):
-    filters = [
-        Filter.new_from_spec(s.strip()) for s in input_text.split("\n") if s.strip()
-    ]
+    nxn_match = re.match(r"^nxn ([0-9]+):(.*)$", input_text)
+    if nxn_match:
+        n_words_str, nx_expr = nxn_match.groups()
+        print(nx_expr, n_words_str)
+        nx = Nx.new(nx_expr)
+        n_words = int(n_words_str)
+        iterate = lambda output: nx.combo_match(
+            BIG_WORDLIST, n_words=n_words, cursor=cursor, output=output
+        )
+        query_text = "    nxn {}: {}".format(n_words, nx_expr)
+    else:
+        filters = [
+            Filter.new_from_spec(s.strip()) for s in input_text.split("\n") if s.strip()
+        ]
+        iterate = lambda output: filter_chain_apply(
+            filters, BIG_WORDLIST, cursor=cursor, output=output
+        )
+        query_text = "\n".join([f.debug() for f in filters])
 
     first = True
     output = None
     next_output = 0
     while True:
-        output = filter_chain_apply(filters, WORDLIST, cursor=cursor, output=output)
+        output = iterate(output)
 
         output_text = ""
         output_text += "#0 {}\n".format(cursor.debug())
-        output_text += "#1 {} match(es) for {} filter(s):\n".format(
-            len(output), len(filters)
-        )
+        output_text += "#1 {} matches\n".format(len(output))
 
         if first:
-            output_text += "\nInput Query:\n"
-            for f in filters:
-                output_text += "    {}\n".format(f.debug())
-            output_text += "\n"
+            output_text += "\nQuery:\n{}\n\n".format(query_text)
             first = False
 
         for i in range(next_output, len(output)):
@@ -89,9 +101,11 @@ class NoodleHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    WORDLIST = WordList.new_from_file("consolidated.txt", True)
-    # WORDLIST = WordList.new_from_file("/usr/share/dict/words", False)
-    print("Loaded wordlist:", WORDLIST.debug())
+    SMALL_WORDLIST = WordList.new_from_file("/usr/share/dict/words", False)
+    print("Loaded small wordlist:", SMALL_WORDLIST.debug())
+
+    BIG_WORDLIST = WordList.new_from_file("consolidated.txt", True)
+    print("Loaded bigwordlist:", BIG_WORDLIST.debug())
 
     server = HTTPServer(("localhost", 8080), NoodleHandler)
     print("Running webserver")

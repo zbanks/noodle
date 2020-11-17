@@ -1,6 +1,8 @@
-TARGETS = libnoodle.so noodle noodle_ffi.cpython-39-x86_64-linux-gnu.so
-
 CC=gcc
+PYTHON=python3.9
+
+TARGETS = libnoodle.so noodle $(TARGET_CFFI_LIB)
+TARGET_CFFI_LIB = noodle_ffi.cpython-$(shell $(PYTHON) -c 'import sys; print("{0.major}{0.minor}".format(sys.version_info))')-$(shell $(CC) -dumpmachine).so
 
 CFLAGS += -std=c11 -D_DEFAULT_SOURCE
 CFLAGS += -Wall -Wextra -Wconversion -Werror
@@ -45,7 +47,7 @@ noodle: build/main.o libnoodle.so
 	$(CC) $^ $(CFLAGS) $(LFLAGS) -o $@
 
 noodle_ffi.cpython-39-x86_64-linux-gnu.so: build_cffi.py | libnoodle.so
-	python3.9 $< && cp build/$@ $@
+	$(PYTHON) $< && cp build/$@ $@
 
 .PHONY: format clean all
 format:
