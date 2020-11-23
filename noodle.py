@@ -206,6 +206,7 @@ class Nx:
         self, input_wordset, n_words=2, cursor=None, output_name=None, output=None
     ):
         assert input_wordset
+        assert n_words <= 5, "Maximum number of words in combo_match is 5"
         if isinstance(input_wordset, WordList):
             input_wordset = input_wordset.wordset
         if cursor is None:

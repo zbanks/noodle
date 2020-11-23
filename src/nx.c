@@ -62,7 +62,7 @@ enum {
 };
 
 _Static_assert(NX_STATE_MAX < UINT16_MAX, "NX_STATE_MAX too big for a uint16_t");
-_Static_assert(_NX_CHAR_MAX < 32, "_NX_CHAR_MAX cannot fit in a uint32_t");
+_Static_assert(_NX_CHAR_MAX <= 32, "_NX_CHAR_MAX cannot fit in a uint32_t");
 
 static enum nx_char nx_char(char c) {
     switch (c) {
@@ -477,104 +477,163 @@ void nx_destroy(struct nx * nx) {
     free(nx);
 }
 
-static struct nx_set nx_match_transition(const struct nx * nx, uint32_t bset, struct nx_set ss) {
-    struct nx_set new_ss = {0};
-    if (nx_set_isempty(&ss)) {
-        return new_ss;
+// Return thes et of possible ending states, from starting at one of the `start_states`
+// and consuming one character from `char_bitset`.
+static struct nx_set nx_match_transition(const struct nx * nx, uint32_t char_bitset, struct nx_set start_states) {
+    // Start with an empty result set.
+    struct nx_set end_states = {0};
+
+    // If there are no valid `start_states`, there are no valid end states!
+    if (nx_set_isempty(&start_states)) {
+        return end_states;
     }
+
+    // Iterate over all states contained in `start_states`,
+    // looking for non-epsilon transitions
     for (size_t si = 0; si < nx->n_states; si++) {
-        if (!nx_set_test(&ss, si)) {
+        if (!nx_set_test(&start_states, si)) {
             continue;
         }
+
+        // For each state, check which edges are accessible with `char_bitset`
         const struct nx_state * s = &nx->states[si];
         ASSERT(s->type == STATE_TYPE_TRANSITION);
         for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
-            if (bset & s->char_bitset[j]) {
-                nx_set_add(&new_ss, s->next_state[j]);
+            if (char_bitset & s->char_bitset[j]) {
+                // If an edge does match `char_bitset`, add it to the result set
+                nx_set_add(&end_states, s->next_state[j]);
             }
         }
     }
+
+    // Now that `end_states` contains all non-epsilon transitions, fill
+    // in the possible *epsilon* transitions. Iterate over each state in `end_states`
     for (size_t si = 0; si < nx->n_states; si++) {
-        if (!nx_set_test(&new_ss, si)) {
+        if (!nx_set_test(&end_states, si)) {
             continue;
         }
+
+        // `epsilon_states` is pre-computed to cover all states reachable by
+        // an arbitrary number of epsilon transitions from the given state.
+        // This allows this segment to run in constant time.
         const struct nx_state * s = &nx->states[si];
         ASSERT(s->type == STATE_TYPE_TRANSITION);
-        nx_set_orequal(&new_ss, &s->epsilon_states);
+        nx_set_orequal(&end_states, &s->epsilon_states);
     }
-    return new_ss;
+
+    return end_states;
 }
 
-struct nx_set nx_match_partial(const struct nx * nx, const enum nx_char * buffer, uint16_t si) {
-    struct nx_set ss = {0};
-    nx_set_add(&ss, si);
-    nx_set_orequal(&ss, &nx->states[si].epsilon_states);
+struct nx_set nx_match_partial(const struct nx * nx, const enum nx_char * buffer, uint16_t initial_state) {
+    // Start with an initial `state_set` containing only `initial_state`
+    struct nx_set state_set = {0};
+    nx_set_add(&state_set, initial_state);
+
+    // Add all `epsilon_states`, which are the states reachable from `initial_state`
+    // without consuming a character from `buffer`
+    nx_set_orequal(&state_set, &nx->states[initial_state].epsilon_states);
+
     for (size_t bi = 0; buffer[bi] != NX_CHAR_END; bi++) {
-        ss = nx_match_transition(nx, nx_char_bit(buffer[bi]), ss);
-        if (nx_set_isempty(&ss)) {
+        // Consume 1 character from the buffer and compute the set of possible resulting states
+        state_set = nx_match_transition(nx, nx_char_bit(buffer[bi]), state_set);
+
+        // We can terminate early if there are no possible valid states
+        if (nx_set_isempty(&state_set)) {
             break;
         }
     }
-    return ss;
+
+    // Return the set of possible result states from consuming every character in `buffer`
+    return state_set;
 }
 
-static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, size_t bi, struct nx_set ss,
-                          size_t n_errors) {
-    if (nx_set_test(&ss, STATE_SUCCESS)) {
+// Perform a fuzzy match against an NX NFA.
+// From a given starting `state_set`, return the number of changes required for `buffer` to match `nx`.
+// Returns `-1` if the number of errors would exceed `n_errors`, or `0` on an exact match.
+// Can be used for exact matches by setting `n_errors` to `0`.
+static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, struct nx_set state_set, size_t n_errors) {
+    // If the initial `state_set` is already a match, we're done!
+    if (nx_set_test(&state_set, STATE_SUCCESS)) {
         return 0;
     }
 
-    static uint32_t letter_set = 0;
-    if (letter_set == 0) {
+    // `LETTER_SET` contains every valid letter (A-Z, no metacharacters). It is initialized once.
+    // It is used to represent which items can be added to `buffer` during fuzzy matching.
+    static uint32_t LETTER_SET = 0;
+    if (LETTER_SET == 0) {
         for (enum nx_char j = NX_CHAR_A; j <= NX_CHAR_Z; j++) {
-            letter_set |= nx_char_bit(j);
+            LETTER_SET |= nx_char_bit(j);
         }
     }
 
-    struct nx_set err_ss = {0};
+    // Keep track of which states are reachable with *exactly* 1 error, initially empty
+    struct nx_set error_state_set = {0};
+
+    // Iterate over the characters in `buffer` (exactly 1 character per iteration)
     while (true) {
-        struct nx_set next_ss = nx_match_transition(nx, nx_char_bit(buffer[bi]), ss);
-        struct nx_set next_err_ss = nx_match_transition(nx, nx_char_bit(buffer[bi]), err_ss);
-        size_t next_bi = bi + 1;
-        if (nx_set_test(&next_ss, STATE_SUCCESS)) {
-            ASSERT(buffer[bi] == NX_CHAR_END);
+        // Consume 1 character from the buffer and compute the set of possible resulting states
+        struct nx_set next_state_set = nx_match_transition(nx, nx_char_bit(*buffer), state_set);
+
+        // The same, but with the set of states reachable with exactly 1 error
+        struct nx_set next_error_set = nx_match_transition(nx, nx_char_bit(*buffer), error_state_set);
+
+        // If SUCCESS is reachable, it's a match, we're done!
+        if (nx_set_test(&next_state_set, STATE_SUCCESS)) {
+            // The NFA should be constructed so that SUCCESS is only reachable with an END character
+            ASSERT(*buffer == NX_CHAR_END);
             return 0;
         }
-        if (nx_set_test(&next_err_ss, STATE_SUCCESS)) {
+
+        // If SUCCESS is reachable with exactly 1 error, it was _almost_ a match. Return 1 to mark the error.
+        if (nx_set_test(&next_error_set, STATE_SUCCESS)) {
+            ASSERT(*buffer == NX_CHAR_END);
             return 1;
         }
-        if (n_errors > 0) {
-            if (buffer[bi] != NX_CHAR_END) {
-                // Try deleting a char
-                nx_set_orequal(&next_err_ss, &ss);
 
-                // Try changing the char
-                struct nx_set es = nx_match_transition(nx, letter_set, ss);
-                nx_set_orequal(&next_err_ss, &es);
+        // If we are performing a fuzzy match, then expand `next_error_set` by adding all states
+        // reachable from `state_set` *but* with a 1-character change to `buffer`
+        if (n_errors > 0) {
+            // We can only delete/change characters if they aren't the terminating END
+            if (*buffer != NX_CHAR_END) {
+                // Deletion: skip over using `*buffer` to do a transition
+                nx_set_orequal(&next_error_set, &state_set);
+
+                // Change: use a different char (any letter) to do a transition instead of `*buffer`
+                struct nx_set es = nx_match_transition(nx, LETTER_SET, state_set);
+                nx_set_orequal(&next_error_set, &es);
             }
 
-            // Try inserting a char before buffer[bi]
             // XXX: This doesn't handle two inserted letters in a row
-            struct nx_set es = nx_match_transition(nx, letter_set, ss);
-            es = nx_match_transition(nx, nx_char_bit(buffer[bi]), es);
-            nx_set_orequal(&next_err_ss, &es);
+            // Insertion: insert a char (any letter) before *buffer...
+            struct nx_set es = nx_match_transition(nx, LETTER_SET, state_set);
+            // ...then use *buffer
+            es = nx_match_transition(nx, nx_char_bit(*buffer), es);
+            nx_set_orequal(&next_error_set, &es);
         }
 
-        if (nx_set_isempty(&next_ss)) {
+        // If there are no possible states after consuming `*buffer`, that's not looking good.
+        // The best we can do is seeing if there is a fuzzy match
+        if (nx_set_isempty(&next_state_set)) {
             if (n_errors > 0) {
-                int rc = nx_match_fuzzy(nx, buffer, next_bi, next_err_ss, n_errors - 1);
+                int rc = nx_match_fuzzy(nx, buffer + 1, next_error_set, n_errors - 1);
                 if (rc >= 0) {
+                    // There was a fuzzy match! Because we used `next_error_set`, increment the number of errors
                     return rc + 1;
                 }
             }
+
+            // No fuzzy match
             return -1;
         }
 
-        ASSERT(buffer[bi] != NX_CHAR_END);
+        // The NFA should be constructed such that `*buffer` can't be `NX_CHAR_END` here.
+        // If it were, either `next_state_set` would contain SUCCESS or be empty, and we would have returned.
+        ASSERT(*buffer != NX_CHAR_END);
 
-        ss = next_ss;
-        err_ss = next_err_ss;
-        bi = next_bi;
+        // Advance the buffer to the next character, and shift the state sets
+        buffer++;
+        state_set = next_state_set;
+        error_state_set = next_error_set;
     }
 }
 
@@ -582,9 +641,12 @@ int nx_match(const struct nx * nx, const char * input, size_t n_errors) {
     enum nx_char buffer[256];
     nx_char_translate(input, buffer, 256);
 
+    // `epsilon_states` are accounted for *after* "normal" states in `nx_match_transition`
+    // Therefore it is important to include them here for correctness
     struct nx_set ss = nx->states[0].epsilon_states;
     nx_set_orequal(&ss, &NX_SET_START);
-    return nx_match_fuzzy(nx, buffer, 0, ss, n_errors);
+
+    return nx_match_fuzzy(nx, buffer, ss, n_errors);
 }
 
 void nx_test(void) {

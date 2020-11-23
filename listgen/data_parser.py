@@ -8,11 +8,16 @@
 # Urban dictionary from (extract from archive.zip):
 # https://www.kaggle.com/therohk/urban-dictionary-words-dataset
 #   urbandict-word-defs.csv
+#
+# Debian word lists:
+# $ sudo apt-get install 'wamerican-*' wbritish-huge cracklib-runtime
+#
 
 import collections
 import datetime
 import gzip
 import orjson as json
+import os
 import re
 import sys
 
@@ -97,8 +102,14 @@ def consolidate():
     # (file, weight_b, weight_e, min_count)
     files = [
         # ("out/enwiktionary-titles.txt", 1000, 1, 1),
-        ("raw/words", 500, None, None),
-        ("out/enwiki-titles.txt", 300, None, None),
+        ("/usr/share/dict/american-english-small", 800, None, None),
+        ("/usr/share/dict/american-english", 700, None, None),
+        ("/usr/share/dict/american-english-large", 500, None, None),
+        ("out/enwiki-titles.txt", 400, None, None),
+        ("out/british-english-huge.txt", 300, None, None),
+        ("/usr/share/dict/american-english-huge", 250, None, None),
+        ("/usr/share/dict/american-english-insane", 200, None, None),
+        ("/usr/share/dict/cracklib-small", 150, None, None),
         ("out/urbandict-titles.txt", 100, None, None),
         # ("out/enwiktionary-words.txt", 100, 5),
         ("out/enwiki-words.txt", 20, 0.2, 5),
@@ -106,6 +117,10 @@ def consolidate():
     ]
     words = {}
     for filename, weight_b, weight_e, min_count in files:
+        if not os.path.exists(filename):
+            print("File '{}' does not exist, skipping".format(filename))
+            continue
+
         print("Loading {}".format(filename))
         with open(filename) as f:
             for line in f:
@@ -121,9 +136,14 @@ def consolidate():
                 canonical = canonicalize_re.sub("", w).lower().replace("'", "")
                 if not canonical:
                     continue
+                if canonical == w:
+                    weight += 25
+                elif canonical == w.lower():
+                    weight += 10
                 if canonical in words:
                     if min_count is None:
-                        words[canonical][0] = max(words[canonical][0], weight)
+                        if weight > words[canonical][0]:
+                            words[canonical] = [weight, w]
                     else:
                         words[canonical][0] += weight
                 else:
