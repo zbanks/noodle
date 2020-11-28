@@ -7,7 +7,7 @@
 //
 
 #define NX_SET_SIZE ((size_t)256)
-// For compatability with python/cffi, we are limited in what math we can do in constant decls
+// For compatibility with python/cffi, we are limited in what math we can do in constant decls
 #define NX_SET_ARRAYLEN ((size_t)4)
 //#define NX_SET_ARRAYLEN ((NX_SET_SIZE + 63) / 64)
 _Static_assert(NX_SET_ARRAYLEN == ((NX_SET_SIZE + 63) / 64), "Invalid NX_SET_ARRAYLEN");
@@ -76,7 +76,7 @@ struct nx_state {
             // would have significantly more branching, and would probably
             // be better represented as a lookup table.
             //
-            // This form is also very condusive to "fuzzy" matching
+            // This form is also very conducive to "fuzzy" matching
             uint16_t next_state[NX_BRANCH_COUNT];
             uint32_t char_bitset[NX_BRANCH_COUNT];
 

@@ -13,7 +13,7 @@
 #ifdef DEBUG
 #define ASSERT(x)                                                                                                      \
     ({                                                                                                                 \
-        if (!(x)) {                                                                                                    \
+        if (__builtin_expect(!(x), 0)) {                                                                               \
             LOG("Assertion failed: " STRINGIFY(x));                                                                    \
             abort();                                                                                                   \
         }                                                                                                              \

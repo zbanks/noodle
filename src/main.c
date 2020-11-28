@@ -73,7 +73,7 @@ int main() {
     LOG("# mismatches against regexec: %zu", n_mismatches);
     regfree(&preg);
 
-    // I've gotten sloppy with my resource management here; there's some leaks
+    // XXX: I've gotten sloppy with my resource management here; there's some leaks
     struct wordlist buffer;
     wordlist_init(&buffer, "buffer");
     struct wordset combo_ws;
@@ -81,16 +81,20 @@ int main() {
     struct cursor cursor;
     cursor_init(&cursor);
     cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 0);
+    struct filter * fnxn = NONNULL(filter_create(FILTER_NXN, 3, regex));
     // cursor_set_deadline(&cursor, 0, 0);
     do {
         cursor.deadline_output_index++;
-        nx_combo_match(nx, ws, 3, &cursor, &combo_ws, &buffer);
-        LOG("Combo match found %zu matches: %s", combo_ws.words_count, cursor_debug(&cursor));
+        filter_chain_apply((const struct filter * const[]){fnxn}, 1, ws, &cursor, word_callback_print, NULL);
+        // nx_combo_match(nx, ws, 3, &cursor, &combo_ws, &buffer);
+        // LOG("%zu %zu %lu", cursor.total_input_items, cursor.input_index, cursor.deadline_ns);
     } while (cursor.total_input_items != cursor.input_index && now_ns() < cursor.deadline_ns);
+    LOG("Combo match: %s", cursor_debug(&cursor));
     wordset_print(&combo_ws);
+    filter_destroy(fnxn);
 
     nx_destroy(nx);
-    // return 0;
+    return 0;
 
     struct anatree * at = anatree_create(ws);
     int64_t start_ns = now_ns();
@@ -120,7 +124,7 @@ int main() {
     // struct filter * f1 = NONNULL(filter_parse("superanagram: eeee"));
     struct filter * f2 = NONNULL(filter_parse("extractq: .(.*)."));
     struct filter * f3 = NONNULL(filter_parse("nx 1: .*in"));
-    struct filter * f4 = NONNULL(filter_parse("score 10: x"));
+    struct filter * f4 = NONNULL(filter_parse("score 10:"));
     // struct filter * f4 = NONNULL(filter_parse("anagram: .*e(..).*"));
     cursor_init(&cursor);
     cursor_set_deadline(&cursor, now_ns() + (int)1e9, 0);
@@ -128,9 +132,34 @@ int main() {
     wordset_init(&wso, "filter matches");
     do {
         cursor.deadline_output_index++;
-        filter_chain_apply((struct filter * const[]){f1, f2, f3, f4}, 4, ws, &cursor, &wso, &buffer);
+        filter_chain_to_wordset((const struct filter * const[]){f1, f2, f3, f4}, 4, ws, &cursor, &wso, &buffer);
         LOG("Cursor state: %s", cursor_debug(&cursor));
     } while (cursor.input_index != cursor.total_input_items);
+    wordset_print(&wso);
+
+    wordset_term(&wso);
+    wordset_init(&wso, "anagrams of spears via 6 nx");
+    const struct filter * fanagram[6] = {
+        NONNULL(filter_parse("nx: [spear][spear][spear][spear][spear][spear]")),
+        NONNULL(filter_parse("nx: [^s]*s[^s]*s[^s]*")),
+        NONNULL(filter_parse("nx: [^p]*p[^p]*")),
+        NONNULL(filter_parse("nx: [^e]*e[^e]*")),
+        NONNULL(filter_parse("nx: [^a]*a[^a]*")),
+        NONNULL(filter_parse("nx: [^r]*r[^r]*")),
+    };
+    cursor_init(&cursor);
+    cursor_set_deadline(&cursor, now_ns() + (int)1e9, 0);
+    filter_chain_apply(fanagram, 6, ws, &cursor, word_callback_print, NULL);
+    LOG("Cursor state: %s", cursor_debug(&cursor));
+    wordset_print(&wso);
+
+    wordset_term(&wso);
+    wordset_init(&wso, "anagrams of spears via anagram filter");
+    const struct filter * fanagram2 = NONNULL(filter_parse("anagram: spears"));
+    cursor_init(&cursor);
+    cursor_set_deadline(&cursor, now_ns() + (int)1e9, 0);
+    filter_chain_apply(&fanagram2, 1, ws, &cursor, word_callback_print, (size_t[]){3});
+    LOG("Cursor state: %s", cursor_debug(&cursor));
     wordset_print(&wso);
 
     // struct word wt;

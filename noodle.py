@@ -176,7 +176,7 @@ class Filter:
         return ffi_string(noodle_lib.filter_debug(self.p))
 
     def apply(self, input_wordset, *args, **kwargs):
-        return filter_chain_apply([self], input_wordset, *args, **kwargs)
+        return filter_chain_to_wordset([self], input_wordset, *args, **kwargs)
 
 
 class Nx:
@@ -271,7 +271,7 @@ class WordSetAndBuffer(WordSet):
         noodle_lib.wordset_term(self.p)
 
 
-def filter_chain_apply(
+def filter_chain_to_wordset(
     filters, input_wordset, cursor=None, output_name=None, output=None
 ):
     assert input_wordset
@@ -285,7 +285,7 @@ def filter_chain_apply(
         output = WordSetAndBuffer(name=output_name)
     if cursor is None:
         cursor = Cursor.new(now_ns() + 1e9, 1e5)
-    noodle_lib.filter_chain_apply(
+    noodle_lib.filter_chain_to_wordset(
         [f.p for f in filters],
         len(filters),
         input_wordset.p,
@@ -323,11 +323,11 @@ def test():
     nx 1: .*in
     """.strip()
     filters = [Filter.new_from_spec(s.strip()) for s in spec.split("\n")]
-    print(filter_chain_apply(filters, wl).debug())
+    print(filter_chain_to_wordset(filters, wl).debug())
 
     n = Nx.new("helloworld")
     print(n.combo_match(wl.wordset, 3).debug())
-    print(repr(error_get_log()))
+    print("error log:", repr(error_get_log()))
 
 
 if __name__ == "__main__":

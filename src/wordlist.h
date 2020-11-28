@@ -35,3 +35,16 @@ NOODLE_EXPORT void wordlist_term(struct wordlist * wl);
 NOODLE_EXPORT const struct word * wordlist_add(struct wordlist * wl, const char * s, int v);
 
 const struct word * wordlist_ensure_owned(struct wordlist * wl, const struct word * w);
+
+// Print each word to the log
+NOODLE_EXPORT void word_callback_print(const struct word * w, void * cookie);
+
+// Add each word to an `output` wordset, using wordlist `buffer` to ensure it is owned
+struct word_callback_wordset_add_state {
+    struct wordlist * buffer;
+    struct wordset * output;
+};
+NOODLE_EXPORT void word_callback_wordset_add(const struct word * w, void * cookie);
+
+// This has an O(n^2) component, which is fine for small n (~a few thousand)
+NOODLE_EXPORT void word_callback_wordset_add_unique(const struct word * w, void * cookie);

@@ -8,7 +8,7 @@
 // This can be avoided by running without a deadline_ns
 static bool nx_combo_match_iter(const struct nx * nx, const struct wordset * input, const struct word ** stems,
                                 struct nx_set stem_ss, struct cursor * cursor, size_t n_words, size_t word_index,
-                                struct wordset * output, struct wordlist * buffer) {
+                                void (*callback)(const struct word * w, void * cookie), void * callback_cookie) {
     size_t first_i = cursor->input_index_list[word_index] / nx->n_states;
     size_t first_k = cursor->input_index_list[word_index] % nx->n_states;
     for (size_t i = first_i; i < input->words_count; i++) {
@@ -40,8 +40,8 @@ static bool nx_combo_match_iter(const struct nx * nx, const struct wordset * inp
             // TODO: I don't like that this yields multi-words before single words,
             // but going in this order is important for making the cursor work
             if (n_words > word_index + 1) {
-                bool rc =
-                    nx_combo_match_iter(nx, input, stems, end_ss, cursor, n_words, word_index + 1, output, buffer);
+                bool rc = nx_combo_match_iter(nx, input, stems, end_ss, cursor, n_words, word_index + 1, callback,
+                                              callback_cookie);
                 if (!rc) {
                     return false;
                 }
@@ -49,10 +49,10 @@ static bool nx_combo_match_iter(const struct nx * nx, const struct wordset * inp
             if (nx_set_test(&end_ss, nx->n_states - 1)) {
                 struct word wp;
                 word_tuple_init(&wp, stems, word_index + 1);
-                const struct word * w = wordlist_ensure_owned(buffer, &wp);
-                // LOG("Match: %s", word_debug(w));
-                wordset_add(output, w);
-                cursor_update_output(cursor, output->words_count);
+                // XXX: Double counting
+                // cursor_update_output(cursor, cursor->output_index + 1);
+                callback(&wp, callback_cookie);
+                // LOG("Match: %s", word_debug(&wp));
             }
         }
         first_k = 0;
@@ -64,8 +64,8 @@ static bool nx_combo_match_iter(const struct nx * nx, const struct wordset * inp
     return true;
 }
 
-void nx_combo_match(const struct nx * nx, const struct wordset * input, size_t n_words, struct cursor * cursor,
-                    struct wordset * output, struct wordlist * buffer) {
+void nx_combo_apply(const struct nx * nx, const struct wordset * input, size_t n_words, struct cursor * cursor,
+                    void (*callback)(const struct word * w, void * cookie), void * callback_cookie) {
     cursor->total_input_items = input->words_count;
     ASSERT(n_words + 1 <= CURSOR_LIST_MAX);
 
@@ -73,5 +73,13 @@ void nx_combo_match(const struct nx * nx, const struct wordset * input, size_t n
     nx_set_add(&start_ss, 0);
     ASSERT(n_words <= WORD_TUPLE_N);
     const struct word * stems[n_words];
-    nx_combo_match_iter(nx, input, stems, start_ss, cursor, n_words, 0, output, buffer);
+    nx_combo_match_iter(nx, input, stems, start_ss, cursor, n_words, 0, callback, callback_cookie);
+}
+
+void nx_combo_match(const struct nx * nx, const struct wordset * input, size_t n_words, struct cursor * cursor,
+                    struct wordset * output, struct wordlist * buffer) {
+    struct word_callback_wordset_add_state add_state = {
+        .output = output, .buffer = buffer,
+    };
+    nx_combo_apply(nx, input, n_words, cursor, word_callback_wordset_add, &add_state);
 }

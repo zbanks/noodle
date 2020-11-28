@@ -172,3 +172,29 @@ void wordlist_term(struct wordlist * wl) {
     }
     free(wl->chunks);
 }
+
+void word_callback_print(const struct word * w, void * cookie) {
+    if (cookie != NULL) {
+        size_t * remaining_count = cookie;
+        if (*remaining_count == 0) {
+            return;
+        }
+        (*remaining_count)--;
+    }
+    LOG("- %s", word_debug(w));
+}
+
+void word_callback_wordset_add(const struct word * w, void * cookie) {
+    struct word_callback_wordset_add_state * state = cookie;
+    w = wordlist_ensure_owned(state->buffer, w);
+    wordset_add(state->output, w);
+}
+
+void word_callback_wordset_add_unique(const struct word * w, void * cookie) {
+    struct word_callback_wordset_add_state * state = cookie;
+    if (wordset_find(state->output, &w->canonical) != NULL) {
+        return;
+    }
+    w = wordlist_ensure_owned(state->buffer, w);
+    wordset_add(state->output, w);
+}

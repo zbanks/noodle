@@ -11,7 +11,7 @@ from noodle import (
     Filter,
     Nx,
     Cursor,
-    filter_chain_apply,
+    filter_chain_to_wordset,
     now_ns,
     error_get_log,
 )
@@ -27,24 +27,24 @@ WORDLIST_SOURCES = [
 
 
 def handle_noodle_input(input_text, cursor):
-    nxn_match = re.match(r"^nxn ([0-9]+):(.*)$", input_text)
-    if nxn_match:
-        n_words_str, nx_expr = nxn_match.groups()
-        print(nx_expr, n_words_str)
-        nx = Nx.new(nx_expr)
-        n_words = int(n_words_str)
-        iterate = lambda output: nx.combo_match(
-            WORDLIST, n_words=n_words, cursor=cursor, output=output
-        )
-        query_text = "    nxn {}: {}\n".format(n_words, nx_expr)
-    else:
-        filters = [
-            Filter.new_from_spec(s.strip()) for s in input_text.split("\n") if s.strip()
-        ]
-        iterate = lambda output: filter_chain_apply(
-            filters, WORDLIST, cursor=cursor, output=output
-        )
-        query_text = "".join(["    {}\n".format(f.debug()) for f in filters])
+    # nxn_match = re.match(r"^nxn ([0-9]+):(.*)$", input_text)
+    # if nxn_match:
+    #    n_words_str, nx_expr = nxn_match.groups()
+    #    print(nx_expr, n_words_str)
+    #    nx = Nx.new(nx_expr)
+    #    n_words = int(n_words_str)
+    #    iterate = lambda output: nx.combo_match(
+    #        WORDLIST, n_words=n_words, cursor=cursor, output=output
+    #    )
+    #    query_text = "    nxn {}: {}\n".format(n_words, nx_expr)
+    # else:
+    filters = [
+        Filter.new_from_spec(s.strip()) for s in input_text.split("\n") if s.strip()
+    ]
+    iterate = lambda output: filter_chain_to_wordset(
+        filters, WORDLIST, cursor=cursor, output=output
+    )
+    query_text = "".join(["    {}\n".format(f.debug()) for f in filters])
 
     first = True
     output = None
