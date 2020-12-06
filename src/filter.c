@@ -1,80 +1,97 @@
 #include "filter.h"
+#include "anagram_slow.h"
+#include "bag_util.h"
 #include "nx.h"
 #include "nx_combo.h"
 #include <regex.h>
 
-static bool difference_size_less_than(const char * superset, const char * subset, size_t max_size) {
-    ASSERT(superset != NULL && subset != NULL);
-    size_t size = 0;
-    while (*subset != '\0') {
-        if (*superset == '\0') {
-            // The rest of subset is not in superset
-            return false;
-        }
-        if (*superset == *subset) {
-            superset++;
-            subset++;
-        } else if (*superset > *subset) {
-            // There is a letter in subset not in superset
-            return false;
-        } else {
-            // There is a letter in superset not in subset
-            ASSERT(*superset < *subset);
-            superset++;
-            size++;
-            if (size > max_size) {
-                return false;
-            }
-        }
-    }
-    if (size + strlen(superset) > max_size) {
-        return false;
-    }
-    return true;
-}
-
-struct apply_state {
-    const struct wordset * ws;
-    const struct filter * const * filters;
-    size_t n_filters;
-    struct cursor * cursor;
-    void * callback_cookie;
-    void (*callback)(const struct word * w, void * cookie);
-};
-static void filter_iterate(const struct apply_state * state, size_t filter_index, const struct word * w);
-
 struct filter;
-struct filter_vtbl {
-    enum filter_type type;
-    const char * name;
-    int (*init)(struct filter * f);
-    void (*term)(struct filter * f);
-    void (*apply)(const struct filter * f, const struct word * w, const struct apply_state * state, size_t index);
-    void (*iterate)(const struct filter * f, const struct apply_state * state);
-};
+struct filter_vtable;
+struct apply_state;
 
+// A filter represents a function that can match a word or phrase
+//
+// Filters have a string representation that is written by a user
+// and parsed. (ex: "transadd 3: blah")
+// These are usually in the form "TYPE [N]: [STR]"
+//
+// Some filters can also transform words (ex: extract).
+// Some filters can produce phrases from a set of words from an
+// `iterate` method (ex: anagram, nxn).
 struct filter {
-    const struct filter_vtbl * vtbl;
+    // Methods & constants for the given filter type
+    const struct filter_vtable * vtable;
+
+    // Numeric & string arguments to the filter ("TYPE [N]: [STR]")
+    // `arg_str` is NULL if absent; `arg_n` is -1 if absent
     char * arg_str;
     size_t arg_n;
+
+    // Human-readable string representation of the filter
     char name[64];
 
-    // Internal
+    // Internal objects, used differently by each filter type
+    // These must be init/term'd by the corresponding init/term function
     regex_t preg;
     struct nx * nx;
     struct word w;
     struct word * wb;
 };
 
+struct filter_vtable {
+    // Filter type constants
+    enum filter_type type;
+    const char * name;
+
+    // Initialize the filter, perform any pre-computation
+    // `f` is already populated with `vtable`, `arg_str`, `arg_n`, and `name`
+    int (*init)(struct filter * f);
+
+    // Tear down the filter, clean up any internal objects
+    // The `f` and `arg_str` pointers do not need to be free'd here
+    void (*term)(struct filter * f);
+
+    // Basic filtering operation
+    // For the given input word `w`, call `filter_iterate(...)` for every output word
+    // `state` and `index` are opaque values to be passed to `filter_iterate`,
+    // with the exception of `state->ws`, the set of valid words
+    void (*apply)(const struct filter * f, const struct word * w, const struct apply_state * state, size_t index);
+
+    // Advanced generator / filtering operation
+    // Can be NULL if not supported
+    void (*iterate)(const struct filter * f, const struct apply_state * state);
+};
+
+struct apply_state {
+    struct word_callback internal_cb;
+    const struct wordset * ws;
+    const struct filter * const * filters;
+    size_t n_filters;
+    struct cursor * cursor;
+    struct word_callback * cb;
+};
+
+// Call inside `filter_*_apply` functions for each word `w` that
+// matches the filter for the corresponding input word
+//
+// Pure filters typically call this at most once per `apply` with
+// the input word given to `apply`.
+static void filter_iterate(const struct apply_state * state, size_t filter_index, const struct word * w);
+
+static void iterate_callback(struct word_callback * cb, const struct word * w) {
+    struct apply_state * state = (void *)cb;
+    filter_iterate(state, 1, w);
+}
+
 //
 
 int filter_regex_init(struct filter * f) {
     if (f->arg_str[0] == '\0') {
-        LOG("%s filter requires a string argument", f->vtbl->name);
+        LOG("%s filter requires a string argument", f->vtable->name);
         return -1;
     }
     if (f->arg_n != -1ul) {
-        LOG("%s filter does not take a numeric argument", f->vtbl->name);
+        LOG("%s filter does not take a numeric argument", f->vtable->name);
         return -1;
     }
 
@@ -106,17 +123,17 @@ void filter_regex_apply(const struct filter * f, const struct word * w, const st
 
 int filter_anagram_init(struct filter * f) {
     if (f->arg_str[0] == '\0') {
-        LOG("%s filter requires a string argument", f->vtbl->name);
+        LOG("%s filter requires a string argument", f->vtable->name);
         return -1;
     }
-    if (f->vtbl->type == FILTER_TRANSADD || f->vtbl->type == FILTER_TRANSDELETE) {
+    if (f->vtable->type == FILTER_TRANSADD || f->vtable->type == FILTER_TRANSDELETE) {
         if (f->arg_n == -1ul) {
-            LOG("%s filter requires a numeric argument", f->vtbl->name);
+            LOG("%s filter requires a numeric argument", f->vtable->name);
             return -1;
         }
     } else {
         if (f->arg_n != -1ul) {
-            LOG("%s filter does not take a numeric argument", f->vtbl->name);
+            LOG("%s filter does not take a numeric argument", f->vtable->name);
             return -1;
         }
     }
@@ -126,12 +143,15 @@ int filter_anagram_init(struct filter * f) {
 
 void filter_anagram_term(struct filter * f) { word_term(&f->w); }
 
-#define filter_anagram_iterate NULL
 void filter_anagram_apply(const struct filter * f, const struct word * w, const struct apply_state * state,
                           size_t index) {
     if (strcmp(str_str(&w->sorted), str_str(&f->w.sorted)) == 0) {
         filter_iterate(state, index, w);
     }
+}
+
+void filter_anagram_iterate(const struct filter * f, const struct apply_state * state) {
+    anagram_slow(state->ws, str_str(&f->w.sorted), state->cursor, (void *)&state->internal_cb);
 }
 
 #define filter_subanagram_init filter_anagram_init
@@ -140,7 +160,7 @@ void filter_anagram_apply(const struct filter * f, const struct word * w, const 
 
 void filter_subanagram_apply(const struct filter * f, const struct word * w, const struct apply_state * state,
                              size_t index) {
-    if (difference_size_less_than(str_str(&f->w.sorted), str_str(&w->sorted), -1ul)) {
+    if (bag_difference_size_less_than(str_str(&f->w.sorted), str_str(&w->sorted), -1ul)) {
         filter_iterate(state, index, w);
     }
 }
@@ -151,7 +171,7 @@ void filter_subanagram_apply(const struct filter * f, const struct word * w, con
 
 void filter_superanagram_apply(const struct filter * f, const struct word * w, const struct apply_state * state,
                                size_t index) {
-    if (difference_size_less_than(str_str(&w->sorted), str_str(&f->w.sorted), -1ul)) {
+    if (bag_difference_size_less_than(str_str(&w->sorted), str_str(&f->w.sorted), -1ul)) {
         filter_iterate(state, index, w);
     }
 }
@@ -167,7 +187,7 @@ void filter_transdelete_apply(const struct filter * f, const struct word * w, co
     if (strlen(x) + f->arg_n != strlen(y)) {
         return;
     }
-    if (difference_size_less_than(y, x, f->arg_n)) {
+    if (bag_difference_size_less_than(y, x, f->arg_n)) {
         filter_iterate(state, index, w);
     }
 }
@@ -183,7 +203,7 @@ void filter_transadd_apply(const struct filter * f, const struct word * w, const
     if (strlen(x) != strlen(y) + f->arg_n) {
         return;
     }
-    if (difference_size_less_than(x, y, f->arg_n)) {
+    if (bag_difference_size_less_than(x, y, f->arg_n)) {
         filter_iterate(state, index, w);
     }
 }
@@ -256,13 +276,13 @@ void filter_extractq_apply(const struct filter * f, const struct word * w, const
 
 int filter_nx_init(struct filter * f) {
     if (f->arg_str[0] == '\0') {
-        LOG("%s filter requires a string argument", f->vtbl->name);
+        LOG("%s filter requires a string argument", f->vtable->name);
         return -1;
     }
     if (f->arg_n == -1ul) {
-        f->arg_n = f->vtbl->type == FILTER_NX ? 0 : 2;
+        f->arg_n = f->vtable->type == FILTER_NX ? 0 : 2;
     }
-    if (f->vtbl->type == FILTER_NXN) {
+    if (f->vtable->type == FILTER_NXN) {
         if (f->arg_n > WORD_TUPLE_N) {
             LOG("Max number of words for nxn is %zu", WORD_TUPLE_N);
             return -1;
@@ -288,11 +308,6 @@ void filter_nx_apply(const struct filter * f, const struct word * w, const struc
 #define filter_nxn_init filter_nx_init
 #define filter_nxn_term filter_nx_term
 
-static void nxn_callback(const struct word * w, void * cookie) {
-    const struct apply_state * state = cookie;
-    filter_iterate(state, 1, w);
-}
-
 void filter_nxn_apply(const struct filter * f, const struct word * w, const struct apply_state * state, size_t index) {
     if (nx_match(f->nx, str_str(&w->canonical), 0) >= 0) {
         filter_iterate(state, index, w);
@@ -300,16 +315,16 @@ void filter_nxn_apply(const struct filter * f, const struct word * w, const stru
 }
 
 void filter_nxn_iterate(const struct filter * f, const struct apply_state * state) {
-    nx_combo_apply(f->nx, state->ws, f->arg_n, state->cursor, nxn_callback, (void *)state);
+    nx_combo_apply(f->nx, state->ws, f->arg_n, state->cursor, (void *)&state->internal_cb);
 }
 
 int filter_score_init(struct filter * f) {
     if (f->arg_str[0] != '\0') {
-        LOG("%s filter does not take a string argument", f->vtbl->name);
+        LOG("%s filter does not take a string argument", f->vtable->name);
         return -1;
     }
     if (f->arg_n == -1ul) {
-        LOG("%s filter requires a numeric argument", f->vtbl->name);
+        LOG("%s filter requires a numeric argument", f->vtable->name);
         return -1;
     }
     return 0;
@@ -341,9 +356,9 @@ void filter_score_apply(const struct filter * f, const struct word * w, const st
     X(NXN, nxn)                                                                                                        \
     X(SCORE, score)
 
-const struct filter_vtbl filter_vtbls[] = {
+const struct filter_vtable filter_vtables[] = {
 #define X(N, n)                                                                                                        \
-    [CONCAT(FILTER_, N)] = (struct filter_vtbl){                                                                       \
+    [CONCAT(FILTER_, N)] = (struct filter_vtable){                                                                     \
         .name = STRINGIFY(n),                                                                                          \
         .type = CONCAT(FILTER_, N),                                                                                    \
         .init = CONCAT(CONCAT(filter_, n), _init),                                                                     \
@@ -354,7 +369,7 @@ const struct filter_vtbl filter_vtbls[] = {
     FILTERS
 #undef X
 };
-_Static_assert(sizeof(filter_vtbls) / sizeof(*filter_vtbls) == _FILTER_TYPE_MAX, "Missing filter_vtbl");
+_Static_assert(sizeof(filter_vtables) / sizeof(*filter_vtables) == _FILTER_TYPE_MAX, "Missing filter_vtable");
 
 struct filter * filter_create(enum filter_type type, size_t n, const char * str) {
     ASSERT(str != NULL);
@@ -363,19 +378,19 @@ struct filter * filter_create(enum filter_type type, size_t n, const char * str)
     }
 
     struct filter * f = NONNULL(calloc(1, sizeof(*f)));
-    f->vtbl = &filter_vtbls[type];
+    f->vtable = &filter_vtables[type];
     f->arg_n = n;
     f->arg_str = NONNULL(strdup(str));
 
     if (f->arg_n != -1ul) {
-        snprintf(f->name, sizeof(f->name), "%s %zu: %s", f->vtbl->name, f->arg_n, f->arg_str);
+        snprintf(f->name, sizeof(f->name), "%s %zu: %s", f->vtable->name, f->arg_n, f->arg_str);
     } else {
-        snprintf(f->name, sizeof(f->name), "%s: %s", f->vtbl->name, f->arg_str);
+        snprintf(f->name, sizeof(f->name), "%s: %s", f->vtable->name, f->arg_str);
     }
 
     int rc = 0;
-    if (f->vtbl->init != NULL) {
-        rc = f->vtbl->init(f);
+    if (f->vtable->init != NULL) {
+        rc = f->vtable->init(f);
     }
     if (rc != 0) {
         free(f->arg_str);
@@ -386,30 +401,30 @@ struct filter * filter_create(enum filter_type type, size_t n, const char * str)
     return f;
 }
 
-struct filter * filter_parse(const char * spec) {
-    ASSERT(spec != NULL);
+struct filter * filter_parse(const char * specification) {
+    ASSERT(specification != NULL);
 
     regex_t preg;
     const char * regex = "^\\s*([a-z]+)\\s*([0-9]*)\\s*:\\s*(\\S*)\\s*$";
     ASSERT(regcomp(&preg, regex, REG_EXTENDED | REG_ICASE) == 0);
 
     regmatch_t matches[4];
-    int rc = regexec(&preg, spec, 4, matches, 0);
+    int rc = regexec(&preg, specification, 4, matches, 0);
     regfree(&preg);
 
     if (rc != 0) {
-        LOG("filter specification '%s' does not fit expected form: /%s/", spec, regex);
+        LOG("filter specification '%s' does not fit expected form: /%s/", specification, regex);
         return NULL;
     }
 
-    size_t size = strlen(spec) + 1;
+    size_t size = strlen(specification) + 1;
     char * buffer = NONNULL(calloc(1, size));
 
     memset(buffer, 0, size);
-    memcpy(buffer, &spec[matches[1].rm_so], (size_t)(matches[1].rm_eo - matches[1].rm_so));
+    memcpy(buffer, &specification[matches[1].rm_so], (size_t)(matches[1].rm_eo - matches[1].rm_so));
     enum filter_type type = _FILTER_TYPE_MAX;
     for (size_t i = 0; i < _FILTER_TYPE_MAX; i++) {
-        if (strcmp(NONNULL(filter_vtbls[i].name), buffer) == 0) {
+        if (strcmp(NONNULL(filter_vtables[i].name), buffer) == 0) {
             type = i;
             break;
         }
@@ -420,7 +435,7 @@ struct filter * filter_parse(const char * spec) {
     }
 
     memset(buffer, 0, size);
-    memcpy(buffer, &spec[matches[2].rm_so], (size_t)(matches[2].rm_eo - matches[2].rm_so));
+    memcpy(buffer, &specification[matches[2].rm_so], (size_t)(matches[2].rm_eo - matches[2].rm_so));
     size_t n = -1ul;
     if (*buffer != '\0') {
         errno = 0;
@@ -432,7 +447,7 @@ struct filter * filter_parse(const char * spec) {
     }
 
     memset(buffer, 0, size);
-    memcpy(buffer, &spec[matches[3].rm_so], (size_t)(matches[3].rm_eo - matches[3].rm_so));
+    memcpy(buffer, &specification[matches[3].rm_so], (size_t)(matches[3].rm_eo - matches[3].rm_so));
 
     struct filter * f = filter_create(type, n, buffer);
     free(buffer);
@@ -447,8 +462,8 @@ void filter_destroy(struct filter * f) {
     if (f == NULL) {
         return;
     }
-    if (f->vtbl->term != NULL) {
-        f->vtbl->term(f);
+    if (f->vtable->term != NULL) {
+        f->vtable->term(f);
     }
     free(f->arg_str);
     free(f);
@@ -456,42 +471,41 @@ void filter_destroy(struct filter * f) {
 
 static void filter_iterate(const struct apply_state * state, size_t filter_index, const struct word * w) {
     if (filter_index >= state->n_filters) {
-        cursor_update_output(state->cursor, state->cursor->output_index + 1);
-        state->callback(w, state->callback_cookie);
+        state->cb->callback(state->cb, w);
     } else {
         const struct filter * filter = state->filters[filter_index];
-        filter->vtbl->apply(filter, w, state, filter_index + 1);
+        filter->vtable->apply(filter, w, state, filter_index + 1);
     }
 }
 
-void filter_chain_apply(const struct filter * const * fs, size_t n_fs, struct wordset * input, struct cursor * cursor,
-                        void (*callback)(const struct word * w, void * cookie), void * cookie) {
-    ASSERT(fs != NULL);
-    ASSERT(n_fs > 0);
+void filter_chain_apply(const struct filter * const * filters, size_t n_filters, struct wordset * input,
+                        struct cursor * cursor, struct word_callback * cb) {
+    ASSERT(filters != NULL);
+    ASSERT(n_filters > 0);
     ASSERT(input != NULL);
     ASSERT(cursor != NULL);
-    ASSERT(callback != NULL);
-    for (size_t i = 0; i < n_fs; i++) {
-        ASSERT(fs[i]->vtbl != NULL);
+    ASSERT(cb != NULL);
+    for (size_t i = 0; i < n_filters; i++) {
+        ASSERT(filters[i]->vtable != NULL);
         if (i == 0) {
-            ASSERT(fs[i]->vtbl->apply != NULL || fs[i]->vtbl->iterate != NULL);
+            ASSERT(filters[i]->vtable->apply != NULL || filters[i]->vtable->iterate != NULL);
         } else {
-            ASSERT(fs[i]->vtbl->apply != NULL);
+            ASSERT(filters[i]->vtable->apply != NULL);
         }
     }
 
     struct apply_state state = {
-        .filters = fs,
-        .n_filters = n_fs,
+        .internal_cb = {iterate_callback},
+        .filters = filters,
+        .n_filters = n_filters,
         .ws = input,
         .cursor = cursor,
-        .callback_cookie = cookie,
-        .callback = callback,
+        .cb = cb,
     };
 
     cursor->total_input_items = input->words_count;
-    if (fs[0]->vtbl->iterate != NULL) {
-        fs[0]->vtbl->iterate(fs[0], &state);
+    if (filters[0]->vtable->iterate != NULL) {
+        filters[0]->vtable->iterate(filters[0], &state);
     } else {
         for (size_t i = cursor->input_index; cursor_update_input(cursor, i); i++) {
             const struct word * w = input->words[i];
@@ -500,31 +514,30 @@ void filter_chain_apply(const struct filter * const * fs, size_t n_fs, struct wo
     }
 }
 
-void filter_chain_to_wordset(const struct filter * const * fs, size_t n_fs, struct wordset * input,
+void filter_chain_to_wordset(const struct filter * const * filters, size_t n_filters, struct wordset * input,
                              struct cursor * cursor, struct wordset * output, struct wordlist * buffer) {
-    ASSERT(fs != NULL);
+    ASSERT(filters != NULL);
     ASSERT(input != NULL);
     ASSERT(cursor != NULL);
     ASSERT(output != NULL);
     ASSERT(buffer != NULL);
     ASSERT(input != output);
 
-    struct word_callback_wordset_add_state add_state = {
-        .output = output, .buffer = buffer,
-    };
-    filter_chain_apply(fs, n_fs, input, cursor, &word_callback_wordset_add_unique, &add_state);
+    struct word_callback * cb = word_callback_create_wordset_add(cursor, buffer, output);
+    filter_chain_apply(filters, n_filters, input, cursor, cb);
+    free(cb);
 }
 
 const char * filter_debug(struct filter * f) {
     static char buffer[2048];
     if (f->arg_str == NULL && f->arg_n == -1ul) {
-        return f->vtbl->name;
+        return f->vtable->name;
     } else if (f->arg_n == -1ul) {
-        snprintf(buffer, sizeof(buffer), "%s: %s", f->vtbl->name, f->arg_str);
+        snprintf(buffer, sizeof(buffer), "%s: %s", f->vtable->name, f->arg_str);
     } else if (f->arg_str == NULL) {
-        snprintf(buffer, sizeof(buffer), "%s %zu:", f->vtbl->name, f->arg_n);
+        snprintf(buffer, sizeof(buffer), "%s %zu:", f->vtable->name, f->arg_n);
     } else {
-        snprintf(buffer, sizeof(buffer), "%s %zu: %s", f->vtbl->name, f->arg_n, f->arg_str);
+        snprintf(buffer, sizeof(buffer), "%s %zu: %s", f->vtable->name, f->arg_n, f->arg_str);
     }
     return buffer;
 }

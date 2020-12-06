@@ -20,8 +20,8 @@ CHUNK_TIME_NS = 50e6  # 50ms
 TOTAL_TIME_NS = 15e9  # 15s
 
 WORDLIST_SOURCES = [
-    ("consolidated.txt", True),
-    ("/usr/share/dict/american-english-insane", False),
+    # ("consolidated.txt", True),
+    # ("/usr/share/dict/american-english-insane", False),
     ("/usr/share/dict/words", False),
 ]
 

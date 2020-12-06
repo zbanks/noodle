@@ -74,35 +74,50 @@ int main() {
     regfree(&preg);
 
     // XXX: I've gotten sloppy with my resource management here; there's some leaks
+    struct cursor cursor;
     struct wordlist buffer;
     wordlist_init(&buffer, "buffer");
-    struct wordset combo_ws;
-    wordset_init(&combo_ws, "combo matches");
-    struct cursor cursor;
-    cursor_init(&cursor);
-    cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 0);
-    struct filter * fnxn = NONNULL(filter_create(FILTER_NXN, 3, regex));
-    // cursor_set_deadline(&cursor, 0, 0);
-    do {
-        cursor.deadline_output_index++;
-        filter_chain_apply((const struct filter * const[]){fnxn}, 1, ws, &cursor, word_callback_print, NULL);
-        // nx_combo_match(nx, ws, 3, &cursor, &combo_ws, &buffer);
-        // LOG("%zu %zu %lu", cursor.total_input_items, cursor.input_index, cursor.deadline_ns);
-    } while (cursor.total_input_items != cursor.input_index && now_ns() < cursor.deadline_ns);
-    LOG("Combo match: %s", cursor_debug(&cursor));
-    wordset_print(&combo_ws);
-    filter_destroy(fnxn);
+    if (0) {
+        struct wordset combo_ws;
+        wordset_init(&combo_ws, "combo matches");
+        cursor_init(&cursor);
+        cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 0);
+        struct filter * fnxn = NONNULL(filter_create(FILTER_NXN, 3, regex));
+        // cursor_set_deadline(&cursor, 0, 0);
+        struct word_callback * cb = word_callback_create_print(&cursor, 0);
+        do {
+            cursor.deadline_output_index++;
+            filter_chain_apply((const struct filter * const[]){fnxn}, 1, ws, &cursor, cb);
+            // nx_combo_match(nx, ws, 3, &cursor, &combo_ws, &buffer);
+            // LOG("%zu %zu %lu", cursor.total_input_items, cursor.input_index, cursor.deadline_ns);
+        } while (cursor.total_input_items != cursor.input_index && now_ns() < cursor.deadline_ns);
+        free(cb);
+        LOG("Combo match: %s", cursor_debug(&cursor));
+        wordset_print(&combo_ws);
+        filter_destroy(fnxn);
+        nx_destroy(nx);
+    }
 
-    nx_destroy(nx);
+    {
+        struct cursor;
+        cursor_init(&cursor);
+        cursor_set_deadline(&cursor, now_ns() + (int)1e9, 0);
+        struct word_callback * cb = word_callback_create_print(&cursor, 0);
+        anagram_slow(ws, "aaabde", &cursor, cb);
+    }
     return 0;
 
-    struct anatree * at = anatree_create(ws);
     int64_t start_ns = now_ns();
+    struct anatree * at = anatree_create(ws);
+    LOG("created anatree for %zu words in %ld ns", ws->words_count, now_ns() - start_ns);
+    start_ns = now_ns();
     const struct anatree_node * atn = anatree_lookup(at, "smiles");
     int64_t end_ns = now_ns();
     anatree_node_print(atn);
     LOG("Lookup in %lu ns", end_ns - start_ns);
+    anatree_anagrams(at, "trains", NULL, NULL);
     anatree_destory(at);
+    return 0;
 
     /*
     struct wordset regex_matches;
@@ -130,11 +145,13 @@ int main() {
     cursor_set_deadline(&cursor, now_ns() + (int)1e9, 0);
     struct wordset wso;
     wordset_init(&wso, "filter matches");
+    struct word_callback * cb_buffer = word_callback_create_wordset_add(&cursor, &buffer, &wso);
     do {
         cursor.deadline_output_index++;
-        filter_chain_to_wordset((const struct filter * const[]){f1, f2, f3, f4}, 4, ws, &cursor, &wso, &buffer);
+        filter_chain_apply((const struct filter * const[]){f1, f2, f3, f4}, 4, ws, &cursor, cb_buffer);
         LOG("Cursor state: %s", cursor_debug(&cursor));
     } while (cursor.input_index != cursor.total_input_items);
+    free(cb_buffer);
     wordset_print(&wso);
 
     wordset_term(&wso);
@@ -149,7 +166,9 @@ int main() {
     };
     cursor_init(&cursor);
     cursor_set_deadline(&cursor, now_ns() + (int)1e9, 0);
-    filter_chain_apply(fanagram, 6, ws, &cursor, word_callback_print, NULL);
+    struct word_callback * cb = word_callback_create_print(&cursor, 0);
+    filter_chain_apply(fanagram, 6, ws, &cursor, cb);
+    free(cb);
     LOG("Cursor state: %s", cursor_debug(&cursor));
     wordset_print(&wso);
 
@@ -158,7 +177,9 @@ int main() {
     const struct filter * fanagram2 = NONNULL(filter_parse("anagram: spears"));
     cursor_init(&cursor);
     cursor_set_deadline(&cursor, now_ns() + (int)1e9, 0);
-    filter_chain_apply(&fanagram2, 1, ws, &cursor, word_callback_print, (size_t[]){3});
+    cb = word_callback_create_print(&cursor, 3);
+    filter_chain_apply(&fanagram2, 1, ws, &cursor, cb);
+    free(cb);
     LOG("Cursor state: %s", cursor_debug(&cursor));
     wordset_print(&wso);
 

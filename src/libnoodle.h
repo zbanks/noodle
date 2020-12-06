@@ -1,3 +1,4 @@
+#include "anagram_slow.h"
 #include "anatree.h"
 #include "error.h"
 #include "filter.h"

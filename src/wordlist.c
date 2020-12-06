@@ -1,4 +1,5 @@
 #include "wordlist.h"
+#include "anatree.h"
 #include <search.h>
 
 void wordset_init(struct wordset * ws, const char * name) {
@@ -22,6 +23,8 @@ void wordset_add(struct wordset * ws, const struct word * w) {
 
     ws->words[ws->words_count++] = w;
     ws->is_canonically_sorted = false;
+    anatree_destory(ws->anatree);
+    ws->anatree = NULL;
 }
 
 void wordset_sort_value(struct wordset * ws) {
@@ -34,7 +37,17 @@ void wordset_sort_canonical(struct wordset * ws) {
     ws->is_canonically_sorted = true;
 }
 
-void wordset_term(struct wordset * ws) { free(ws->words); }
+const struct anatree * wordset_anatree(struct wordset * ws) {
+    if (ws->anatree == NULL) {
+        ws->anatree = NONNULL(anatree_create(ws));
+    }
+    return ws->anatree;
+}
+
+void wordset_term(struct wordset * ws) {
+    free(ws->words);
+    anatree_destory(ws->anatree);
+}
 
 const struct word * wordset_get(const struct wordset * ws, size_t i) {
     if (i >= ws->words_count) {
@@ -96,6 +109,8 @@ int wordlist_init_from_file(struct wordlist * wl, const char * filename, bool ha
             }
             wordlist_add(wl, word, (int)strtoul(line, NULL, 10));
         } else {
+            if (strlen(line) == 1)
+                continue;
             wordlist_add(wl, line, 1000);
         }
         i++;
@@ -173,28 +188,68 @@ void wordlist_term(struct wordlist * wl) {
     free(wl->chunks);
 }
 
-void word_callback_print(const struct word * w, void * cookie) {
-    if (cookie != NULL) {
-        size_t * remaining_count = cookie;
-        if (*remaining_count == 0) {
-            return;
-        }
-        (*remaining_count)--;
+//
+
+struct word_callback_print {
+    struct word_callback cb;
+    size_t limit;
+    size_t count;
+};
+
+static void word_callback_print(struct word_callback * cb, const struct word * w) {
+    struct word_callback_print * state = (void *)cb;
+    if (state->limit != 0 && state->count >= state->limit) {
+        return;
     }
+    state->count++;
+    cursor_update_output(state->cb.cursor, state->count);
     LOG("- %s", word_debug(w));
 }
 
-void word_callback_wordset_add(const struct word * w, void * cookie) {
-    struct word_callback_wordset_add_state * state = cookie;
-    w = wordlist_ensure_owned(state->buffer, w);
-    wordset_add(state->output, w);
+struct word_callback * word_callback_create_print(struct cursor * cursor, size_t limit) {
+    struct word_callback_print * state = NONNULL(calloc(1, sizeof(*state)));
+    state->cb.callback = word_callback_print;
+    state->cb.cursor = cursor;
+    state->limit = limit;
+    state->count = 0;
+    return &state->cb;
 }
 
-void word_callback_wordset_add_unique(const struct word * w, void * cookie) {
-    struct word_callback_wordset_add_state * state = cookie;
-    if (wordset_find(state->output, &w->canonical) != NULL) {
+struct word_callback_wordset {
+    struct word_callback cb;
+    struct wordlist * buffer;
+    struct wordset * output;
+    bool unique;
+};
+
+static void word_callback_wordset(struct word_callback * cb, const struct word * w) {
+    struct word_callback_wordset * state = (void *)cb;
+    if (state->unique && wordset_find(state->output, &w->canonical) != NULL) {
         return;
     }
     w = wordlist_ensure_owned(state->buffer, w);
     wordset_add(state->output, w);
+    cursor_update_output(state->cb.cursor, state->output->words_count);
+}
+
+struct word_callback * word_callback_create_wordset_add(struct cursor * cursor, struct wordlist * buffer,
+                                                        struct wordset * output) {
+    struct word_callback_wordset * state = NONNULL(calloc(1, sizeof(*state)));
+    state->cb.callback = word_callback_wordset;
+    state->cb.cursor = cursor;
+    state->buffer = buffer;
+    state->output = output;
+    state->unique = false;
+    return &state->cb;
+}
+
+struct word_callback * word_callback_create_wordset_add_unique(struct cursor * cursor, struct wordlist * buffer,
+                                                               struct wordset * output) {
+    struct word_callback_wordset * state = NONNULL(calloc(1, sizeof(*state)));
+    state->cb.callback = word_callback_wordset;
+    state->cb.cursor = cursor;
+    state->buffer = buffer;
+    state->output = output;
+    state->unique = true;
+    return &state->cb;
 }

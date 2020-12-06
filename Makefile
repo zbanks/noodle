@@ -16,6 +16,8 @@ LFLAGS = -Wl,-z,origin '-Wl,-rpath=$$ORIGIN'
 
 LIB_SRCS = \
 	src/anatree.c \
+	src/anagram_slow.c \
+	src/bag_util.c \
 	src/error.c \
 	src/filter.c \
 	src/nx.c \

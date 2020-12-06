@@ -19,6 +19,7 @@ NOODLE_EXPORT void wordset_sort_value(struct wordset * ws);
 NOODLE_EXPORT void wordset_sort_canonical(struct wordset * ws);
 NOODLE_EXPORT const struct word * wordset_get(const struct wordset * ws, size_t i);
 
+const struct anatree * wordset_anatree(struct wordset * ws);
 void wordset_add(struct wordset * ws, const struct word * w);
 const struct word * wordset_find(const struct wordset * ws, const struct str * s);
 
@@ -36,15 +37,17 @@ NOODLE_EXPORT const struct word * wordlist_add(struct wordlist * wl, const char 
 
 const struct word * wordlist_ensure_owned(struct wordlist * wl, const struct word * w);
 
-// Print each word to the log
-NOODLE_EXPORT void word_callback_print(const struct word * w, void * cookie);
-
-// Add each word to an `output` wordset, using wordlist `buffer` to ensure it is owned
-struct word_callback_wordset_add_state {
-    struct wordlist * buffer;
-    struct wordset * output;
+// TODO: Maybe unify callbacks & cursors? It's weird they have to passed in together
+struct word_callback {
+    void (*callback)(struct word_callback * cb, const struct word * w);
+    struct cursor * cursor;
 };
-NOODLE_EXPORT void word_callback_wordset_add(const struct word * w, void * cookie);
 
+// Print each word to the log
+NOODLE_EXPORT struct word_callback * word_callback_create_print(struct cursor * cursor, size_t limit);
+// Add each word to an `output` wordset, using wordlist `buffer` to ensure it is owned
+NOODLE_EXPORT struct word_callback * word_callback_create_wordset_add(struct cursor * cursor, struct wordlist * buffer,
+                                                                      struct wordset * output);
 // This has an O(n^2) component, which is fine for small n (~a few thousand)
-NOODLE_EXPORT void word_callback_wordset_add_unique(const struct word * w, void * cookie);
+NOODLE_EXPORT struct word_callback *
+word_callback_create_wordset_add_unique(struct cursor * cursor, struct wordlist * buffer, struct wordset * output);
