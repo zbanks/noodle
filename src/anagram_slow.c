@@ -9,10 +9,13 @@ void anagram_slow_iterate(const struct wordset * words, const char * letters, si
     while (true) {
         size_t i = cursor->input_index_list[depth];
         if (i >= words->words_count) {
+            if (depth == 0) {
+                cursor_update_input(cursor, i);
+            }
             return;
         }
 
-        const char * candidate = str_str(&words->words[i]->sorted);
+        const char * candidate = word_sorted(words->words[i]);
 
         char buffer[MAX_LENGTH];
         if (bag_subtract_into(letters, candidate, buffer)) {
@@ -21,18 +24,19 @@ void anagram_slow_iterate(const struct wordset * words, const char * letters, si
                 struct word wp;
                 word_tuple_init(&wp, stack, depth + 1);
                 cb->callback(cb, &wp);
+                cursor->input_index_list[depth] = i + 1;
             } else if (depth + 1 < WORD_TUPLE_N) {
                 anagram_slow_iterate(words, buffer, depth + 1, stack, cursor, cb);
             }
         }
 
-        cursor->input_index_list[depth]++;
-        cursor->input_index_list[depth + 1] = 0;
-
         // Check if we've exceeded a deadline
         if (!cursor_update_input(cursor, cursor->input_index_list[0])) {
             return;
         }
+
+        cursor->input_index_list[depth] = i + 1;
+        cursor->input_index_list[depth + 1] = 0;
     }
 }
 
@@ -42,6 +46,7 @@ void anagram_slow(const struct wordset * words, const char * sorted, struct curs
         LOG("Input string is too long (%zu >= %zu)", strlen(sorted) + 1, MAX_LENGTH);
         return;
     }
+    cursor->total_input_items = words->words_count;
     const struct word * stack[WORD_TUPLE_N] = {0};
     anagram_slow_iterate(words, sorted, 0, stack, cursor, cb);
 }

@@ -99,11 +99,15 @@ int main() {
     }
 
     {
+        wordset_print(ws);
         struct cursor;
         cursor_init(&cursor);
         cursor_set_deadline(&cursor, now_ns() + (int)1e9, 0);
         struct word_callback * cb = word_callback_create_print(&cursor, 0);
-        anagram_slow(ws, "aaabde", &cursor, cb);
+        do {
+            cursor.deadline_output_index++;
+            anagram_slow(ws, "aaii", &cursor, cb);
+        } while (cursor.total_input_items != cursor.input_index && now_ns() < cursor.deadline_ns);
     }
     return 0;
 

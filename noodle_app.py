@@ -20,27 +20,23 @@ CHUNK_TIME_NS = 50e6  # 50ms
 TOTAL_TIME_NS = 15e9  # 15s
 
 WORDLIST_SOURCES = [
-    # ("consolidated.txt", True),
-    # ("/usr/share/dict/american-english-insane", False),
+    ("consolidated.txt", True),
+    ("/usr/share/dict/american-english-insane", False),
     ("/usr/share/dict/words", False),
 ]
 
 
 def handle_noodle_input(input_text, cursor):
-    # nxn_match = re.match(r"^nxn ([0-9]+):(.*)$", input_text)
-    # if nxn_match:
-    #    n_words_str, nx_expr = nxn_match.groups()
-    #    print(nx_expr, n_words_str)
-    #    nx = Nx.new(nx_expr)
-    #    n_words = int(n_words_str)
-    #    iterate = lambda output: nx.combo_match(
-    #        WORDLIST, n_words=n_words, cursor=cursor, output=output
-    #    )
-    #    query_text = "    nxn {}: {}\n".format(n_words, nx_expr)
-    # else:
-    filters = [
-        Filter.new_from_spec(s.strip()) for s in input_text.split("\n") if s.strip()
-    ]
+    filters = []
+    for line in input_text.split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        filters.append(Filter.new_from_spec(line))
+    if not filters:
+        yield "#0 No input"
+        return
+
     iterate = lambda output: filter_chain_to_wordset(
         filters, WORDLIST, cursor=cursor, output=output
     )
@@ -49,6 +45,7 @@ def handle_noodle_input(input_text, cursor):
     first = True
     output = None
     next_output = 0
+    width = 24
     while True:
         output = iterate(output)
 
@@ -62,7 +59,8 @@ def handle_noodle_input(input_text, cursor):
 
         for i in range(next_output, len(output)):
             word = output[i]
-            output_text += "{}\n".format(str(word))
+            width = max(width, len(word) + 1)
+            output_text += ("{:<%d} {}\n" % width).format(str(word), word.debug())
         next_output = len(output)
 
         yield output_text

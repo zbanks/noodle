@@ -49,5 +49,5 @@ NOODLE_EXPORT struct word_callback * word_callback_create_print(struct cursor * 
 NOODLE_EXPORT struct word_callback * word_callback_create_wordset_add(struct cursor * cursor, struct wordlist * buffer,
                                                                       struct wordset * output);
 // This has an O(n^2) component, which is fine for small n (~a few thousand)
-NOODLE_EXPORT struct word_callback *
-word_callback_create_wordset_add_unique(struct cursor * cursor, struct wordlist * buffer, struct wordset * output);
+NOODLE_EXPORT struct word_callback * word_callback_create_wordset_add_unique(
+        struct cursor * cursor, struct wordlist * buffer, struct wordset * output);

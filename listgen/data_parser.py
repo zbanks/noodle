@@ -140,6 +140,7 @@ def consolidate():
                     weight += 25
                 elif canonical == w.lower():
                     weight += 10
+                weight += 2 * len(canonical) ** 2
                 if canonical in words:
                     if min_count is None:
                         if weight > words[canonical][0]:

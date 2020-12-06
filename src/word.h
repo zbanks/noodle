@@ -42,6 +42,7 @@ NOODLE_EXPORT void word_term(struct word * w);
 NOODLE_EXPORT int word_value(const struct word * w);
 NOODLE_EXPORT const char * word_debug(const struct word * w);
 NOODLE_EXPORT const char * word_canonical(const struct word * w);
+NOODLE_EXPORT const char * word_sorted(const struct word * w);
 
 int word_value_cmp(const void * x, const void * y);
 int word_value_ptrcmp(const void * x, const void * y);

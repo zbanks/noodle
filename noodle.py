@@ -42,6 +42,9 @@ class Word:
     def debug(self):
         return ffi_string(noodle_lib.word_debug(self.p))
 
+    def __len__(self):
+        return len(self.canonical)
+
     def __str__(self):
         return self.canonical
 

@@ -109,7 +109,8 @@ int wordlist_init_from_file(struct wordlist * wl, const char * filename, bool ha
             }
             wordlist_add(wl, word, (int)strtoul(line, NULL, 10));
         } else {
-            if (strlen(line) == 1)
+            // XXX: Filter out 1-letter words, except a & I
+            if (strlen(line) == 1 && line[0] != 'a' && line[0] != 'I')
                 continue;
             wordlist_add(wl, line, 1000);
         }

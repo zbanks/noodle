@@ -145,13 +145,14 @@ void filter_anagram_term(struct filter * f) { word_term(&f->w); }
 
 void filter_anagram_apply(const struct filter * f, const struct word * w, const struct apply_state * state,
                           size_t index) {
-    if (strcmp(str_str(&w->sorted), str_str(&f->w.sorted)) == 0) {
+    if (strcmp(word_sorted(w), word_sorted(&f->w)) == 0) {
         filter_iterate(state, index, w);
     }
 }
 
 void filter_anagram_iterate(const struct filter * f, const struct apply_state * state) {
-    anagram_slow(state->ws, str_str(&f->w.sorted), state->cursor, (void *)&state->internal_cb);
+    ASSERT(!f->w.is_tuple);
+    anagram_slow(state->ws, word_sorted(&f->w), state->cursor, (void *)&state->internal_cb);
 }
 
 #define filter_subanagram_init filter_anagram_init
@@ -160,7 +161,7 @@ void filter_anagram_iterate(const struct filter * f, const struct apply_state * 
 
 void filter_subanagram_apply(const struct filter * f, const struct word * w, const struct apply_state * state,
                              size_t index) {
-    if (bag_difference_size_less_than(str_str(&f->w.sorted), str_str(&w->sorted), -1ul)) {
+    if (bag_difference_size_less_than(word_sorted(&f->w), word_sorted(w), -1ul)) {
         filter_iterate(state, index, w);
     }
 }
@@ -171,7 +172,7 @@ void filter_subanagram_apply(const struct filter * f, const struct word * w, con
 
 void filter_superanagram_apply(const struct filter * f, const struct word * w, const struct apply_state * state,
                                size_t index) {
-    if (bag_difference_size_less_than(str_str(&w->sorted), str_str(&f->w.sorted), -1ul)) {
+    if (bag_difference_size_less_than(word_sorted(w), word_sorted(&f->w), -1ul)) {
         filter_iterate(state, index, w);
     }
 }
@@ -182,8 +183,8 @@ void filter_superanagram_apply(const struct filter * f, const struct word * w, c
 
 void filter_transdelete_apply(const struct filter * f, const struct word * w, const struct apply_state * state,
                               size_t index) {
-    const char * x = str_str(&w->sorted);
-    const char * y = str_str(&f->w.sorted);
+    const char * x = word_sorted(w);
+    const char * y = word_sorted(&f->w);
     if (strlen(x) + f->arg_n != strlen(y)) {
         return;
     }
@@ -198,8 +199,8 @@ void filter_transdelete_apply(const struct filter * f, const struct word * w, co
 
 void filter_transadd_apply(const struct filter * f, const struct word * w, const struct apply_state * state,
                            size_t index) {
-    const char * x = str_str(&w->sorted);
-    const char * y = str_str(&f->w.sorted);
+    const char * x = word_sorted(&f->w);
+    const char * y = word_sorted(w);
     if (strlen(x) != strlen(y) + f->arg_n) {
         return;
     }
@@ -213,7 +214,7 @@ void filter_transadd_apply(const struct filter * f, const struct word * w, const
 #define filter_bank_iterate NULL
 
 void filter_bank_apply(const struct filter * f, const struct word * w, const struct apply_state * state, size_t index) {
-    const char * s = str_str(&w->sorted);
+    const char * s = word_sorted(w);
     for (; *s != '\0'; s++) {
         if (strchr(f->arg_str, *s) == NULL) {
             break;
@@ -523,7 +524,7 @@ void filter_chain_to_wordset(const struct filter * const * filters, size_t n_fil
     ASSERT(buffer != NULL);
     ASSERT(input != output);
 
-    struct word_callback * cb = word_callback_create_wordset_add(cursor, buffer, output);
+    struct word_callback * cb = word_callback_create_wordset_add_unique(cursor, buffer, output);
     filter_chain_apply(filters, n_filters, input, cursor, cb);
     free(cb);
 }

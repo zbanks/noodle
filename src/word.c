@@ -91,6 +91,10 @@ static int cmp_letter(const void * _x, const void * _y) {
     return cmp(*x, *y);
 }
 
+static void sort_string(char * s) {
+    qsort(s, strlen(s), 1, &cmp_letter);
+}
+
 void word_init(struct word * w, const char * original, int value) {
     w->value = value;
     w->is_tuple = false;
@@ -113,9 +117,7 @@ void word_init(struct word * w, const char * original, int value) {
 
     // Create sorted representation
     char * s = str_init(&w->sorted, str_str(&w->canonical), strlen(original));
-    (void)s;
-    (void)cmp_letter;
-    qsort(s, strlen(s), 1, &cmp_letter);
+    sort_string(s);
 }
 
 void word_init_copy(struct word * dst, const struct word * src) {
@@ -225,3 +227,23 @@ const char * word_debug(const struct word * w) {
 }
 
 const char * word_canonical(const struct word * w) { return str_str(&w->canonical); }
+
+const char * word_sorted(const struct word * w) {
+    if (!w->is_tuple) {
+        return str_str(&w->sorted);
+    } else {
+        // XXX: These rolling static buffers are a gross hack
+        static size_t i = 0;
+        static char buffers[16][256];
+        if (++i >= 16) { i = 0; }
+        char * s = buffers[i];
+
+        const char * canonical = word_canonical(w);
+        size_t len = strlen(canonical);
+        ASSERT(len < 256);
+        memcpy(s, canonical, len + 1);
+        sort_string(s);
+        LOG("canonical = %s; sorted = %s", canonical, s);
+        return s;
+    }
+}

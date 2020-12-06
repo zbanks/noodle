@@ -22,6 +22,7 @@ with open("src/libnoodle.h") as f:
 cdefs = ""
 for filename in include_files:
     with open("src/{}".format(filename)) as f:
+        cdefs += "// {}\n".format(filename)
         exporting = False
         for line in f:
             line = line.replace("NOODLE_PRINTF", "")
