@@ -9,7 +9,7 @@ bool nx_set_test(const struct nx_set * s, size_t i) {
     return (s->xs[i / 64] & (1ul << (i % 64))) != 0;
 }
 
-#define EMPTYBIT // ~5% speedup when NX_STATE_MAX=255
+//#define EMPTYBIT // ~5% speedup when NX_STATE_MAX=255
 bool nx_set_isempty(const struct nx_set * s) {
 #ifdef EMPTYBIT
     return (s->xs[NX_SET_SIZE / 64] & (1ul << 63u)) == 0;
@@ -37,7 +37,7 @@ bool nx_set_add(struct nx_set * s, size_t i) {
     return true;
 }
 
-static void nx_set_orequal(struct nx_set * restrict s, const struct nx_set * restrict t) {
+void nx_set_orequal(struct nx_set * restrict s, const struct nx_set * restrict t) {
     for (size_t i = 0; i < NX_SET_ARRAYLEN; i++) {
         s->xs[i] |= t->xs[i];
     }
@@ -132,7 +132,6 @@ static void nx_nfa_debug(const struct nx * nx) {
     LOG("NX NFA: %zu states", nx->n_states);
     for (size_t i = 0; i < nx->n_states; i++) {
         const struct nx_state * s = &nx->states[i];
-        ASSERT(s->type == STATE_TYPE_TRANSITION);
 
         printf("     %3zu: ", i);
         for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
@@ -160,6 +159,9 @@ static void nx_nfa_debug(const struct nx * nx) {
         if (!nx_set_isempty(&s->epsilon_states)) {
             printf("* -> %s", nx_set_debug(&s->epsilon_states));
         }
+        // printf("\t [%#x->%u %#x->%u]",
+        //        s->char_bitset[0], s->next_state[0],
+        //        s->char_bitset[1], s->next_state[1]);
         printf("\n");
     }
     printf("\n");
@@ -176,7 +178,6 @@ struct nx_state * nx_state_insert(struct nx * nx, size_t insert_index) {
     ASSERT(nx->n_states <= NX_STATE_MAX);
 
     for (size_t i = insert_index + 1; i < nx->n_states; i++) {
-        ASSERT(nx->states[i].type == STATE_TYPE_TRANSITION);
         for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
             if (nx->states[i].next_state[j] >= insert_index && nx->states[i].next_state[j] < nx->n_states &&
                 nx->states[i].char_bitset[j] != 0) {
@@ -210,7 +211,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             }
             return consumed_characters;
         case '\0':
-            s->type = STATE_TYPE_TRANSITION;
             s->next_state[0] = STATE_SUCCESS;
             s->char_bitset[0] = nx_char_bit(NX_CHAR_END);
 
@@ -222,7 +222,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             return consumed_characters;
         case 'A' ... 'Z':
         case 'a' ... 'z':
-            s->type = STATE_TYPE_TRANSITION;
             s->next_state[0] = (uint16_t)(nx->n_states + 1);
             s->char_bitset[0] = nx_char_bit(nc);
 
@@ -230,7 +229,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             nx->n_states++;
             break;
         case '_': // Explicit space
-            s->type = STATE_TYPE_TRANSITION;
             s->next_state[0] = (uint16_t)(nx->n_states + 1);
             s->char_bitset[0] = nx_char_bit(NX_CHAR_SPACE);
 
@@ -238,7 +236,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             nx->n_states++;
             break;
         case '.':
-            s->type = STATE_TYPE_TRANSITION;
             s->next_state[0] = (uint16_t)(nx->n_states + 1);
             for (enum nx_char j = NX_CHAR_SPACE; j <= NX_CHAR_Z; j++) {
                 s->char_bitset[0] |= nx_char_bit(j);
@@ -257,7 +254,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
                 consumed_characters++;
             }
 
-            s->type = STATE_TYPE_TRANSITION;
             s->next_state[0] = (uint16_t)(nx->n_states + 1);
             s->char_bitset[0] = 0;
 
@@ -284,7 +280,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             nx->n_states++;
             break;
         case '*': {
-            s->type = STATE_TYPE_TRANSITION;
             if (previous_initial_state == STATE_FAILURE) {
                 LOG("nx parse error: '%c' without preceeding group", *c);
                 return -1;
@@ -294,14 +289,12 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             if (previous_initial_state < subexpression_final_state && subexpression_final_state != STATE_FAILURE) {
                 subexpression_final_state++;
             }
-            epsilon_s->type = STATE_TYPE_TRANSITION;
             epsilon_s->next_state[0] = (uint16_t)previous_initial_state;
             epsilon_s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
             epsilon_s->next_state[1] = (uint16_t)(nx->n_states + 1);
             epsilon_s->char_bitset[1] = nx_char_bit(NX_CHAR_EPSILON);
 
             s = &nx->states[nx->n_states];
-            s->type = STATE_TYPE_TRANSITION;
             s->next_state[0] = (uint16_t)previous_initial_state;
             s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
             s->next_state[1] = (uint16_t)(nx->n_states + 1);
@@ -311,14 +304,12 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             break;
         }
         case '+':
-            s->type = STATE_TYPE_TRANSITION;
             if (previous_initial_state == STATE_FAILURE) {
                 LOG("nx parse error: '%c' without preceeding group", *c);
                 return -1;
             }
 
             s = &nx->states[nx->n_states];
-            s->type = STATE_TYPE_TRANSITION;
             s->next_state[0] = (uint16_t)previous_initial_state;
             s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
             s->next_state[1] = (uint16_t)(nx->n_states + 1);
@@ -327,7 +318,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             nx->n_states++;
             break;
         case '?': {
-            s->type = STATE_TYPE_TRANSITION;
             if (previous_initial_state == STATE_FAILURE) {
                 LOG("nx parse error: '%c' without preceeding group", *c);
                 return -1;
@@ -337,7 +327,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             if (previous_initial_state < subexpression_final_state && subexpression_final_state != STATE_FAILURE) {
                 subexpression_final_state++;
             }
-            epsilon_s->type = STATE_TYPE_TRANSITION;
             epsilon_s->next_state[0] = (uint16_t)previous_initial_state;
             epsilon_s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
             epsilon_s->next_state[1] = (uint16_t)(nx->n_states);
@@ -365,7 +354,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
                 subexpression_final_state++;
             }
 
-            epsilon_s->type = STATE_TYPE_TRANSITION;
             epsilon_s->next_state[0] = (uint16_t)(subexpression_initial_state + 1);
             epsilon_s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
             epsilon_s->next_state[1] = (uint16_t)(nx->n_states);
@@ -374,7 +362,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             if (subexpression_final_state == STATE_FAILURE) {
                 subexpression_final_state = nx->n_states;
                 s = &nx->states[subexpression_final_state];
-                s->type = STATE_TYPE_TRANSITION;
                 s->next_state[0] = STATE_FAILURE; // This is filled in at the end
                 s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
                 epsilon_s->next_state[1]++;
@@ -429,7 +416,6 @@ struct nx * nx_compile(const char * expression) {
                     continue;
                 }
                 const struct nx_state * s2 = &nx->states[si];
-                ASSERT(s2->type == STATE_TYPE_TRANSITION);
 
                 for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
                     if (nx_char_bit(NX_CHAR_EPSILON) & s2->char_bitset[j]) {
@@ -453,19 +439,6 @@ struct nx * nx_compile(const char * expression) {
             }
         }
     }
-
-    // Many states are reachable through other states via epsilon transitions
-    // Use a greedy heursitic to reduce the number of states we will
-    // need to check when computing combo matches
-    struct nx_set covered_states = {0};
-    for (size_t i = 0; i < nx->n_states; i++) {
-        if (nx_set_test(&covered_states, i)) {
-            continue;
-        }
-        nx_set_add(&nx->head_states, i);
-        nx_set_orequal(&covered_states, &nx->states[i].epsilon_states);
-    }
-    LOG("Head states: %s", nx_set_debug(&nx->head_states));
 
     LOG("Created NFA for \"%s\" with %zu states", expression, nx->n_states);
     nx_nfa_debug(nx);
@@ -505,7 +478,7 @@ static struct nx_set nx_match_transition(const struct nx * nx, uint32_t char_bit
 
         // For each state, check which edges are accessible with `char_bitset`
         const struct nx_state * s = &nx->states[si];
-        ASSERT(s->type == STATE_TYPE_TRANSITION);
+        // TODO: Can this for loop be removed? s->char_bitset[1] should be 0 at this point
         for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
             if (char_bitset & s->char_bitset[j]) {
                 // If an edge does match `char_bitset`, add it to the result set
@@ -525,7 +498,6 @@ static struct nx_set nx_match_transition(const struct nx * nx, uint32_t char_bit
         // an arbitrary number of epsilon transitions from the given state.
         // This allows this segment to run in constant time.
         const struct nx_state * s = &nx->states[si];
-        ASSERT(s->type == STATE_TYPE_TRANSITION);
         nx_set_orequal(&end_states, &s->epsilon_states);
     }
 

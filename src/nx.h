@@ -23,6 +23,8 @@ bool nx_set_test(const struct nx_set * s, size_t i);
 // Set bit `i` and return true if `i` is a valid bit and was not previously set
 bool nx_set_add(struct nx_set * s, size_t i);
 
+void nx_set_orequal(struct nx_set * restrict s, const struct nx_set * restrict t);
+
 const char * nx_set_debug(const struct nx_set * s);
 
 //
@@ -59,44 +61,29 @@ void nx_char_translate(const char * input, enum nx_char * output, size_t output_
 
 #define NX_BRANCH_COUNT ((size_t)2)
 struct nx_state {
-    enum {
-        STATE_TYPE_TRANSITION,
-        // STATE_ANAGRAM_EXACT,
-        // STATE_ANAGRAM_LIMIT,
-    } type;
-    union {
-        struct {
-            // A fully-general NFA node could have an arbitrary number of outgoing
-            // edges, but WLOG we only allow `NX_BRANCH_COUNT` (2).
-            // The outgoing edges are defined with `next_state` &  `char_bitset`.
-            //
-            // This representation is optimized to be performant when
-            // evaluating "unoptimized" NFAs, e.g. the results of
-            // Thompson's Construction.
-            //
-            // Although this *could* represent the DFA form, a DFA
-            // would have significantly more branching, and would probably
-            // be better represented as a lookup table.
-            //
-            // This form is also very conducive to "fuzzy" matching
-            uint16_t next_state[NX_BRANCH_COUNT];
-            uint32_t char_bitset[NX_BRANCH_COUNT];
+    // A fully-general NFA node could have an arbitrary number of outgoing
+    // edges, but WLOG we only allow `NX_BRANCH_COUNT` (2).
+    // The outgoing edges are defined with `next_state` &  `char_bitset`.
+    //
+    // This representation is optimized to be performant when
+    // evaluating "unoptimized" NFAs, e.g. the results of
+    // Thompson's Construction.
+    //
+    // Although this *could* represent the DFA form, a DFA
+    // would have significantly more branching, and would probably
+    // be better represented as a lookup table.
+    //
+    // This form is also very conducive to "fuzzy" matching
+    uint16_t next_state[NX_BRANCH_COUNT];
+    uint32_t char_bitset[NX_BRANCH_COUNT];
 
-            // The set of states reachable from this state through epsilon
-            // transitions is pre-computed, so that the NFA can be
-            // evaluated in ~linear time*.
-            //
-            // (It's only linear time if we assume the number of states is O(1),
-            // which is not a traditional assumption to make!)
-            struct nx_set epsilon_states;
-        };
-        // struct {
-        //    uint16_t transition_fail;
-        //    uint16_t transition_success;
-        //    int16_t anagram_arg;
-        //    uint8_t anagram_letters[(_NX_CHAR_MAX - 4) * 2];
-        //};
-    };
+    // The set of states reachable from this state through epsilon
+    // transitions is pre-computed, so that the NFA can be
+    // evaluated in nearly ~linear time*.
+    //
+    // (It's only "linear" time if we assume the number of states is O(1),
+    // which is not a traditional assumption to make!)
+    struct nx_set epsilon_states;
 };
 
 //
@@ -116,11 +103,6 @@ struct nx {
 
     // The original NX expression, as text, for debugging
     char * expression;
-
-    // Which states are not immediately reachable from another state via
-    // an epsilon transition? This is used as a heuristic for performing
-    // combo searches (and may include some states that *are* reachable)
-    struct nx_set head_states;
 
     struct nx_combo_cache * combo_cache;
 };

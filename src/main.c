@@ -28,7 +28,8 @@ int main() {
     // const char *regex = "^\\([asdf][asdf]\\)\\+$";
     // const char * regex = "^h\\(e\\|ow\\)l*o\\?w*[orza]\\+l\\?d*$";
     // const char *regex = "^helloworld$";
-    const char * regex = "^(goodbye|(hellt?o)+)worq?[aild]*d$";
+    const char * regex = "^h?e?l*o?hello$";
+    // const char * regex = "^(goodbye|(hellt?o)+)worq?[aild]*d$";
     // const char *regex = "^...$";
     struct nx * nx = nx_compile(regex);
     int64_t t = now_ns();
@@ -78,24 +79,53 @@ int main() {
     struct wordlist buffer;
     wordlist_init(&buffer, "buffer");
     if (1) {
-        struct wordset combo_ws;
-        wordset_init(&combo_ws, "combo matches");
         cursor_init(&cursor);
         cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 1000000);
-        struct filter * fnxn = NONNULL(filter_create(FILTER_NXN, 3, regex));
+        struct filter * fnxn = NONNULL(filter_create(FILTER_NXN, 2, regex));
         // cursor_set_deadline(&cursor, 0, 0);
         struct word_callback * cb = word_callback_create_print(&cursor, 0);
         do {
             cursor.deadline_output_index++;
             filter_chain_apply((const struct filter * const[]){fnxn}, 1, ws, &cursor, cb);
-            // nx_combo_match(nx, ws, 3, &cursor, &combo_ws, &buffer);
             // LOG("%zu %zu %lu", cursor.total_input_items, cursor.input_index, cursor.deadline_ns);
         } while (cursor.total_input_items != cursor.input_index && now_ns() < cursor.deadline_ns);
         free(cb);
         LOG("Combo match: %s", cursor_debug(&cursor));
-        wordset_print(&combo_ws);
         filter_destroy(fnxn);
         nx_destroy(nx);
+    }
+
+    {
+        cursor_init(&cursor);
+        cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 1000);
+        struct word_callback * cb = word_callback_create_print(&cursor, 0);
+
+        struct nx * nxs[7] = {0};
+        // nxs[0] = NONNULL(nx_compile("h?e?l*o?z*w?o?q*r?l?d?"));
+        // nxs[1] = NONNULL(nx_compile(".........."));
+        // nxs[2] = NONNULL(nx_compile(".*l.*l.*l.*"));
+
+        nxs[0] = NONNULL(nx_compile("[angrm][angrm][angrm][angrm][angrm][angrm][angrm]"));
+        nxs[1] = NONNULL(nx_compile("[ngrm]*a[ngrm]*a[ngrm]*a[ngrm]*"));
+        nxs[2] = NONNULL(nx_compile("[agrm]*n[agrm]*"));
+        nxs[3] = NONNULL(nx_compile("[anrm]*g[anrm]*"));
+        nxs[4] = NONNULL(nx_compile("[angm]*r[angm]*"));
+        nxs[5] = NONNULL(nx_compile("[angr]*m[angr]*"));
+        nxs[6] = NONNULL(nx_compile("a?n?a?g?r?a?m?a?n?a?g?r?a?m"));
+
+        // nxs[0] = NONNULL(nx_compile(".........."));
+        // nxs[1] = NONNULL(nx_compile(".*a.*a.*a.*"));
+        // nxs[2] = NONNULL(nx_compile(".*n.*"));
+        // nxs[3] = NONNULL(nx_compile(".*g.*"));
+        // nxs[4] = NONNULL(nx_compile(".*r.*"));
+        // nxs[5] = NONNULL(nx_compile(".*m.*"));
+        // nxs[6] = NONNULL(nx_compile("gram.*"));
+
+        do {
+            cursor.deadline_output_index++;
+            nx_combo_multi(nxs, 7, ws, 4, &cursor, cb);
+        } while (cursor.total_input_items != cursor.input_index && now_ns() < cursor.deadline_ns);
+        LOG("Multi match: %s", cursor_debug(&cursor));
         return 0;
     }
 
