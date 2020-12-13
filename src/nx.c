@@ -3,19 +3,24 @@
 static const struct nx_set NX_SET_START = {{1}};
 
 bool nx_set_test(const struct nx_set * s, size_t i) {
-    if (i >= NX_SET_SIZE) {
+    if (i >= NX_SET_SIZE + 1) {
         return false;
     }
     return (s->xs[i / 64] & (1ul << (i % 64))) != 0;
 }
 
+#define EMPTYBIT // ~5% speedup when NX_STATE_MAX=255
 bool nx_set_isempty(const struct nx_set * s) {
+#ifdef EMPTYBIT
+    return (s->xs[NX_SET_SIZE / 64] & (1ul << 63u)) == 0;
+#else
     for (size_t i = 0; i < NX_SET_ARRAYLEN; i++) {
         if (s->xs[i]) {
             return false;
         }
     }
     return true;
+#endif
 }
 
 bool nx_set_add(struct nx_set * s, size_t i) {
@@ -26,6 +31,9 @@ bool nx_set_add(struct nx_set * s, size_t i) {
         return false;
     }
     s->xs[i / 64] |= (1ul << (i % 64));
+#ifdef EMPTYBIT
+    s->xs[NX_SET_SIZE / 64] |= (1ul << 63u);
+#endif
     return true;
 }
 
@@ -38,6 +46,9 @@ static void nx_set_orequal(struct nx_set * restrict s, const struct nx_set * res
 const char * nx_set_debug(const struct nx_set * s) {
     static char buffer[NX_SET_SIZE * 6];
     char * b = buffer;
+    if (nx_set_isempty(s)) {
+        return "(empty)";
+    }
     bool first = true;
     for (size_t i = 0; i < NX_SET_SIZE; i++) {
         if (nx_set_test(s, i)) {
@@ -47,9 +58,6 @@ const char * nx_set_debug(const struct nx_set * s) {
             b += sprintf(b, "%zu", i);
             first = false;
         }
-    }
-    if (first) {
-        b += sprintf(b, "(empty)");
     }
     return buffer;
 }

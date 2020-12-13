@@ -77,11 +77,11 @@ int main() {
     struct cursor cursor;
     struct wordlist buffer;
     wordlist_init(&buffer, "buffer");
-    if (0) {
+    if (1) {
         struct wordset combo_ws;
         wordset_init(&combo_ws, "combo matches");
         cursor_init(&cursor);
-        cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 0);
+        cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 1000000);
         struct filter * fnxn = NONNULL(filter_create(FILTER_NXN, 3, regex));
         // cursor_set_deadline(&cursor, 0, 0);
         struct word_callback * cb = word_callback_create_print(&cursor, 0);
@@ -96,6 +96,7 @@ int main() {
         wordset_print(&combo_ws);
         filter_destroy(fnxn);
         nx_destroy(nx);
+        return 0;
     }
 
     {

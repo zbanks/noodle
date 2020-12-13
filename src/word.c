@@ -91,9 +91,7 @@ static int cmp_letter(const void * _x, const void * _y) {
     return cmp(*x, *y);
 }
 
-static void sort_string(char * s) {
-    qsort(s, strlen(s), 1, &cmp_letter);
-}
+static void sort_string(char * s) { qsort(s, strlen(s), 1, &cmp_letter); }
 
 void word_init(struct word * w, const char * original, int value) {
     w->value = value;
@@ -235,7 +233,9 @@ const char * word_sorted(const struct word * w) {
         // XXX: These rolling static buffers are a gross hack
         static size_t i = 0;
         static char buffers[16][256];
-        if (++i >= 16) { i = 0; }
+        if (++i >= 16) {
+            i = 0;
+        }
         char * s = buffers[i];
 
         const char * canonical = word_canonical(w);

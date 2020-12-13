@@ -201,10 +201,10 @@ void filter_transadd_apply(const struct filter * f, const struct word * w, const
                            size_t index) {
     const char * x = word_sorted(&f->w);
     const char * y = word_sorted(w);
-    if (strlen(x) != strlen(y) + f->arg_n) {
+    if (strlen(y) != strlen(x) + f->arg_n) {
         return;
     }
-    if (bag_difference_size_less_than(x, y, f->arg_n)) {
+    if (bag_difference_size_less_than(y, x, f->arg_n)) {
         filter_iterate(state, index, w);
     }
 }

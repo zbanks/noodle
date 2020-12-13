@@ -6,7 +6,7 @@
 // `struct nx_set` is a bitset representation with a hardcoded maximum size `NX_SET_SIZE`
 //
 
-#define NX_SET_SIZE ((size_t)256)
+#define NX_SET_SIZE ((size_t)255)
 // For compatibility with python/cffi, we are limited in what math we can do in constant decls
 #define NX_SET_ARRAYLEN ((size_t)4)
 //#define NX_SET_ARRAYLEN ((NX_SET_SIZE + 63) / 64)
@@ -22,6 +22,8 @@ bool nx_set_isempty(const struct nx_set * s);
 bool nx_set_test(const struct nx_set * s, size_t i);
 // Set bit `i` and return true if `i` is a valid bit and was not previously set
 bool nx_set_add(struct nx_set * s, size_t i);
+
+const char * nx_set_debug(const struct nx_set * s);
 
 //
 // `enum nx_char` is a 5-bit representation of the allowed letters, plus some metacharacters
@@ -103,7 +105,7 @@ struct nx_state {
 
 // The number of allowed states in an NX NFA is limited by the bitset representation,
 // leaving two states for success & failure.
-#define NX_STATE_MAX ((size_t)254)
+#define NX_STATE_MAX ((size_t)253)
 //#define NX_STATE_MAX (NX_SET_SIZE - 2)
 _Static_assert(NX_STATE_MAX == (NX_SET_SIZE - 2), "Invalid NX_STATE_MAX");
 
@@ -119,6 +121,8 @@ struct nx {
     // an epsilon transition? This is used as a heuristic for performing
     // combo searches (and may include some states that *are* reachable)
     struct nx_set head_states;
+
+    struct nx_combo_cache * combo_cache;
 };
 
 // Compile an NX text expression into a `struct nx` object
