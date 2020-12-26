@@ -25,6 +25,8 @@ bool nx_set_add(struct nx_set * s, size_t i);
 
 void nx_set_orequal(struct nx_set * restrict s, const struct nx_set * restrict t);
 
+bool nx_set_intersect(const struct nx_set * s, const struct nx_set * t);
+
 const char * nx_set_debug(const struct nx_set * s);
 
 //
@@ -40,7 +42,7 @@ enum nx_char {
     // "Epsilon" state transition, from regex/NFA literature
     NX_CHAR_EPSILON,
     // Catch-all character for otherwise untranslatable characters from source strings
-    NX_CHAR_INVALID,
+    NX_CHAR_OTHER,
     // Whitespace character
     NX_CHAR_SPACE,
 
@@ -103,6 +105,10 @@ struct nx {
 
     // The original NX expression, as text, for debugging
     char * expression;
+
+    // Flags
+    bool implicit_spaces;
+    bool implicit_other;
 
     struct nx_combo_cache * combo_cache;
 };

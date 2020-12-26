@@ -1,21 +1,36 @@
 #include "nx_combo.h"
 
-// TODO: better cache by grouping words by their transition table?
-// e.g. all N letter words will have the same transition table for nx `......`
-// if the # of unique transition tables is small, then this should save a lot of memory
-// and could allow for faster iterations? could even intersect sets?
+// TODO: It may be possible to group word by cache_classes?
+// Although if n_nxs is large, (n_classes ** n_nxs) ~ n_words
+// For some expressions, the "empty" class can eliminate
+// a large chunk of words.
 struct nx_combo_cache {
-    // Array of: [word_index][initial_state] -> final_stateset
-    struct nx_set * transitions;
+    struct cache_class {
+        size_t n_words;
+        size_t n_words_cumulative;
+        const struct word ** words;
+
+        struct nx_set nonnull_transitions;
+
+        // Array of initial_state -> final_stateset
+        struct nx_set * transitions;
+    } * classes;
+    size_t n_classes;
+
+    struct cache_class ** word_classes;
 
     const struct wordset * wordset;
     size_t wordset_size;
 };
 
-static void nx_combo_cache_destroy(struct nx * nx) {
-    free(nx->combo_cache->transitions);
-    free(nx->combo_cache);
-    nx->combo_cache = NULL;
+static void nx_combo_cache_destroy(struct nx_combo_cache * cache) {
+    for (size_t j = 0; j < cache->n_classes; j++) {
+        free(cache->classes[j].words);
+        free(cache->classes[j].transitions);
+    }
+    free(cache->classes);
+    free(cache->word_classes);
+    free(cache);
 }
 
 static void nx_combo_cache_create(struct nx * nx, const struct wordset * input) {
@@ -26,57 +41,86 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input) 
         if (nx->combo_cache->wordset == input && nx->combo_cache->wordset_size == input->words_count) {
             return;
         }
-        nx_combo_cache_destroy(nx);
+        nx_combo_cache_destroy(nx->combo_cache);
+        nx->combo_cache = NULL;
     }
-    nx->combo_cache = NONNULL(calloc(1, sizeof(*nx->combo_cache)));
-    nx->combo_cache->wordset = input;
-    nx->combo_cache->wordset_size = input->words_count;
-    LOG("Allocating %ldMB for nx combo cache",
-        (nx->n_states * input->words_count * sizeof(*nx->combo_cache->transitions)) >> 20);
-    nx->combo_cache->transitions =
-        NONNULL(calloc(nx->n_states * input->words_count, sizeof(*nx->combo_cache->transitions)));
+    struct nx_combo_cache * cache = NONNULL(calloc(1, sizeof(*nx->combo_cache)));
+    nx->combo_cache = cache;
+    cache->wordset = input;
+    cache->wordset_size = input->words_count;
 
     int64_t start_ns = now_ns();
-    size_t unique = 0;
-    bool * repeatset = NONNULL(calloc(input->words_count, sizeof(*repeatset)));
+    size_t transitions_size = nx->n_states * sizeof(struct nx_set);
+    cache->classes = NONNULL(calloc(input->words_count + 1, sizeof(*cache->classes)));
+    cache->word_classes = NONNULL(calloc(input->words_count, sizeof(*cache->word_classes)));
+
+    // The first class is always the "empty" class (complete no-match)
+    cache->classes[0].transitions = NONNULL(calloc(1, transitions_size));
+    cache->n_classes++;
+
     for (size_t i = 0; i < input->words_count; i++) {
         enum nx_char wbuf[256];
         nx_char_translate(str_str(&input->words[i]->canonical), wbuf, 256);
-        if (wbuf[0] == NX_CHAR_END) {
-            continue;
-        }
-        struct nx_set * transitions = &nx->combo_cache->transitions[nx->n_states * i];
+        ASSERT(wbuf[0] == NX_CHAR_SPACE);
+        ASSERT(wbuf[1] != NX_CHAR_END);
+        ASSERT(wbuf[2] != NX_CHAR_END);
+        // ASSERT(!(wbuf[0] == NX_CHAR_SPACE && wbuf[1] == NX_CHAR_SPACE && wbuf[2] == NX_CHAR_END));
+
         // XXX This is an "O(n^2)ish" algorithm that probably could be done in "O(n)ish"
         // if we implement filling the whole transition table in one shot
+        struct nx_set transitions[nx->n_states];
         for (size_t k = 0; k < nx->n_states; k++) {
-            struct nx_set ts = nx_match_partial(nx, wbuf, (uint16_t)k);
-            // Avoid writing to the cache if empty
-            // We can save some pages from being allocated if we have a large run of empty sets in a row
-            if (true || !nx_set_isempty(&ts)) {
-                transitions[k] = ts;
-            }
+            // Use `&wbuf[1]` to skip initial space
+            transitions[k] = nx_match_partial(nx, &wbuf[1], (uint16_t)k);
         }
-        for (size_t j = 0; j < i; j++) {
-            if (repeatset[j]) {
-                continue;
-            }
-            if (memcmp(transitions, &nx->combo_cache->transitions[nx->n_states * j],
-                       sizeof(*transitions) * nx->n_states) == 0) {
-                repeatset[i] = true;
+
+        for (size_t j = 0; j < cache->n_classes; j++) {
+            if (memcmp(transitions, cache->classes[j].transitions, transitions_size) == 0) {
+                cache->word_classes[i] = &cache->classes[j];
+                cache->classes[j].n_words++;
                 break;
             }
         }
-        if (!repeatset[i]) {
-            unique++;
+        if (cache->word_classes[i] == NULL) {
+            cache->word_classes[i] = &cache->classes[cache->n_classes++];
+            cache->word_classes[i]->transitions = NONNULL(calloc(1, transitions_size));
+            memcpy(cache->word_classes[i]->transitions, transitions, transitions_size);
+            cache->word_classes[i]->n_words++;
+
+            for (size_t k = 0; k < nx->n_states; k++) {
+                if (!nx_set_isempty(&transitions[k])) {
+                    nx_set_add(&cache->word_classes[i]->nonnull_transitions, k);
+                }
+            }
+            LOG("%zu: nonnull: %s: %s", cache->n_classes - 1,
+                nx_set_debug(&cache->word_classes[i]->nonnull_transitions), word_debug(input->words[i]));
         }
     }
-    free(repeatset);
-    LOG("Populated cache of %zu words in %ldms: %zu unique", input->words_count, (now_ns() - start_ns) / 1000000,
-        unique);
+    cache->classes = NONNULL(realloc(cache->classes, cache->n_classes * sizeof(*cache->classes)));
+    size_t n_words_cumulative = 0;
+    for (size_t j = 0; j < cache->n_classes; j++) {
+        struct cache_class * class = &cache->classes[j];
+        class->words = NONNULL(calloc(class->n_words, sizeof(*class->words)));
+
+        n_words_cumulative += class->n_words;
+        class->n_words_cumulative = n_words_cumulative;
+        class->n_words = 0;
+    }
+    ASSERT(n_words_cumulative == input->words_count);
+    for (size_t i = 0; i < input->words_count; i++) {
+        struct cache_class * class = cache->word_classes[i];
+        class->words[class->n_words++] = input->words[i];
+    }
+
+    free(cache->classes[0].transitions);
+    cache->classes[0].transitions = NULL;
+
+    LOG("Populated cache of %zu words in %ldms: %zu classes, %zu no-matches", input->words_count,
+        (now_ns() - start_ns) / 1000000, cache->n_classes, cache->classes[0].n_words);
 }
 
-static const struct nx_set * nx_combo_cache_get(const struct nx * nx, size_t word_index) {
-    return &nx->combo_cache->transitions[nx->n_states * word_index];
+static const struct cache_class * nx_combo_cache_get(const struct nx * nx, size_t word_index) {
+    return nx->combo_cache->word_classes[word_index];
 }
 
 // TODO: Checking `now_ns()` constantly in `cursor_update_input(...)` adds a ~15% overhead.
@@ -91,7 +135,11 @@ static bool nx_combo_match_iter(const struct nx * nx, const struct wordset * inp
         if (!cursor_update_input(cursor, (word_index == 0) ? i : cursor->input_index)) {
             return false;
         }
-        const struct nx_set * transitions = nx_combo_cache_get(nx, i);
+        const struct nx_set * transitions = nx_combo_cache_get(nx, i)->transitions;
+        if (transitions == NULL) {
+            continue;
+        }
+
         struct nx_set end_ss = {0};
         for (size_t k = 0; k < nx->n_states; k++) {
             if (!nx_set_test(stem_ss, k)) {
@@ -164,22 +212,38 @@ static bool nx_combo_multi_iter(struct nx * const * nxs, size_t n_nxs, const str
         bool all_end_match = true;
         for (size_t n = 0; n < n_nxs; n++) {
             end_sss[n] = (struct nx_set){0};
-            const struct nx_set * transitions = nx_combo_cache_get(nxs[n], i);
+            const struct cache_class * class = nx_combo_cache_get(nxs[n], i);
+            const struct nx_set * transitions = class->transitions;
+            if (transitions == NULL) {
+                no_match = true;
+                break;
+            }
+
+            // Unclear if this optimization does anything useful
+            if (!nx_set_intersect(&class->nonnull_transitions, &stem_sss[n])) {
+                no_match = true;
+                break;
+            }
 
             // This code based on https://lemire.me/blog/2018/02/21/iterating-over-set-bits-quickly/
-            for (size_t ki = 0; ki < NX_SET_ARRAYLEN; ki++) {
+            for (size_t ki = 0; ki < (nxs[n]->n_states + 63) / 64; ki++) {
                 uint64_t ks = stem_sss[n].xs[ki];
                 while (ks != 0) {
                     size_t r = (size_t)__builtin_ctzl(ks);
                     uint64_t t = ks & -ks;
                     ks ^= t;
 
-                    ASSERT(ki * 64 + r < nxs[n]->n_states);
-                    nx_set_orequal(&end_sss[n], &transitions[ki * 64 + r]);
+                    size_t idx = ki * 64 + r;
+                    if (idx >= nxs[n]->n_states) {
+                        break;
+                    }
+                    nx_set_orequal(&end_sss[n], &transitions[idx]);
                 }
             }
 
+            // Should be covered by nonnull_transitions test
             if (nx_set_isempty(&end_sss[n])) {
+                ASSERT(0);
                 no_match = true;
                 break;
             }
@@ -188,6 +252,12 @@ static bool nx_combo_multi_iter(struct nx * const * nxs, size_t n_nxs, const str
             }
         }
         if (no_match) {
+            continue;
+        }
+        // Skip words that don't advance the NFAs?
+        // The idea being if a user queries for `a.*b` they don't care about every word combination
+        // that can fill in the `.*` portion -- but in pratice it is hard to interpret, maybe should be disabled?
+        if (memcmp(end_sss, stem_sss, sizeof(end_sss)) == 0) {
             continue;
         }
 
@@ -224,8 +294,11 @@ void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset 
     for (size_t i = 0; i < n_nxs; i++) {
         nx_combo_cache_create(nxs[i], input);
 
-        sss[i] = (struct nx_set){0};
-        nx_set_add(&sss[i], 0);
+        // sss[i] = (struct nx_set){0};
+        // nx_set_add(&sss[i], 0);
+
+        enum nx_char space[2] = {NX_CHAR_SPACE, NX_CHAR_END};
+        sss[i] = nx_match_partial(nxs[i], space, 0);
     }
     if (cursor->output_index == 0) {
         LOG("Constructed %zu caches in %ld ms", n_nxs, (now_ns() - start_ns) / 1000000);

@@ -78,7 +78,7 @@ int main() {
     struct cursor cursor;
     struct wordlist buffer;
     wordlist_init(&buffer, "buffer");
-    if (1) {
+    if (0) {
         cursor_init(&cursor);
         cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 1000000);
         struct filter * fnxn = NONNULL(filter_create(FILTER_NXN, 2, regex));
@@ -100,10 +100,12 @@ int main() {
         cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 1000);
         struct word_callback * cb = word_callback_create_print(&cursor, 0);
 
-        struct nx * nxs[7] = {0};
+        struct nx * nxs[8] = {0};
         // nxs[0] = NONNULL(nx_compile("h?e?l*o?z*w?o?q*r?l?d?"));
         // nxs[1] = NONNULL(nx_compile(".........."));
         // nxs[2] = NONNULL(nx_compile(".*l.*l.*l.*"));
+
+        // nxs[0] = NONNULL(nx_compile("hello.*world"));
 
         nxs[0] = NONNULL(nx_compile("[angrm][angrm][angrm][angrm][angrm][angrm][angrm]"));
         nxs[1] = NONNULL(nx_compile("[ngrm]*a[ngrm]*a[ngrm]*a[ngrm]*"));
@@ -112,6 +114,8 @@ int main() {
         nxs[4] = NONNULL(nx_compile("[angm]*r[angm]*"));
         nxs[5] = NONNULL(nx_compile("[angr]*m[angr]*"));
         nxs[6] = NONNULL(nx_compile("a?n?a?g?r?a?m?a?n?a?g?r?a?m"));
+        nxs[7] = NONNULL(nx_compile("_..._._..._"));
+        // nxs[6] = NONNULL(nx_compile("gram.*"));
 
         // nxs[0] = NONNULL(nx_compile(".........."));
         // nxs[1] = NONNULL(nx_compile(".*a.*a.*a.*"));
@@ -123,7 +127,7 @@ int main() {
 
         do {
             cursor.deadline_output_index++;
-            nx_combo_multi(nxs, 7, ws, 4, &cursor, cb);
+            nx_combo_multi(nxs, 8, ws, 3, &cursor, cb);
         } while (cursor.total_input_items != cursor.input_index && now_ns() < cursor.deadline_ns);
         LOG("Multi match: %s", cursor_debug(&cursor));
         return 0;
