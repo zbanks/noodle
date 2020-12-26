@@ -401,22 +401,28 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             break;
         }
         case '{':
+            // "{...}" groups are sugar for repeated groups, with optional "?"/"+" terms
+            // "A{3}" = "A{3,3}" = "AAA"
+            // "A{,3}" = "A{0,3}" = "A?A?A?"
+            // "A{3,5}" = "AAAA?A?"
+            // "A{3,}" = "AAA+"
+
             if (previous_initial_state == STATE_FAILURE) {
                 LOG("nx parse error: '%c' without preceeding group", *c);
                 return -1;
             }
             c++;
             consumed_characters++;
-            size_t min_repeat = 0;
-            size_t max_repeat = 0;
+            size_t repeat_min = 0;
+            size_t repeat_max = 0;
             bool seen_comma = false;
 
             while (*c != '}' && *c != '\0') {
                 if (*c == ',') {
                     seen_comma = true;
                 } else if (*c >= '0' && *c <= '9') {
-                    size_t *n = seen_comma ? &max_repeat : &min_repeat;
-                    *n = (*n * 10u) + (size_t) (*c - '0');
+                    size_t * n = seen_comma ? &repeat_max : &repeat_min;
+                    *n = (*n * 10u) + (size_t)(*c - '0');
                     if (*n > NX_SET_SIZE) {
                         LOG("Parse error; values in {...} group too large");
                         return -1;
@@ -432,31 +438,48 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
                 LOG("Parse error; unterminated {");
                 return -1;
             }
-            if (seen_comma && max_repeat != 0 && (min_repeat > max_repeat)) {
-                LOG("Parse error: {%zu,%zu} is invalid, min must be less than max", min_repeat, max_repeat);
+            if (seen_comma && repeat_max != 0 && (repeat_min > repeat_max)) {
+                LOG("Parse error: {%zu,%zu} is invalid, min must be less than max", repeat_min, repeat_max);
                 return -1;
             }
-            if (min_repeat <= 0 && max_repeat <= 0) {
-                LOG("Parse error: {%zu,%zu} is invalid", min_repeat, max_repeat);
+            if (repeat_min <= 0 && repeat_max <= 0) {
+                LOG("Parse error: {%zu,%zu} is invalid", repeat_min, repeat_max);
                 return -1;
             }
             if (!seen_comma) {
-                max_repeat = min_repeat;
+                repeat_max = repeat_min;
             }
 
             ASSERT(nx->n_states >= 1);
             size_t copy_start = previous_initial_state;
             size_t copy_end = nx->n_states - 1;
-            size_t copy_count = max_repeat == 0 ? min_repeat : max_repeat;
-            ASSERT(copy_count > 1);
+            size_t repeat_iters = repeat_max == 0 ? repeat_min : repeat_max;
+            LOG("Copy: [%zu, %zu]", copy_start, copy_end);
+            ASSERT(repeat_iters > 1);
             ASSERT(copy_start <= copy_end);
 
+            if (repeat_min == 0) {
+                // Insert a "?"-like state
+                s = nx_state_insert(nx, previous_initial_state);
+                // XXX is this if statement needed?
+                if (previous_initial_state < subexpression_final_state && subexpression_final_state != STATE_FAILURE) {
+                    subexpression_final_state++;
+                }
+                s->next_state[0] = (uint16_t)(previous_initial_state+1);
+                s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
+                s->next_state[1] = (uint16_t)(nx->n_states);
+                s->char_bitset[1] = nx_char_bit(NX_CHAR_EPSILON);
+
+                copy_start++;
+                copy_end++;
+            }
+
             size_t initial_state;
-            for (size_t j = 1; j < copy_count; j++) {
+            for (size_t j = 1; j < repeat_iters; j++) {
                 initial_state = nx->n_states;
-                if (j >= min_repeat) {
-                    // Add a `?`-like state
-                    ASSERT(max_repeat != 0);
+                if (j >= repeat_min) {
+                    // Add a "?"-like state
+                    ASSERT(repeat_max != 0);
                     s = &nx->states[nx->n_states];
                     s->next_state[0] = (uint16_t)(nx->n_states + 1);
                     s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
@@ -468,9 +491,10 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
                     s = &nx->states[nx->n_states];
                     *s = nx->states[k];
                     for (size_t b = 0; b < NX_BRANCH_COUNT; b++) {
-                        if (s->next_state[b] >= copy_start && s->next_state[b] <= copy_end + 1 && s->char_bitset[b] != 0) {
+                        if (s->next_state[b] >= copy_start && s->next_state[b] <= copy_end + 1 &&
+                            s->char_bitset[b] != 0) {
                             ASSERT(nx->n_states > k);
-                            s->next_state[b] = (uint16_t) (s->next_state[b] + nx->n_states - k);
+                            s->next_state[b] = (uint16_t)(s->next_state[b] + nx->n_states - k);
                         }
                     }
 
@@ -478,8 +502,8 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
                     ASSERT(nx->n_states < NX_STATE_MAX);
                 }
             }
-            if (max_repeat == 0) {
-                // Add a `+`-like state
+            if (repeat_max == 0) {
+                // Add a "+"-like state
                 s = &nx->states[nx->n_states];
                 s->next_state[0] = (uint16_t)initial_state;
                 s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
