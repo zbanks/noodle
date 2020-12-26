@@ -64,7 +64,6 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input) 
         ASSERT(wbuf[0] == NX_CHAR_SPACE);
         ASSERT(wbuf[1] != NX_CHAR_END);
         ASSERT(wbuf[2] != NX_CHAR_END);
-        // ASSERT(!(wbuf[0] == NX_CHAR_SPACE && wbuf[1] == NX_CHAR_SPACE && wbuf[2] == NX_CHAR_END));
 
         // XXX This is an "O(n^2)ish" algorithm that probably could be done in "O(n)ish"
         // if we implement filling the whole transition table in one shot
@@ -289,13 +288,9 @@ void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset 
     ASSERT(n_words + 1 <= CURSOR_LIST_MAX);
 
     int64_t start_ns = now_ns();
-    // struct nx_set *sss = NONNULL(calloc(n_nxs * (n_words + 1), sizeof(*sss)));
     struct nx_set sss[n_nxs];
     for (size_t i = 0; i < n_nxs; i++) {
         nx_combo_cache_create(nxs[i], input);
-
-        // sss[i] = (struct nx_set){0};
-        // nx_set_add(&sss[i], 0);
 
         enum nx_char space[2] = {NX_CHAR_SPACE, NX_CHAR_END};
         sss[i] = nx_match_partial(nxs[i], space, 0);

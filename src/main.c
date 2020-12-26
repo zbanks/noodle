@@ -95,6 +95,7 @@ int main() {
         nx_destroy(nx);
     }
 
+    nx_test();
     {
         cursor_init(&cursor);
         cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 1000);
@@ -106,6 +107,17 @@ int main() {
         // nxs[2] = NONNULL(nx_compile(".*l.*l.*l.*"));
 
         // nxs[0] = NONNULL(nx_compile("hello.*world"));
+
+        /*
+[angrm][angrm][angrm][angrm][angrm][angrm][angrm]
+[ngrm]*a[ngrm]*a[ngrm]*a[ngrm]*
+[agrm]*n[agrm]*
+[anrm]*g[anrm]*
+[angm]*r[angm]*
+[angr]*m[angr]*
+a?n?a?g?r?a?m?a?n?a?g?r?a?m
+_..._._..._
+        */
 
         nxs[0] = NONNULL(nx_compile("[angrm][angrm][angrm][angrm][angrm][angrm][angrm]"));
         nxs[1] = NONNULL(nx_compile("[ngrm]*a[ngrm]*a[ngrm]*a[ngrm]*"));

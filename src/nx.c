@@ -136,8 +136,6 @@ static const char * nx_char_set_debug(uint32_t cs) {
 }
 
 void nx_char_translate(const char * input, enum nx_char * output, size_t output_size) {
-#define SURROUND_SPACE
-#ifdef SURROUND_SPACE
     output[0] = NX_CHAR_SPACE;
     for (size_t i = 1;; i++) {
         ASSERT(i + 1 < output_size);
@@ -148,15 +146,6 @@ void nx_char_translate(const char * input, enum nx_char * output, size_t output_
             break;
         }
     }
-#else
-    for (size_t i = 0;; i++) {
-        ASSERT(i < output_size);
-        output[i] = nx_char(*input++);
-        if (output[i] == NX_CHAR_END) {
-            break;
-        }
-    }
-#endif
 }
 
 static void nx_nfa_debug(const struct nx * nx) {

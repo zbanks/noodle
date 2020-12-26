@@ -43,6 +43,8 @@ struct word_callback {
     struct cursor * cursor;
 };
 
+NOODLE_EXPORT void word_callback_destroy(struct word_callback * wcb);
+
 // Print each word to the log
 NOODLE_EXPORT struct word_callback * word_callback_create_print(struct cursor * cursor, size_t limit);
 // Add each word to an `output` wordset, using wordlist `buffer` to ensure it is owned

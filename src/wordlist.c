@@ -191,6 +191,8 @@ void wordlist_term(struct wordlist * wl) {
 
 //
 
+void word_callback_destroy(struct word_callback * wcb) { free(wcb); }
+
 struct word_callback_print {
     struct word_callback cb;
     size_t limit;

@@ -145,6 +145,36 @@ class WordList:
         return self.wordset.debug()
 
 
+class WordCallback:
+    __slots__ = ["p"]
+
+    def __init__(self, pointer):
+        assert pointer
+        self.p = pointer
+
+    def __del__(self):
+        noodle_lib.word_callback_destroy(self.p)
+
+    @classmethod
+    def new_to_wordset(cls, cursor, buffer_list, output_set, unique=True):
+        constructor = (
+            noodle_lib.word_callback_create_wordset_add
+            if unique
+            else noodle_lib.word_callback_create_wordset_add_unique
+        )
+        wcb = constructor(cursor.p, buffer_list.p, output_set.p)
+        assert wcb, ValueError
+        return cls(wcb)
+
+    @classmethod
+    def new_print(cls, cursor, limit=None):
+        if limit is None:
+            limit = 0
+        wcb = noodle_lib.word_callback_create_print(cursor.p, limit)
+        assert wcb, ValueError
+        return cls(wcb)
+
+
 class Filter:
     __slots__ = ["p"]
 
@@ -198,6 +228,15 @@ class Nx:
         assert n, ValueError
         return cls(n)
 
+    def __str__(self):
+        return self.debug()
+
+    def __repr__(self):
+        return self.debug()
+
+    def debug(self):
+        return ffi_string(self.p.expression)
+
     def match(self, test_string, n_errors=0):
         # Returns the number of errors. 0 is an exact match. None if the errors was greater than the threshold
         rc = noodle_lib.nx_match(self.p, test_string.encode("utf-8"), n_errors)
@@ -222,6 +261,33 @@ class Nx:
             self.p, input_wordset.p, n_words, cursor.p, output.p, output.wordlist.p
         )
         return output
+
+
+def nx_combo_multi(
+    nxs, input_wordset, n_words=2, cursor=None, output_name=None, output=None
+):
+    assert all(isinstance(nx, Nx) for nx in nxs)
+    assert input_wordset
+    assert n_words <= 5, "Maximum number of words in combo_multi is 5"
+
+    if isinstance(input_wordset, WordList):
+        input_wordset = input_wordset.wordset
+    if cursor is None:
+        cursor = Cursor.new(now_ns() + 1e9, 1e5)
+    if output_name is None:
+        output_name = "results of nx combo {}".format(n_words)
+    if output is None:
+        output = WordSetAndBuffer(name=output_name)
+
+    callback = WordCallback.new_to_wordset(
+        cursor, output.wordlist, output, unique=True
+    )
+    nxps = ffi.new("struct nx *[]", [nx.p for nx in nxs])
+
+    noodle_lib.nx_combo_multi(
+        nxps, len(nxs), input_wordset.p, n_words, cursor.p, callback.p
+    )
+    return output
 
 
 class Cursor:

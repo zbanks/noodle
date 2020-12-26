@@ -12,6 +12,7 @@ from noodle import (
     Nx,
     Cursor,
     filter_chain_to_wordset,
+    nx_combo_multi,
     now_ns,
     error_get_log,
 )
@@ -20,27 +21,28 @@ CHUNK_TIME_NS = 50e6  # 50ms
 TOTAL_TIME_NS = 15e9  # 15s
 
 WORDLIST_SOURCES = [
-    ("consolidated.txt", True),
-    ("/usr/share/dict/american-english-insane", False),
+    #("consolidated.txt", True),
+    #("/usr/share/dict/american-english-insane", False),
     ("/usr/share/dict/words", False),
 ]
 
 
 def handle_noodle_input(input_text, cursor):
-    filters = []
+    nxs = []
     for line in input_text.split("\n"):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        filters.append(Filter.new_from_spec(line))
-    if not filters:
+        nxs.append(Nx.new(line))
+    if not nxs:
         yield "#0 No input"
         return
 
-    iterate = lambda output: filter_chain_to_wordset(
-        filters, WORDLIST, cursor=cursor, output=output
+    #iterate = lambda output: filter_chain_to_wordset(
+    iterate = lambda output: nx_combo_multi(
+        nxs, WORDLIST, n_words=5, cursor=cursor, output=output,
     )
-    query_text = "".join(["    {}\n".format(f.debug()) for f in filters])
+    query_text = "".join(["    {}\n".format(f.debug()) for f in nxs])
 
     first = True
     output = None
