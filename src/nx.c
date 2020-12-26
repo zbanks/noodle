@@ -320,7 +320,7 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             while (*c != ']' && *c != '\0') {
                 if (nx_char(*c) >= NX_CHAR_OTHER && nx_char(*c) <= NX_CHAR_Z) {
                     s->char_bitset[0] |= nx_char_bit(nx_char(*c));
-                } else {
+                } else if (*c != ' ') {
                     LOG("Parse error; invalid character '%c' in [...] group", *c);
                     return -1;
                 }
@@ -400,6 +400,95 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
 
             break;
         }
+        case '{':
+            if (previous_initial_state == STATE_FAILURE) {
+                LOG("nx parse error: '%c' without preceeding group", *c);
+                return -1;
+            }
+            c++;
+            consumed_characters++;
+            size_t min_repeat = 0;
+            size_t max_repeat = 0;
+            bool seen_comma = false;
+
+            while (*c != '}' && *c != '\0') {
+                if (*c == ',') {
+                    seen_comma = true;
+                } else if (*c >= '0' && *c <= '9') {
+                    size_t *n = seen_comma ? &max_repeat : &min_repeat;
+                    *n = (*n * 10u) + (size_t) (*c - '0');
+                    if (*n > NX_SET_SIZE) {
+                        LOG("Parse error; values in {...} group too large");
+                        return -1;
+                    }
+                } else if (*c != ' ') {
+                    LOG("Parse error; invalid character '%c' in {...} group", *c);
+                    return -1;
+                }
+                c++;
+                consumed_characters++;
+            }
+            if (*c == '\0') {
+                LOG("Parse error; unterminated {");
+                return -1;
+            }
+            if (seen_comma && max_repeat != 0 && (min_repeat > max_repeat)) {
+                LOG("Parse error: {%zu,%zu} is invalid, min must be less than max", min_repeat, max_repeat);
+                return -1;
+            }
+            if (min_repeat <= 0 && max_repeat <= 0) {
+                LOG("Parse error: {%zu,%zu} is invalid", min_repeat, max_repeat);
+                return -1;
+            }
+            if (!seen_comma) {
+                max_repeat = min_repeat;
+            }
+
+            ASSERT(nx->n_states >= 1);
+            size_t copy_start = previous_initial_state;
+            size_t copy_end = nx->n_states - 1;
+            size_t copy_count = max_repeat == 0 ? min_repeat : max_repeat;
+            ASSERT(copy_count > 1);
+            ASSERT(copy_start <= copy_end);
+
+            size_t initial_state;
+            for (size_t j = 1; j < copy_count; j++) {
+                initial_state = nx->n_states;
+                if (j >= min_repeat) {
+                    // Add a `?`-like state
+                    ASSERT(max_repeat != 0);
+                    s = &nx->states[nx->n_states];
+                    s->next_state[0] = (uint16_t)(nx->n_states + 1);
+                    s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
+                    s->next_state[1] = (uint16_t)(nx->n_states + (copy_end - copy_start) + 2);
+                    s->char_bitset[1] = nx_char_bit(NX_CHAR_EPSILON);
+                    nx->n_states++;
+                }
+                for (size_t k = copy_start; k <= copy_end; k++) {
+                    s = &nx->states[nx->n_states];
+                    *s = nx->states[k];
+                    for (size_t b = 0; b < NX_BRANCH_COUNT; b++) {
+                        if (s->next_state[b] >= copy_start && s->next_state[b] <= copy_end + 1 && s->char_bitset[b] != 0) {
+                            ASSERT(nx->n_states > k);
+                            s->next_state[b] = (uint16_t) (s->next_state[b] + nx->n_states - k);
+                        }
+                    }
+
+                    nx->n_states++;
+                    ASSERT(nx->n_states < NX_STATE_MAX);
+                }
+            }
+            if (max_repeat == 0) {
+                // Add a `+`-like state
+                s = &nx->states[nx->n_states];
+                s->next_state[0] = (uint16_t)initial_state;
+                s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
+                s->next_state[1] = (uint16_t)(nx->n_states + 1);
+                s->char_bitset[1] = nx_char_bit(NX_CHAR_EPSILON);
+                nx->n_states++;
+            }
+            ASSERT(nx->n_states < NX_STATE_MAX);
+            break;
         case '(':
             c++;
             consumed_characters++;

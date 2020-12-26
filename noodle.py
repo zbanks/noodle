@@ -279,9 +279,7 @@ def nx_combo_multi(
     if output is None:
         output = WordSetAndBuffer(name=output_name)
 
-    callback = WordCallback.new_to_wordset(
-        cursor, output.wordlist, output, unique=True
-    )
+    callback = WordCallback.new_to_wordset(cursor, output.wordlist, output, unique=True)
     nxps = ffi.new("struct nx *[]", [nx.p for nx in nxs])
 
     noodle_lib.nx_combo_multi(
