@@ -149,7 +149,8 @@ void nx_char_translate(const char * input, enum nx_char * output, size_t output_
 }
 
 static void nx_nfa_debug(const struct nx * nx) {
-    LOG("NX NFA: %zu states", nx->n_states);
+    LOG("NX NFA: %zu states (implicit: %c%c)", nx->n_states, nx->implicit_spaces ? '_' : ' ',
+        nx->implicit_other ? '-' : ' ');
     for (size_t i = 0; i < nx->n_states; i++) {
         const struct nx_state * s = &nx->states[i];
 
@@ -465,7 +466,7 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
                 if (previous_initial_state < subexpression_final_state && subexpression_final_state != STATE_FAILURE) {
                     subexpression_final_state++;
                 }
-                s->next_state[0] = (uint16_t)(previous_initial_state+1);
+                s->next_state[0] = (uint16_t)(previous_initial_state + 1);
                 s->char_bitset[0] = nx_char_bit(NX_CHAR_EPSILON);
                 s->next_state[1] = (uint16_t)(nx->n_states);
                 s->char_bitset[1] = nx_char_bit(NX_CHAR_EPSILON);

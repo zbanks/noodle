@@ -17,8 +17,8 @@ from noodle import (
     error_get_log,
 )
 
-CHUNK_TIME_NS = 50e6  # 50ms
-TOTAL_TIME_NS = 15e9  # 15s
+CHUNK_TIME_NS = 200e6  # 50ms
+TOTAL_TIME_NS = 1500e9  # 15s
 
 WORDLIST_SOURCES = [
     # ("consolidated.txt", True),
@@ -27,18 +27,36 @@ WORDLIST_SOURCES = [
 ]
 
 
+def expand_expression(expression):
+    if "<" in expression:
+        assert expression.count("<") == 1
+        a, anagram, plusminus, n, b = re.split(
+            r"<([a-zA-Z_ -]*)([+-]?)(\d?)>", expression
+        )
+        anagram = anagram.lower()
+        letters = set(anagram)
+        terms = []
+        terms.append("[" + "".join(sorted(letters)) + "]{" + str(len(anagram)) + "}")
+        for l in letters:
+            s = "[" + "".join(sorted(letters - {l})) + "]*"
+            terms.append(s.join([""] + [l] * anagram.count(l) + [""]))
+        return [Nx.new(a + t + b) for t in terms]
+    if ":" not in expression:
+        return [Nx.new(expression)]
+
+
 def handle_noodle_input(input_text, cursor):
     nxs = []
     for line in input_text.split("\n"):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        nxs.append(Nx.new(line))
+        nxs.extend(expand_expression(line))
+
     if not nxs:
         yield "#0 No input"
         return
 
-    # iterate = lambda output: filter_chain_to_wordset(
     iterate = lambda output: nx_combo_multi(
         nxs, WORDLIST, n_words=5, cursor=cursor, output=output,
     )

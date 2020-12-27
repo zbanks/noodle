@@ -19,6 +19,10 @@ struct nx_combo_cache {
 
     struct cache_class ** word_classes;
 
+    // XXX: Only used in the first cache (property of the multi-select; not ideal here)
+    size_t * nonnull_word_indexes;
+    size_t n_nonnull_word_indexes;
+
     const struct wordset * wordset;
     size_t wordset_size;
 };
@@ -198,17 +202,19 @@ void nx_combo_match(struct nx * nx, const struct wordset * input, size_t n_words
 static bool nx_combo_multi_iter(struct nx * const * nxs, size_t n_nxs, const struct wordset * input,
                                 const struct word ** stems, const struct nx_set * stem_sss, struct cursor * cursor,
                                 size_t n_words, size_t word_index, struct word_callback * cb) {
-    for (size_t i = cursor->input_index_list[word_index]; i < input->words_count; i++) {
-        cursor->input_index_list[word_index] = i;
+    for (size_t ci = cursor->input_index_list[word_index]; ci < cursor->total_input_items; ci++) {
+        cursor->input_index_list[word_index] = ci;
+        size_t i = nxs[0]->combo_cache->nonnull_word_indexes[ci];
 
         // Check if we've exceeded a deadline
-        if (!cursor_update_input(cursor, (word_index == 0) ? i : cursor->input_index)) {
+        if (!cursor_update_input(cursor, (word_index == 0) ? ci : cursor->input_index)) {
             return false;
         }
 
         struct nx_set end_sss[n_nxs];
         bool no_match = false;
         bool all_end_match = true;
+        // First do the "fast" checks across all NXs...
         for (size_t n = 0; n < n_nxs; n++) {
             end_sss[n] = (struct nx_set){0};
             const struct cache_class * class = nx_combo_cache_get(nxs[n], i);
@@ -277,27 +283,61 @@ static bool nx_combo_multi_iter(struct nx * const * nxs, size_t n_nxs, const str
         }
     }
     if (word_index == 0) {
-        cursor_update_input(cursor, input->words_count);
+        cursor_update_input(cursor, cursor->total_input_items);
     }
     return true;
 }
 
 void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset * input, size_t n_words,
                     struct cursor * cursor, struct word_callback * cb) {
-    cursor->total_input_items = input->words_count;
+    ASSERT(nxs != NULL);
+    ASSERT(n_nxs > 0);
+    ASSERT(input != NULL);
     ASSERT(n_words + 1 <= CURSOR_LIST_MAX);
+    ASSERT(cursor != NULL);
+    ASSERT(cb != NULL);
 
-    int64_t start_ns = now_ns();
+    cursor->total_input_items = input->words_count;
+
     struct nx_set sss[n_nxs];
     for (size_t i = 0; i < n_nxs; i++) {
         nx_combo_cache_create(nxs[i], input);
 
         enum nx_char space[2] = {NX_CHAR_SPACE, NX_CHAR_END};
         sss[i] = nx_match_partial(nxs[i], space, 0);
+
+        // Building the cache can be slow, check if we exceeded the time limit
+        if (!cursor_update_input(cursor, cursor->input_index)) {
+            return;
+        }
     }
-    if (cursor->output_index == 0) {
-        LOG("Constructed %zu caches in %ld ms", n_nxs, (now_ns() - start_ns) / 1000000);
+    ASSERT(nxs[0]->combo_cache);
+    if (nxs[0]->combo_cache->nonnull_word_indexes == NULL) {
+        size_t * indexes = NONNULL(calloc(input->words_count, sizeof(*indexes)));
+        size_t n = 0;
+        for (size_t i = 0; i < input->words_count; i++) {
+            bool any_null = false;
+            for (size_t j = 0; j < n_nxs; j++) {
+                const struct cache_class * cache = nx_combo_cache_get(nxs[j], i);
+                if (cache->transitions == NULL) {
+                    any_null = true;
+                    break;
+                }
+            }
+            if (!any_null) {
+                indexes[n++] = i;
+            }
+        }
+        nxs[0]->combo_cache->nonnull_word_indexes = indexes;
+        nxs[0]->combo_cache->n_nonnull_word_indexes = n;
+        LOG("Only looking at %zu/%zu words", n, input->words_count);
+        if (n == 0) {
+            LOG("No matching words");
+            cursor_update_input(cursor, cursor->total_input_items);
+            return;
+        }
     }
+    cursor->total_input_items = nxs[0]->combo_cache->n_nonnull_word_indexes;
 
     const struct word * stems[n_words];
     nx_combo_multi_iter(nxs, n_nxs, input, stems, sss, cursor, n_words, 0, cb);
