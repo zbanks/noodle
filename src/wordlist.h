@@ -1,12 +1,12 @@
 #pragma once
 #include "prelude.h"
+#include "time_util.h"
 #include "word.h"
 
 struct wordset {
     const struct word ** words;
     size_t words_count;
     size_t words_capacity;
-    struct anatree * anatree;
     bool is_canonically_sorted;
     char name[64];
 };
@@ -19,7 +19,6 @@ NOODLE_EXPORT void wordset_sort_value(struct wordset * ws);
 NOODLE_EXPORT void wordset_sort_canonical(struct wordset * ws);
 NOODLE_EXPORT const struct word * wordset_get(const struct wordset * ws, size_t i);
 
-const struct anatree * wordset_anatree(struct wordset * ws);
 void wordset_add(struct wordset * ws, const struct word * w);
 const struct word * wordset_find(const struct wordset * ws, const struct str * s);
 

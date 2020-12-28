@@ -1,5 +1,4 @@
 #include "wordlist.h"
-#include "anatree.h"
 #include <search.h>
 
 void wordset_init(struct wordset * ws, const char * name) {
@@ -23,8 +22,6 @@ void wordset_add(struct wordset * ws, const struct word * w) {
 
     ws->words[ws->words_count++] = w;
     ws->is_canonically_sorted = false;
-    anatree_destory(ws->anatree);
-    ws->anatree = NULL;
 }
 
 void wordset_sort_value(struct wordset * ws) {
@@ -37,17 +34,7 @@ void wordset_sort_canonical(struct wordset * ws) {
     ws->is_canonically_sorted = true;
 }
 
-const struct anatree * wordset_anatree(struct wordset * ws) {
-    if (ws->anatree == NULL) {
-        ws->anatree = NONNULL(anatree_create(ws));
-    }
-    return ws->anatree;
-}
-
-void wordset_term(struct wordset * ws) {
-    free(ws->words);
-    anatree_destory(ws->anatree);
-}
+void wordset_term(struct wordset * ws) { free(ws->words); }
 
 const struct word * wordset_get(const struct wordset * ws, size_t i) {
     if (i >= ws->words_count) {

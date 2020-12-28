@@ -1,7 +1,4 @@
-#include "anagram_slow.h"
-#include "anatree.h"
 #include "error.h"
-#include "filter.h"
 #include "nx.h"
 #include "nx_combo.h"
 #include "time_util.h"
