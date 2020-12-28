@@ -59,10 +59,28 @@ const char * str_str(const struct str * s) {
     }
 }
 
-int str_cmp(const void * _x, const void * _y) {
-    const struct str * x = _x;
-    const struct str * y = _y;
-    return strcmp(str_str(x), str_str(y));
+unsigned char str_flags(const struct str * s) {
+    if (s == NULL) {
+        return 0;
+    } else if (str_is_small(s)) {
+        return s->small_flags;
+    } else if (s->large != NULL) {
+        return s->large_flags;
+    } else {
+        return 0;
+    }
+}
+
+void str_flags_set(struct str * s, unsigned char flags) {
+    if (s == NULL) {
+        return;
+    } else if (str_is_small(s)) {
+        s->small_flags = flags;
+    } else if (s->large != NULL) {
+        s->large_flags = flags;
+    } else {
+        return;
+    }
 }
 
 int str_ptrcmp(const void * _x, const void * _y) {

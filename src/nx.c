@@ -634,11 +634,15 @@ fail:
     return NULL;
 }
 
+// XXX
+void nx_combo_cache_destroy(struct nx_combo_cache * cache);
+
 void nx_destroy(struct nx * nx) {
     if (nx == NULL) {
         return;
     }
     free(nx->expression);
+    nx_combo_cache_destroy(nx->combo_cache);
     free(nx);
 }
 
@@ -845,4 +849,5 @@ void nx_test(void) {
         struct nx_set ps = nx_match_partial(nx, buffer, 0);
         LOG("Partial: %s", nx_set_debug(&ps));
     }
+    nx_destroy(nx);
 }

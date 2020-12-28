@@ -58,9 +58,15 @@ clean:
 
 all: $(TARGETS)
 
-.PHONY: pylint
+.PHONY: pylint valgrind gdb
 pylint: noodle.py noodle_app.py | $(TARGET_CFFI_LIB)
 	pylint --extension-pkg-whitelist=noodle_ffi --errors-only $+
+
+valgrind: noodle
+	valgrind --tool=memcheck --leak-check=full -- ./$<
+
+gdb: noodle
+	gdb --args ./$<
 
 
 .DEFAULT_GOAL = all

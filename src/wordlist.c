@@ -1,6 +1,8 @@
 #include "wordlist.h"
 #include <search.h>
 
+static const unsigned char STR_FLAG_OWNED = 0x01;
+
 void wordset_init(struct wordset * ws) {
     *ws = (struct wordset){0};
     ws->words_count = 0;
@@ -9,7 +11,7 @@ void wordset_init(struct wordset * ws) {
 }
 
 void wordset_add(struct wordset * ws, const struct word * w) {
-    ASSERT(w->owned);
+    ASSERT(str_flags(&w->str) & STR_FLAG_OWNED);
 
     if (ws->words_count >= ws->words_capacity) {
         ASSERT(ws->words_capacity > 0);
@@ -97,20 +99,21 @@ static struct word * wordlist_alloc(struct wordlist * wl) {
 const struct word * wordlist_add(struct wordlist * wl, const char * s) {
     struct word * w = wordlist_alloc(wl);
     word_init(w, s);
-    w->owned = true;
+    str_flags_set(&w->str, STR_FLAG_OWNED);
+
     wordset_add(&wl->self_set, w);
     return w;
 }
 
 const struct word * wordlist_ensure_owned(struct wordlist * wl, const struct word * src) {
-    if (src->owned) {
+    if (str_flags(&src->str) & STR_FLAG_OWNED) {
         return src;
     }
 
     struct word * w = wordlist_alloc(wl);
     word_init_copy(w, src);
+    str_flags_set(&w->str, STR_FLAG_OWNED);
 
-    w->owned = true;
     wordset_add(&wl->self_set, w);
     return w;
 }

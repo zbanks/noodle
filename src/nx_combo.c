@@ -3,7 +3,6 @@
 struct nx_combo_cache {
     struct cache_class {
         size_t n_words;
-        size_t n_words_cumulative;
         const struct word ** words;
 
         struct nx_set nonnull_transitions;
@@ -20,7 +19,10 @@ struct nx_combo_cache {
     size_t wordset_size;
 };
 
-static void nx_combo_cache_destroy(struct nx_combo_cache * cache) {
+void nx_combo_cache_destroy(struct nx_combo_cache * cache) {
+    if (cache == NULL) {
+        return;
+    }
     for (size_t j = 0; j < cache->n_classes; j++) {
         free(cache->classes[j].words);
         free(cache->classes[j].transitions);
@@ -103,14 +105,13 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input) 
             wordset_add(&cache->nonnull_wordset, input->words[i]);
         }
     }
-    cache->classes = NONNULL(realloc(cache->classes, cache->n_classes * sizeof(*cache->classes)));
+    // cache->classes = NONNULL(realloc(cache->classes, cache->n_classes * sizeof(*cache->classes)));
     size_t n_words_cumulative = 0;
     for (size_t j = 0; j < cache->n_classes; j++) {
         struct cache_class * class = &cache->classes[j];
         class->words = NONNULL(calloc(class->n_words, sizeof(*class->words)));
 
         n_words_cumulative += class->n_words;
-        class->n_words_cumulative = n_words_cumulative;
         class->n_words = 0;
     }
     ASSERT(n_words_cumulative == input->words_count);
