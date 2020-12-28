@@ -5,8 +5,9 @@ int main() {
     nx_test();
 
     struct word w;
-    word_init(&w, "Hello, World!");
-    LOG("> %s", word_debug(&w));
+    const char * phrase = "Hello, World!";
+    word_init(&w, phrase, strlen(phrase));
+    LOG("> \"%s\"", word_str(&w));
     word_term(&w);
 
     struct wordlist wl;
@@ -30,7 +31,7 @@ int main() {
         int64_t t = now_ns();
         size_t n_matches[32] = {0};
         for (size_t i = 0; i < ws->words_count; i++) {
-            const char * s = word_cstr(ws->words[i]);
+            const char * s = word_str(ws->words[i]);
             int rc = nx_match(nx, s, 0);
             n_matches[(size_t)(rc + 1)]++;
             // if (rc == 0) LOG("> match: %s", s);
@@ -47,7 +48,7 @@ int main() {
         t = now_ns();
         size_t n_matches_regexec = 0;
         for (size_t i = 0; i < ws->words_count; i++) {
-            const char * s = word_cstr(ws->words[i]);
+            const char * s = word_str(ws->words[i]);
             int rc = regexec(&preg, s, 0, NULL, 0);
             if (rc == 0) {
                 n_matches_regexec++;
@@ -58,7 +59,7 @@ int main() {
 
         size_t n_mismatches = 0;
         for (size_t i = 0; i < ws->words_count; i++) {
-            const char * s = word_cstr(ws->words[i]);
+            const char * s = word_str(ws->words[i]);
             int rc1 = nx_match(nx, s, 0);
             int rc2 = regexec(&preg, s, 0, NULL, 0);
             if ((rc1 == 0) != (rc2 == 0)) {

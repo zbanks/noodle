@@ -11,7 +11,7 @@ void wordset_init(struct wordset * ws) {
 }
 
 void wordset_add(struct wordset * ws, const struct word * w) {
-    ASSERT(str_flags(&w->str) & STR_FLAG_OWNED);
+    ASSERT(word_flags(w) & STR_FLAG_OWNED);
 
     if (ws->words_count >= ws->words_capacity) {
         ASSERT(ws->words_capacity > 0);
@@ -33,9 +33,9 @@ const struct word * wordset_get(const struct wordset * ws, size_t i) {
     return ws->words[i];
 }
 
-const struct word * wordset_find(const struct wordset * ws, const struct str * s) {
+const struct word * wordset_find(const struct wordset * ws, const struct word * s) {
     size_t count = ws->words_count;
-    struct word ** w = lfind(&s, ws->words, &count, sizeof(*ws->words), str_ptrcmp);
+    struct word ** w = lfind(&s, ws->words, &count, sizeof(*ws->words), word_ptrcmp);
     if (w != NULL) {
         return *w;
     }
@@ -45,7 +45,7 @@ const struct word * wordset_find(const struct wordset * ws, const struct str * s
 void wordset_print(const struct wordset * ws) {
     LOG("Wordset %zu:", ws->words_count);
     for (size_t i = 0; i < 50 && i < ws->words_count; i++) {
-        LOG("  - %s", word_debug(ws->words[i]));
+        LOG("  - \"%s\"", word_str(ws->words[i]));
     }
 }
 
@@ -98,21 +98,21 @@ static struct word * wordlist_alloc(struct wordlist * wl) {
 
 const struct word * wordlist_add(struct wordlist * wl, const char * s) {
     struct word * w = wordlist_alloc(wl);
-    word_init(w, s);
-    str_flags_set(&w->str, STR_FLAG_OWNED);
+    word_init(w, s, strlen(s));
+    word_flags_set(w, STR_FLAG_OWNED);
 
     wordset_add(&wl->self_set, w);
     return w;
 }
 
 const struct word * wordlist_ensure_owned(struct wordlist * wl, const struct word * src) {
-    if (str_flags(&src->str) & STR_FLAG_OWNED) {
+    if (word_flags(src) & STR_FLAG_OWNED) {
         return src;
     }
 
     struct word * w = wordlist_alloc(wl);
     word_init_copy(w, src);
-    str_flags_set(&w->str, STR_FLAG_OWNED);
+    word_flags_set(w, STR_FLAG_OWNED);
 
     wordset_add(&wl->self_set, w);
     return w;
@@ -155,7 +155,7 @@ static void word_callback_print(struct word_callback * cb, const struct word * w
     }
     state->count++;
     cursor_update_output(state->cb.cursor, state->count);
-    LOG("- %s", word_debug(w));
+    LOG("- \"%s\"", word_str(w));
 }
 
 struct word_callback * word_callback_create_print(struct cursor * cursor, size_t limit) {
@@ -176,7 +176,7 @@ struct word_callback_wordset {
 
 static void word_callback_wordset(struct word_callback * cb, const struct word * w) {
     struct word_callback_wordset * state = (void *)cb;
-    if (state->unique && wordset_find(state->output, &w->str) != NULL) {
+    if (state->unique && wordset_find(state->output, w) != NULL) {
         return;
     }
     w = wordlist_ensure_owned(state->buffer, w);

@@ -42,11 +42,11 @@ class Word:
         noodle_lib.word_init(allocated_word, string.encode("utf-8"))
         return cls(allocated_word, _owned=True)
 
-    def debug(self):
-        return ffi_string(noodle_lib.word_debug(self.p))
-
     def __str__(self):
-        return ffi_string(noodle_lib.word_cstr(self.p))
+        return ffi_string(noodle_lib.word_str(self.p))
+
+    def debug(self):
+        return str(self)
 
     def __len__(self):
         return len(str(self))

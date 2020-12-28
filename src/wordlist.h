@@ -16,7 +16,7 @@ NOODLE_EXPORT void wordset_print(const struct wordset * ws);
 NOODLE_EXPORT const struct word * wordset_get(const struct wordset * ws, size_t i);
 
 void wordset_add(struct wordset * ws, const struct word * w);
-const struct word * wordset_find(const struct wordset * ws, const struct str * s);
+const struct word * wordset_find(const struct wordset * ws, const struct word * s);
 
 #define WORDLIST_CHUNK_SIZE ((size_t)256)
 struct wordlist {

@@ -61,7 +61,7 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input) 
 
     for (size_t i = 0; i < input->words_count; i++) {
         enum nx_char wbuf[256];
-        nx_char_translate(word_cstr(input->words[i]), wbuf, 256);
+        nx_char_translate(word_str(input->words[i]), wbuf, 256);
         ASSERT(wbuf[0] == NX_CHAR_SPACE);
         ASSERT(wbuf[1] != NX_CHAR_END);
         ASSERT(wbuf[2] != NX_CHAR_END);
@@ -95,10 +95,10 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input) 
 
             if (cache->n_classes < 20) {
                 LOG("%zu: nonnull: %s: %s", cache->n_classes - 1,
-                    nx_set_debug(&cache->word_classes[i]->nonnull_transitions), word_debug(input->words[i]));
+                    nx_set_debug(&cache->word_classes[i]->nonnull_transitions), word_str(input->words[i]));
             } else if (cache->n_classes == 20) {
                 LOG("%zu: nonnull: %s: %s (...and so on)", cache->n_classes - 1,
-                    nx_set_debug(&cache->word_classes[i]->nonnull_transitions), word_debug(input->words[i]));
+                    nx_set_debug(&cache->word_classes[i]->nonnull_transitions), word_str(input->words[i]));
             }
         }
         if (cache->word_classes[i] != &cache->classes[0]) {
@@ -157,7 +157,7 @@ static int nx_combo_cache_compress(struct nx * nx, const struct wordset * new_in
             w = wordset_get(cache->wordset, j);
             if (w == NULL) {
                 // XXX: This isn't really recoverable?
-                LOG("Error: word %s was not in original wordset", word_debug(nw));
+                LOG("Error: word \"%s\" was not in original wordset", word_str(nw));
                 free(new_word_classes);
                 return -1;
             }

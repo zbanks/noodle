@@ -161,7 +161,7 @@ def handle_noodle_input(input_text, cursor):
         return
 
     iterate = lambda output: nx_combo_multi(
-        nxs, WORDLIST, n_words=10, cursor=cursor, output=output,
+        nxs, WORDLIST, n_words=3, cursor=cursor, output=output,
     )
     query_text = "".join(["    {}\n".format(f.debug()) for f in nxs])
 
