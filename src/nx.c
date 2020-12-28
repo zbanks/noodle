@@ -300,6 +300,8 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             if (implicit_char_bitset) {
                 s->next_state[1] = (uint16_t)(nx->n_states);
                 s->char_bitset[1] = implicit_char_bitset;
+            } else {
+                s->char_bitset[0] &= ~implicit_char_bitset;
             }
 
             previous_initial_state = nx->n_states;

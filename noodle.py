@@ -9,7 +9,8 @@ __all__ = [
     "WordSet",
     "WordList",
     "WordSetAndBuffer",
-    "WordCallback" "Nx",
+    "WordCallback",
+    "Nx",
     "Cursor",
     "error_get_log",
     "now_ns",
@@ -36,30 +37,22 @@ class Word:
             noodle_lib.word_term(self.p)
 
     @classmethod
-    def new(cls, string, value=1):
+    def new(cls, string):
         allocated_word = ffi.new("struct word *")
-        noodle_lib.word_init(allocated_word, string.encode("utf-8"), value)
+        noodle_lib.word_init(allocated_word, string.encode("utf-8"))
         return cls(allocated_word, _owned=True)
-
-    @property
-    def value(self):
-        return noodle_lib.word_value(self.p)
-
-    @property
-    def canonical(self):
-        return ffi_string(noodle_lib.word_canonical(self.p))
 
     def debug(self):
         return ffi_string(noodle_lib.word_debug(self.p))
 
-    def __len__(self):
-        return len(self.canonical)
-
     def __str__(self):
-        return self.canonical
+        return ffi_string(noodle_lib.word_cstr(self.p))
+
+    def __len__(self):
+        return len(str(self))
 
     def __repr__(self):
-        return '<Word: {} "{}" {}>'.format(self.canonical, self.debug(), self.value)
+        return '<{}: "{}">'.format(self.__class__.__name__, self.debug())
 
 
 class WordSet:
@@ -75,14 +68,10 @@ class WordSet:
             noodle_lib.wordset_term(self.p)
 
     @classmethod
-    def new(cls, name="(anonymous)"):
+    def new(cls):
         allocated_ws = ffi.new("struct wordset *")
-        noodle_lib.wordset_init(allocated_ws, name.encode("utf-8"))
+        noodle_lib.wordset_init(allocated_ws)
         return cls(allocated_ws, _owned=True)
-
-    @property
-    def name(self):
-        return ffi_string(self.p.name)
 
     def __len__(self):
         return self.p.words_count
@@ -94,19 +83,13 @@ class WordSet:
         for i in range(len(self)):
             yield self[i]
 
-    def sort_value(self):
-        noodle_lib.wordset_sort_value(self.p)
-
-    def sort_canonical(self):
-        noodle_lib.wordset_sort_canonical(self.p)
-
     def __repr__(self):
         return '<{}: "{}">'.format(self.__class__.__name__, self.debug())
 
     def debug(self):
         sample = " ".join(str(x) for x in itertools.islice(self, 20))
         suffix = "" if len(self) < 20 else "..."
-        return '"{}" ({}): {}{}'.format(self.name, len(self), sample, suffix)
+        return "Wordset {}: {}{}".format(len(self), sample, suffix)
 
 
 class WordList:
@@ -122,30 +105,24 @@ class WordList:
             noodle_lib.wordlist_term(self.p)
 
     @classmethod
-    def new(cls, name="(anonymous)"):
+    def new(cls):
         allocated = ffi.new("struct wordlist *")
-        noodle_lib.wordlist_init(allocated, name.encode("utf-8"))
+        noodle_lib.wordlist_init(allocated)
         return cls(allocated, _owned=True)
 
     @classmethod
-    def new_from_file(cls, filename, has_values=False):
+    def new_from_file(cls, filename):
         allocated = ffi.new("struct wordlist *")
-        noodle_lib.wordlist_init_from_file(
-            allocated, filename.encode("utf-8"), has_values
-        )
+        noodle_lib.wordlist_init_from_file(allocated, filename.encode("utf-8"))
         return cls(allocated, _owned=True)
-
-    @property
-    def name(self):
-        return ffi_string(self.p.name)
 
     @property
     def wordset(self):
         return WordSet(ffi.addressof(self.p, "self_set"))
 
-    def add(self, word_string, value=1):
+    def add(self, word_string):
         assert isinstance(word_string, str)
-        w = noodle_lib.wordlist_add(self.p, word_string.encode("utf-8"), value)
+        w = noodle_lib.wordlist_add(self.p, word_string.encode("utf-8"))
         return Word(w)
 
     def __repr__(self):
@@ -218,21 +195,17 @@ class Nx:
         return rc
 
 
-def nx_combo_multi(
-    nxs, input_wordset, n_words=2, cursor=None, output_name=None, output=None
-):
+def nx_combo_multi(nxs, input_wordset, n_words=2, cursor=None, output=None):
     assert all(isinstance(nx, Nx) for nx in nxs)
     assert input_wordset
-    assert n_words <= 5, "Maximum number of words in combo_multi is 5"
+    assert n_words <= 10, "Maximum number of words in combo_multi is 10"
 
     if isinstance(input_wordset, WordList):
         input_wordset = input_wordset.wordset
     if cursor is None:
         cursor = Cursor.new(now_ns() + 1e9, 1e5)
-    if output_name is None:
-        output_name = "results of nx combo {}".format(n_words)
     if output is None:
-        output = WordSetAndBuffer(name=output_name)
+        output = WordSetAndBuffer()
 
     callback = WordCallback.new_to_wordset(cursor, output.wordlist, output, unique=True)
     nxps = ffi.new("struct nx *[]", [nx.p for nx in nxs])
@@ -282,9 +255,9 @@ class Cursor:
 class WordSetAndBuffer(WordSet):
     __slots__ = ["p", "wordlist"]
 
-    def __init__(self, name="(anonymous)"):
+    def __init__(self):
         allocated_ws = ffi.new("struct wordset *")
-        noodle_lib.wordset_init(allocated_ws, name.encode("utf-8"))
+        noodle_lib.wordset_init(allocated_ws)
 
         self.p = allocated_ws
         self.wordlist = WordList.new()
@@ -306,8 +279,7 @@ def test():
     print("word:", str(w), repr(w))
 
     wl = WordList.new_from_file("/usr/share/dict/words")
-    wl.add("Hello, world!", 2000)
-    wl.wordset.sort_value()
+    wl.add("Hello, world!")
     print(wl.debug())
     print("error log:", repr(error_get_log()))
 

@@ -1,9 +1,8 @@
 #include "wordlist.h"
 #include <search.h>
 
-void wordset_init(struct wordset * ws, const char * name) {
+void wordset_init(struct wordset * ws) {
     *ws = (struct wordset){0};
-    snprintf(ws->name, sizeof(ws->name) - 1, "%s", name);
     ws->words_count = 0;
     ws->words_capacity = 32;
     ws->words = NONNULL(calloc(ws->words_capacity, sizeof(*ws->words)));
@@ -21,17 +20,6 @@ void wordset_add(struct wordset * ws, const struct word * w) {
     }
 
     ws->words[ws->words_count++] = w;
-    ws->is_canonically_sorted = false;
-}
-
-void wordset_sort_value(struct wordset * ws) {
-    qsort(ws->words, ws->words_count, sizeof(*ws->words), &word_value_ptrcmp);
-    ws->is_canonically_sorted = false;
-}
-
-void wordset_sort_canonical(struct wordset * ws) {
-    qsort(ws->words, ws->words_count, sizeof(*ws->words), &str_ptrcmp);
-    ws->is_canonically_sorted = true;
 }
 
 void wordset_term(struct wordset * ws) { free(ws->words); }
@@ -44,13 +32,8 @@ const struct word * wordset_get(const struct wordset * ws, size_t i) {
 }
 
 const struct word * wordset_find(const struct wordset * ws, const struct str * s) {
-    struct word ** w;
-    if (ws->is_canonically_sorted) {
-        w = bsearch(&s, ws->words, ws->words_count, sizeof(*ws->words), str_ptrcmp);
-    } else {
-        size_t count = ws->words_count;
-        w = lfind(&s, ws->words, &count, sizeof(*ws->words), str_ptrcmp);
-    }
+    size_t count = ws->words_count;
+    struct word ** w = lfind(&s, ws->words, &count, sizeof(*ws->words), str_ptrcmp);
     if (w != NULL) {
         return *w;
     }
@@ -58,7 +41,7 @@ const struct word * wordset_find(const struct wordset * ws, const struct str * s
 }
 
 void wordset_print(const struct wordset * ws) {
-    LOG("Wordset \"%s\" (%zu):", ws->name, ws->words_count);
+    LOG("Wordset %zu:", ws->words_count);
     for (size_t i = 0; i < 50 && i < ws->words_count; i++) {
         LOG("  - %s", word_debug(ws->words[i]));
     }
@@ -66,21 +49,21 @@ void wordset_print(const struct wordset * ws) {
 
 //
 
-void wordlist_init(struct wordlist * wl, const char * name) {
+void wordlist_init(struct wordlist * wl) {
     *wl = (struct wordlist){0};
     wl->chunks = NULL;
     wl->insert_index = 0;
-    wordset_init(&wl->self_set, name);
+    wordset_init(&wl->self_set);
 }
 
-int wordlist_init_from_file(struct wordlist * wl, const char * filename, bool has_weight) {
+int wordlist_init_from_file(struct wordlist * wl, const char * filename) {
     FILE * f = fopen(filename, "r");
     if (f == NULL) {
         PLOG("unable to open %s", filename);
         return -1;
     }
 
-    wordlist_init(wl, filename);
+    wordlist_init(wl);
 
     char * line = NULL;
     size_t len = 0;
@@ -88,19 +71,10 @@ int wordlist_init_from_file(struct wordlist * wl, const char * filename, bool ha
     size_t i = 0;
     while ((rc = getline(&line, &len, f)) != -1) {
         line[rc - 1] = '\0';
-        if (has_weight) {
-            char * word = strchr(line, ' ');
-            *word++ = '\0';
-            if (strlen(word) > 20) {
-                continue;
-            }
-            wordlist_add(wl, word, (int)strtoul(line, NULL, 10));
-        } else {
-            // XXX: Filter out 1-letter words, except a & I
-            if (strlen(line) == 1 && line[0] != 'a' && line[0] != 'I')
-                continue;
-            wordlist_add(wl, line, 1000);
-        }
+        // XXX: Filter out 1-letter words, except a & I
+        if (strlen(line) == 1 && line[0] != 'a' && line[0] != 'I')
+            continue;
+        wordlist_add(wl, line);
         i++;
     }
     free(line);
@@ -120,9 +94,9 @@ static struct word * wordlist_alloc(struct wordlist * wl) {
     return &wl->chunks[i][j];
 }
 
-const struct word * wordlist_add(struct wordlist * wl, const char * s, int v) {
+const struct word * wordlist_add(struct wordlist * wl, const char * s) {
     struct word * w = wordlist_alloc(wl);
-    word_init(w, s, v);
+    word_init(w, s);
     w->owned = true;
     wordset_add(&wl->self_set, w);
     return w;
@@ -130,12 +104,6 @@ const struct word * wordlist_add(struct wordlist * wl, const char * s, int v) {
 
 const struct word * wordlist_ensure_owned(struct wordlist * wl, const struct word * src) {
     if (src->owned) {
-        // XXX This assertion only checks the "top" layer; theoretically we should
-        // recurse down to the lower layers; but in general we should never end up
-        // with an owned word being formed from a tuple of un-owned words!
-        for (size_t i = 0; src->is_tuple && i < WORD_TUPLE_N; i++) {
-            ASSERT(src->tuple_words[i]->owned);
-        }
         return src;
     }
 
@@ -144,15 +112,6 @@ const struct word * wordlist_ensure_owned(struct wordlist * wl, const struct wor
 
     w->owned = true;
     wordset_add(&wl->self_set, w);
-
-    for (size_t i = 0; w->is_tuple && i < WORD_TUPLE_N; i++) {
-        if (w->tuple_words[i] == NULL) {
-            break;
-        }
-        if (!w->tuple_words[i]->owned) {
-            w->tuple_words[i] = wordlist_ensure_owned(wl, w->tuple_words[i]);
-        }
-    }
     return w;
 }
 
@@ -214,7 +173,7 @@ struct word_callback_wordset {
 
 static void word_callback_wordset(struct word_callback * cb, const struct word * w) {
     struct word_callback_wordset * state = (void *)cb;
-    if (state->unique && wordset_find(state->output, &w->canonical) != NULL) {
+    if (state->unique && wordset_find(state->output, &w->str) != NULL) {
         return;
     }
     w = wordlist_ensure_owned(state->buffer, w);

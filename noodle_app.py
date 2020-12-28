@@ -2,6 +2,7 @@
 
 import os
 import re
+from itertools import zip_longest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from noodle import (
@@ -19,26 +20,130 @@ CHUNK_TIME_NS = 200e6  # 50ms
 TOTAL_TIME_NS = 1500e9  # 15s
 
 WORDLIST_SOURCES = [
-    # ("consolidated.txt", True),
-    # ("/usr/share/dict/american-english-insane", False),
-    ("/usr/share/dict/words", False),
+    # "consolidated.txt",
+    # "/usr/share/dict/american-english-insane",
+    "/usr/share/dict/words",
 ]
 
 
+def gen_anagram(anagram):
+    """rearrange the given letters"""
+    letters = set(anagram)
+    # Length constraint
+    yield "[%s]{%d}" % ("".join(sorted(letters)), len(anagram))
+
+    # Must contain the right number of each letter
+    for l in letters:
+        s = "[%s]*" % "".join(sorted(letters - {l}))
+        yield s.join([""] + [l] * anagram.count(l) + [""])
+
+
+def gen_subanagram(anagram):
+    """rearrange at most the given letters"""
+    letters = set(anagram)
+
+    # Length constraint
+    yield "[%s]{1,%d}" % ("".join(sorted(letters)), len(anagram))
+
+    # Must contain at most # of each letter
+    for l in letters:
+        s = "[%s]*" % "".join(sorted(letters - {l}))
+        yield s.join([""] + ["%s?" % l] * anagram.count(l) + [""])
+
+
+def gen_superanagram(anagram):
+    """rearrange at least the given letters"""
+    letters = set(anagram)
+
+    # Length constraint
+    yield ".{%d,}" % len(anagram)
+
+    # Must contain the at least the right number of each letter
+    for l in letters:
+        yield ".*".join([""] + [l] * anagram.count(l) + [""])
+
+
+def gen_transdelete(anagram, n=1):
+    """rearrange all but n of the given letters"""
+    if n >= len(anagram):
+        raise Exception("can't transdelete {} letters from {}".format(n, anagram))
+    letters = set(anagram)
+
+    # Length constraint
+    yield "[%s]{%d}" % ("".join(sorted(letters)), len(anagram) - n)
+
+    # Must contain at most # of each letter
+    for l in letters:
+        s = "[%s]*" % "".join(sorted(letters - {l}))
+        yield s.join([""] + ["%s?" % l] * anagram.count(l) + [""])
+
+
+def gen_transadd(anagram, n=1):
+    """rearrange all of the given letters plus n wildcards"""
+    letters = set(anagram)
+
+    # Length constraint
+    yield ".{%d}" % (len(anagram) + n)
+
+    # Must contain the at least the right number of each letter
+    for l in letters:
+        yield ".*".join([""] + [l] * anagram.count(l) + [""])
+
+
 def expand_expression(expression):
+    expression = expression.lower()
     if "<" in expression:
-        assert expression.count("<") == 1
-        a, anagram, plusminus, n, b = re.split(
-            r"<([a-zA-Z_ -]*)([+-]?)(\d?)>", expression
+        parts = re.split(r"<(.+?)(:?)([+~-]?)(\d?)>", expression)
+        plains, anagrams, colons, plusminuses, ns = (
+            parts[0::5],
+            parts[1::5],
+            parts[2::5],
+            parts[3::5],
+            parts[4::5],
         )
-        anagram = anagram.lower()
-        letters = set(anagram)
+        assert len(plains) == len(anagrams) + 1
+
         terms = []
-        terms.append("[" + "".join(sorted(letters)) + "]{" + str(len(anagram)) + "}")
-        for l in letters:
-            s = "[" + "".join(sorted(letters - {l})) + "]*"
-            terms.append(s.join([""] + [l] * anagram.count(l) + [""]))
-        return [Nx.new(a + t + b) for t in terms]
+        for anagram, colon, plusminus, n in zip(anagrams, colons, plusminuses, ns):
+            anagram = anagram.lower()
+            assert anagram != ""
+
+            if (colon, plusminus, n) == ("", "", ""):
+                terms.append(list(gen_anagram(anagram)))
+            elif colon == "":
+                print("a", anagram, "c", colon, "pm", plusminus, "n", n)
+                if plusminus not in ("+", "-"):
+                    raise Exception(
+                        "Invalid `<...>` group: `<{}>`".format(
+                            anagram + colon + plusminus + n
+                        )
+                    )
+                if n == "":
+                    if plusminus == "+":
+                        terms.append(list(gen_superanagram(anagram)))
+                    elif plusminus == "-":
+                        terms.append(list(gen_subanagram(anagram)))
+                else:
+                    if plusminus == "+":
+                        terms.append(list(gen_transadd(anagram, int(n))))
+                    elif plusminus == "-":
+                        terms.append(list(gen_transdelete(anagram, int(n))))
+            else:
+                raise Exception(
+                    "Invalid `<...>` group: `<{}>`".format(
+                        anagram + colon + plusminus + n
+                    )
+                )
+
+        nxs = []
+        for ts in zip_longest(*terms, fillvalue=".*"):
+            assert len(ts) + 1 == len(plains)
+            expression = plains[0]
+            for t, p in zip(ts, plains[1:]):
+                expression += t + p
+            nxs.append(Nx.new(expression))
+        return nxs
+
     if ":" not in expression:
         return [Nx.new(expression)]
 
@@ -56,7 +161,7 @@ def handle_noodle_input(input_text, cursor):
         return
 
     iterate = lambda output: nx_combo_multi(
-        nxs, WORDLIST, n_words=3, cursor=cursor, output=output,
+        nxs, WORDLIST, n_words=10, cursor=cursor, output=output,
     )
     query_text = "".join(["    {}\n".format(f.debug()) for f in nxs])
 
@@ -72,7 +177,7 @@ def handle_noodle_input(input_text, cursor):
         output_text += "#1 {} matches\n".format(len(output))
 
         if first:
-            output_text += "\nQuery:\n{}\n".format(query_text)
+            output_text += "\nExpanded Query:\n{}\n".format(query_text)
             first = False
 
         for i in range(next_output, len(output)):
@@ -128,13 +233,14 @@ class NoodleHandler(BaseHTTPRequestHandler):
             self.wfile.write(
                 "Internal logs:\n\n{}".format(error_get_log()).encode("utf-8")
             )
+            raise e
 
 
 def load_wordlist():
     global WORDLIST
-    for filename, is_scored in WORDLIST_SOURCES:
+    for filename in WORDLIST_SOURCES:
         if os.path.exists(filename):
-            WORDLIST = WordList.new_from_file(filename, is_scored)
+            WORDLIST = WordList.new_from_file(filename)
             print("Loaded wordlist:", WORDLIST.debug())
             return
     raise Exception(

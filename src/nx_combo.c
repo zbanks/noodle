@@ -46,7 +46,7 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input) 
     nx->combo_cache = cache;
     cache->wordset = input;
     cache->wordset_size = input->words_count;
-    wordset_init(&cache->nonnull_wordset, nx->expression);
+    wordset_init(&cache->nonnull_wordset);
 
     int64_t start_ns = now_ns();
     size_t transitions_size = nx->n_states * sizeof(struct nx_set);
@@ -59,7 +59,7 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input) 
 
     for (size_t i = 0; i < input->words_count; i++) {
         enum nx_char wbuf[256];
-        nx_char_translate(str_str(&input->words[i]->canonical), wbuf, 256);
+        nx_char_translate(word_cstr(input->words[i]), wbuf, 256);
         ASSERT(wbuf[0] == NX_CHAR_SPACE);
         ASSERT(wbuf[1] != NX_CHAR_END);
         ASSERT(wbuf[2] != NX_CHAR_END);

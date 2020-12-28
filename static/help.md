@@ -1,67 +1,31 @@
-Specify filters in the input textbox. Each line is treated as a filter.
+Specify filters in the input textbox. Each line is treated as a *noodle expression*.
 
-The filters are "chained" together, in order. The output pane shows which words matched the entire filter chain.
+The query runs until the input wordlist is exhausted, 300 results are returned, or 15 seconds have passed.
 
-The query runs until the input wordlist is exhausted, 300 results are returned, or 15 seconds have past.
+<!-- If `N` is provided, perform a fuzzy match with up to `N` edits. (NB: consecutive inserts are not allowed) -->
 
-#### `nx [N]: <noodlex>`
+Noodle supports the following regex syntax: `[...]`, `[^...]`, `.`, `*`, `+`, `?`, `(...)`, `|`, `{...}`.
 
-Evalute noodle expression
+Noodle has additional support for anagram-like constriants with angle bracket syntax: `<...>`
 
-If `N` is provided, perform a fuzzy match with up to `N` edits. (NB: consecutive inserts are not allowed)
+- `<abcd>` -- **anagram** of `abcd`: rearranging the given letters
+- `<abcd+>` -- **superanagram** of `abcd`: rearranging *at least* the given letters
+- `<abcd+3>` -- **transadd** of `3` to `abcd`: rearranging *all* of the given letters *plus* `N` wildcards
+- `<abcd->` -- **subanagram** of `abcd`: rearranging *at most* the given letters
+- `<abcd-1>` -- **transdelete** of `3` to `abcd`: rerranging *all but `N`* of the given letters
 
-Supported regex features: `[...]`, `[^...]`, `.`, `*`, `+`, `?`, `(...)`, `|`.
+<!--
+TODO:
+- `<abcd:~>` -- **bank**
+- `<abcd:+>` -- **superbank**
+- `<abcd:->` -- **subbank**
+- `(abcd:?)` -- **substring**
+- `(abcd:+2)` -- **add**
+- `(abcd:-2)` -- **delete**
+- `(abcd:~2)` -- **change**
+-->
 
 Matches are case-insentive.
-Spaces are ignored both in the expression, and the matched word.
+Spaces/symbols are ignored both in the expression, and the matched word.
 An `_` in the expression matches an space character in a word.
-
-#### `nxn N: <noodlex>`
-
-Evalute noodle expression, matching up to `N` words.
-
-The `noodlex` expression follows the same syntax as the `nx` command, except multi-word search cannot be combined with fuzzy search.
-
-**Note:** This is handled as a special case for now, and cannot be chained with any other filters.
-
-#### `regex: <regex>`
-
-Evaluate regular expression.
-Matches are case-insentive.
-The whole word must match, it is implicitly wrapped in  `^...$`.
-
-#### `extract: <regex>`
-
-Evalulate regular expression, but return the first capture group (it must also be a word)
-
-#### `extractq: <regex>`
-
-Evalulate regular expression, but return the first capture group (it does not have to be a word)
-
-#### `anagram: <letters>`
-
-Anagram
-
-#### `subanagram: <letters>`
-
-Contains at most the given letters
-
-#### `superanagram: <letters>`
-
-Contains at least the given letters
-
-#### `transadd N: <letters>`
-
-Contains the given letters, plus `N` extras
-
-#### `transdelete N: <letters>`
-
-Contains the given letters, except `N` of them
-
-#### `bank: <letters>`
-
-Only contains the given letters (but with repeats)
-
-#### `score N:`
-
-The word's _score_ is at least `N`. The score is a value hard-coded in the wordlist: common words have high scores, "less real" words have low scores.
+An `-` in the expression matches any symbol in the word (hyphen, apostrophe, etc.).

@@ -56,7 +56,11 @@ format:
 clean:
 	-rm -rf build __pycache__ $(TARGETS)
 
-.PHONY: all
 all: $(TARGETS)
+
+.PHONY: pylint
+pylint: noodle.py noodle_app.py | $(TARGET_CFFI_LIB)
+	pylint --extension-pkg-whitelist=noodle_ffi --errors-only $+
+
 
 .DEFAULT_GOAL = all

@@ -35,10 +35,6 @@ See [Noodle Help](static/help.md).
     - Multi-word matches
     - Multi-NX matches
     - Sugar (anagrams)
-- Refactor `struct word` now that we aren't pre-processing word lists (preivously done for e.g. anagrams)
-    - No need to cache `canonical`/`sorted` forms
-        - Could use for "ignore spaces/capitalization/punctuation" rules?
-    - If we aren't sorting, there's no need for `value` either (value is implicit from list order)
 - Consolidate `struct word_callback` & `struct cursor`
 - Building the `combo_cache` should poll the cursor, it can take a long time
 - `nx_combo_multi(...)` sort outputs by word length
@@ -46,3 +42,10 @@ See [Noodle Help](static/help.md).
     - Is the easiest way to do this to repeatedly call it with `n_words` set to 1, then 2, etc.?
         - This turns an `O(n^k)` process into `O(n) + O(n^2) + O(n^3) + ... + O(n^k) = O(n^k)` process (big-O notation isn't ideal for analyzing this)
 - `nx_combo_multi(...)` could theoretically take an `n_errors` parameter?
+- Clean up explicit space/other handling
+- Expand `expand_expression()` in Python
+    - Handle all qhex operations in `<...>` brackets (subanagram, transadd, etc.)
+    - Set per-NX flags
+    - Handle enumertations (bare "`5 1 3-1" rewrites to "`_....._._...-._`")
+- "Extract"/re-write rules for matching "inner" words, etc.
+- "Inverse" NX expressions? ("does not match") -- is this easy with NFAs?

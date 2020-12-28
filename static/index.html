@@ -50,10 +50,11 @@
                 <div class="examples">
                     <h2>Examples</h2>
                     <ul>
-                        <li><a class="example">nxn 4: happybirthdaytoyou</a></li>
-                        <li><a class="example">anagram: smiles</a></li>
-                        <li><a class="example">anagram: smiles; .*ss.*</a></li>
-                        <li><a class="example">nx 2: breadfast</a></li>
+                        <li><a class="example">helloworld</a></li>
+                        <li><a class="example">&lt;hello+&gt;; &lt;world+5&gt;; [hale]+&lt;owl&gt;.*; _h...._w...._</a></li>
+                        <li><a class="example">&lt;smiles&gt;</a></li>
+                        <li><a class="example">&lt;smiles&gt;; .*ss.*</a></li>
+                        <!-- <li><a class="example">nx 2: breadfast</a></li> -->
                     </ul>
                 </div>
             </div>
@@ -65,38 +66,31 @@
             <div class="column">
                 <h2>Help</h2>
 <!-- generated from `pandoc help.md` -->
-<p>Specify filters in the input textbox. Each line is treated as a filter.</p>
-<p>The filters are &quot;chained&quot; together, in order. The output pane shows which words matched the entire filter chain.</p>
-<p>The query runs until the input wordlist is exhausted, 300 results are returned, or 15 seconds have past.</p>
-<h4><code>nx [N]: &lt;noodlex&gt;</code></h4>
-<p>Evalute noodle expression</p>
-<p>If <code>N</code> is provided, perform a fuzzy match with up to <code>N</code> edits. (NB: consecutive inserts are not allowed)</p>
-<p>Supported regex features: <code>[...]</code>, <code>[^...]</code>, <code>.</code>, <code>*</code>, <code>+</code>, <code>?</code>, <code>(...)</code>, <code>|</code>.</p>
-<p>Matches are case-insentive. Spaces are ignored both in the expression, and the matched word. An <code>_</code> in the expression matches an space character in a word.</p>
-<h4><code>nxn N: &lt;noodlex&gt;</code></h4>
-<p>Evalute noodle expression, matching up to <code>N</code> words.</p>
-<p>The <code>noodlex</code> expression follows the same syntax as the <code>nx</code> command, except multi-word search cannot be combined with fuzzy search.</p>
-<p><strong>Note:</strong> This is handled as a special case for now, and cannot be chained with any other filters.</p>
-<h4><code>regex: &lt;regex&gt;</code></h4>
-<p>Evaluate regular expression. Matches are case-insentive. The whole word must match, it is implicitly wrapped in <code>^...$</code>.</p>
-<h4><code>extract: &lt;regex&gt;</code></h4>
-<p>Evalulate regular expression, but return the first capture group (it must also be a word)</p>
-<h4><code>extractq: &lt;regex&gt;</code></h4>
-<p>Evalulate regular expression, but return the first capture group (it does not have to be a word)</p>
-<h4><code>anagram: &lt;letters&gt;</code></h4>
-<p>Anagram</p>
-<h4><code>subanagram: &lt;letters&gt;</code></h4>
-<p>Contains at most the given letters</p>
-<h4><code>superanagram: &lt;letters&gt;</code></h4>
-<p>Contains at least the given letters</p>
-<h4><code>transadd N: &lt;letters&gt;</code></h4>
-<p>Contains the given letters, plus <code>N</code> extras</p>
-<h4><code>transdelete N: &lt;letters&gt;</code></h4>
-<p>Contains the given letters, except <code>N</code> of them</p>
-<h4><code>bank: &lt;letters&gt;</code></h4>
-<p>Only contains the given letters (but with repeats)</p>
-<h4><code>score N:</code></h4>
-<p>The word's <em>score</em> is at least <code>N</code>. The score is a value hard-coded in the wordlist: common words have high scores, &quot;less real&quot; words have low scores.</p>
+<p>Specify filters in the input textbox. Each line is treated as a <em>noodle expression</em>.</p>
+<p>The query runs until the input wordlist is exhausted, 300 results are returned, or 15 seconds have passed.</p>
+<!-- If `N` is provided, perform a fuzzy match with up to `N` edits. (NB: consecutive inserts are not allowed) -->
+
+<p>Standard supported regex features: <code>[...]</code>, <code>[^...]</code>, <code>.</code>, <code>*</code>, <code>+</code>, <code>?</code>, <code>(...)</code>, <code>|</code>, and <code>{...}</code>.</p>
+<p>Noodle has extra support for anagram-esque constriants, using angle brackets: <code>&lt;...&gt;</code></p>
+<ul class="incremental">
+<li><code>&lt;abcd&gt;</code> -- <strong>anagram</strong> of <code>abcd</code>: rearranging the given letters</li>
+<li><code>&lt;abcd+&gt;</code> -- <strong>superanagram</strong> of <code>abcd</code>: rearranging <em>at least</em> the given letters</li>
+<li><code>&lt;abcd+3&gt;</code> -- <strong>transadd</strong> of <code>3</code> to <code>abcd</code>: rearranging <em>all</em> of the given letters <em>plus</em> <code>N</code> wildcards</li>
+<li><code>&lt;abcd-&gt;</code> -- <strong>subanagram</strong> of <code>abcd</code>: rearranging <em>at most</em> the given letters</li>
+<li><code>&lt;abcd-1&gt;</code> -- <strong>transdelete</strong> of <code>3</code> to <code>abcd</code>: rerranging <em>all but <code>N</code></em> of the given letters</li>
+</ul>
+<!--
+TODO:
+- `<abcd:~>` -- **bank**
+- `<abcd:+>` -- **superbank**
+- `<abcd:->` -- **subbank**
+- `(abcd:?)` -- **substring**
+- `(abcd:+2)` -- **add**
+- `(abcd:-2)` -- **delete**
+- `(abcd:~2)` -- **change**
+-->
+
+<p>Matches are case-insentive. Spaces/symbols are ignored both in the expression, and the matched word. An <code>_</code> in the expression matches an space character in a word. An <code>-</code> in the expression matches any symbol in the word (hyphen, apostrophe, etc.).</p>
 <!-- end help -->
             </div>
         </div>
@@ -156,7 +150,7 @@
             document.querySelectorAll("a.example").forEach(function(a) {
                 a.href = "#";
                 a.addEventListener("click", function() {
-                    input.value = a.innerText.replace("; ", "\n");
+                    input.value = a.innerText.replace(/; /g, "\n");
                     submit();
                 });
             });

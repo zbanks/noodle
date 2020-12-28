@@ -5,12 +5,12 @@ int main() {
     nx_test();
 
     struct word w;
-    word_init(&w, "Hello, World!", 10);
+    word_init(&w, "Hello, World!");
     LOG("> %s", word_debug(&w));
     word_term(&w);
 
     struct wordlist wl;
-    ASSERT(wordlist_init_from_file(&wl, "/usr/share/dict/words", false) == 0);
+    ASSERT(wordlist_init_from_file(&wl, "/usr/share/dict/words") == 0);
     // ASSERT(wordlist_init_from_file(&wl, "consolidated.txt", true) == 0);
     struct wordset * ws = &wl.self_set;
     /*
@@ -35,7 +35,7 @@ int main() {
     int64_t t = now_ns();
     size_t n_matches[32] = {0};
     for (size_t i = 0; i < ws->words_count; i++) {
-        const char * s = word_canonical(ws->words[i]);
+        const char * s = word_cstr(ws->words[i]);
         int rc = nx_match(nx, s, 0);
         n_matches[(size_t)(rc + 1)]++;
         // if (rc == 0) LOG("> match: %s", s);
@@ -52,7 +52,7 @@ int main() {
     t = now_ns();
     size_t n_matches_regexec = 0;
     for (size_t i = 0; i < ws->words_count; i++) {
-        const char * s = word_canonical(ws->words[i]);
+        const char * s = word_cstr(ws->words[i]);
         int rc = regexec(&preg, s, 0, NULL, 0);
         if (rc == 0) {
             n_matches_regexec++;
@@ -63,7 +63,7 @@ int main() {
 
     size_t n_mismatches = 0;
     for (size_t i = 0; i < ws->words_count; i++) {
-        const char * s = word_canonical(ws->words[i]);
+        const char * s = word_cstr(ws->words[i]);
         int rc1 = nx_match(nx, s, 0);
         int rc2 = regexec(&preg, s, 0, NULL, 0);
         if ((rc1 == 0) != (rc2 == 0)) {
@@ -77,7 +77,7 @@ int main() {
     // XXX: I've gotten sloppy with my resource management here; there's some leaks
     struct cursor cursor;
     struct wordlist buffer;
-    wordlist_init(&buffer, "buffer");
+    wordlist_init(&buffer);
 
     nx_test();
     {
@@ -103,14 +103,16 @@ a?n?a?g?r?a?m?a?n?a?g?r?a?m
 _..._._..._
         */
 
-        nxs[0] = NONNULL(nx_compile("_..._._..._"));
+        // nxs[0] = NONNULL(nx_compile("_..._._..._"));
+        nxs[0] = NONNULL(nx_compile(".*"));
         nxs[1] = NONNULL(nx_compile("[angrm][angrm][angrm][angrm][angrm][angrm][angrm]"));
         nxs[2] = NONNULL(nx_compile("[ngrm]*a[ngrm]*a[ngrm]*a[ngrm]*"));
         nxs[3] = NONNULL(nx_compile("[agrm]*n[agrm]*"));
         nxs[4] = NONNULL(nx_compile("[anrm]*g[anrm]*"));
         nxs[5] = NONNULL(nx_compile("[angm]*r[angm]*"));
         nxs[6] = NONNULL(nx_compile("[angr]*m[angr]*"));
-        nxs[7] = NONNULL(nx_compile("a?n?a?g?r?a?m?a?n?a?g?r?a?m"));
+        // nxs[7] = NONNULL(nx_compile("a?n?a?g?r?a?m?a?n?a?g?r?a?m"));
+        nxs[7] = NONNULL(nx_compile(".*"));
         // nxs[6] = NONNULL(nx_compile("gram.*"));
 
         // nxs[0] = NONNULL(nx_compile(".........."));
@@ -123,7 +125,7 @@ _..._._..._
 
         do {
             cursor.deadline_output_index++;
-            nx_combo_multi(nxs, 8, ws, 3, &cursor, cb);
+            nx_combo_multi(nxs, 8, ws, 15, &cursor, cb);
         } while (cursor.total_input_items != cursor.input_index && now_ns() < cursor.deadline_ns);
         LOG("Multi match: %s", cursor_debug(&cursor));
         return 0;
