@@ -57,9 +57,9 @@ const struct word * wordset_find(const struct wordset * ws, const struct str * s
     return NULL;
 }
 
-void wordset_print(struct wordset * ws) {
+void wordset_print(const struct wordset * ws) {
     LOG("Wordset \"%s\" (%zu):", ws->name, ws->words_count);
-    for (size_t i = 0; i < 20 && i < ws->words_count; i++) {
+    for (size_t i = 0; i < 50 && i < ws->words_count; i++) {
         LOG("  - %s", word_debug(ws->words[i]));
     }
 }

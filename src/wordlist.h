@@ -13,7 +13,7 @@ struct wordset {
 
 NOODLE_EXPORT void wordset_init(struct wordset * ws, const char * name);
 NOODLE_EXPORT void wordset_term(struct wordset * ws);
-NOODLE_EXPORT void wordset_print(struct wordset * ws);
+NOODLE_EXPORT void wordset_print(const struct wordset * ws);
 
 NOODLE_EXPORT void wordset_sort_value(struct wordset * ws);
 NOODLE_EXPORT void wordset_sort_canonical(struct wordset * ws);
