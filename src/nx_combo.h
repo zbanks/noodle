@@ -1,3 +1,4 @@
+#pragma once
 #include "cursor.h"
 #include "nx.h"
 #include "prelude.h"

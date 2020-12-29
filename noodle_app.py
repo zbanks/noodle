@@ -17,7 +17,7 @@ from noodle import (
     error_get_log,
 )
 
-CHUNK_TIME_NS = 200e6  # 50ms
+CHUNK_TIME_NS = 50e6  # 50ms
 TOTAL_TIME_NS = 1500e9  # 15s
 
 WORDLIST_SOURCES = [

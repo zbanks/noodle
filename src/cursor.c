@@ -68,9 +68,9 @@ void cursor_set_deadline(struct cursor * c, int64_t deadline_ns, size_t deadline
 const char * cursor_debug(const struct cursor * c) {
     static char buffer[2048];
     int64_t now = now_ns();
-    snprintf(buffer, sizeof(buffer), "%zu/%zu (%0.2lf%%) input; %zu output; in %0.0lfms", c->input_index,
-             c->total_input_items, 100.0 * (double)c->input_index / (double)c->total_input_items, c->output_index,
-             (double)(now - c->initialize_ns) / 1e6);
+    snprintf(buffer, sizeof(buffer), "%zu/%zu (%0.2lf%%) %s; %zu output; in %0.0lfms", c->input_index,
+             c->total_input_items, 100.0 * (double)c->input_index / (double)c->total_input_items,
+             c->setup_done ? "input" : "preprocessing", c->output_index, (double)(now - c->initialize_ns) / 1e6);
     return buffer;
 }
 

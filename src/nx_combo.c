@@ -16,7 +16,7 @@ struct nx_combo_cache {
     struct wordset nonnull_wordset;
 
     const struct wordset * wordset;
-    size_t wordset_size;
+    size_t wordset_progress;
 };
 
 void nx_combo_cache_destroy(struct nx_combo_cache * cache) {
@@ -33,33 +33,35 @@ void nx_combo_cache_destroy(struct nx_combo_cache * cache) {
     free(cache);
 }
 
-static void nx_combo_cache_create(struct nx * nx, const struct wordset * input) {
+static void nx_combo_cache_create(struct nx * nx, const struct wordset * input, struct cursor * cursor) {
     NONNULL(nx);
     NONNULL(input);
 
-    if (nx->combo_cache != NULL) {
-        if (nx->combo_cache->wordset == input && nx->combo_cache->wordset_size == input->words_count) {
-            return;
-        }
-        nx_combo_cache_destroy(nx->combo_cache);
-        nx->combo_cache = NULL;
-    }
-    struct nx_combo_cache * cache = NONNULL(calloc(1, sizeof(*nx->combo_cache)));
-    nx->combo_cache = cache;
-    cache->wordset = input;
-    cache->wordset_size = input->words_count;
-    wordset_init(&cache->nonnull_wordset);
-
     int64_t start_ns = now_ns();
+
     size_t transitions_size = nx->n_states * sizeof(struct nx_set);
-    cache->classes = NONNULL(calloc(input->words_count + 1, sizeof(*cache->classes)));
-    cache->word_classes = NONNULL(calloc(input->words_count, sizeof(*cache->word_classes)));
+    struct nx_combo_cache * cache = nx->combo_cache;
 
-    // The first class is always the "empty" class (complete no-match)
-    cache->classes[0].transitions = NONNULL(calloc(1, transitions_size));
-    cache->n_classes++;
+    if (cache == NULL) {
+        cache = NONNULL(calloc(1, sizeof(*cache)));
+        nx->combo_cache = cache;
+        cache->wordset = input;
+        cache->wordset_progress = 0;
+        wordset_init(&cache->nonnull_wordset);
 
-    for (size_t i = 0; i < input->words_count; i++) {
+        cache->classes = NONNULL(calloc(input->words_count + 1, sizeof(*cache->classes)));
+        cache->word_classes = NONNULL(calloc(input->words_count, sizeof(*cache->word_classes)));
+
+        // The first class is always the "empty" class (complete no-match)
+        cache->classes[0].transitions = NONNULL(calloc(1, transitions_size));
+        cache->n_classes++;
+    } else if (cache->wordset_progress >= input->words_count) {
+        ASSERT(cache->wordset_progress == input->words_count);
+        return;
+    }
+
+    for (size_t i = cache->wordset_progress; i < input->words_count; i++) {
+
         enum nx_char wbuf[256];
         nx_char_translate(word_str(input->words[i]), wbuf, 256);
         ASSERT(wbuf[0] == NX_CHAR_SPACE);
@@ -104,8 +106,15 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input) 
         if (cache->word_classes[i] != &cache->classes[0]) {
             wordset_add(&cache->nonnull_wordset, input->words[i]);
         }
+
+        cache->wordset_progress = i + 1;
+        if (!cursor_update_input(cursor, cursor->input_index)) {
+            return;
+        }
     }
-    // cache->classes = NONNULL(realloc(cache->classes, cache->n_classes * sizeof(*cache->classes)));
+    ASSERT(cache->wordset_progress == input->words_count);
+
+    // This part should be ~fast to do at once
     size_t n_words_cumulative = 0;
     for (size_t j = 0; j < cache->n_classes; j++) {
         struct cache_class * class = &cache->classes[j];
@@ -130,7 +139,7 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input) 
 static int nx_combo_cache_compress(struct nx * nx, const struct wordset * new_input) {
     // Recompute the NX cache for a new input set
     //
-    // `new_input` *must* be a subset of the original `cache->wordset`, in the *same order*
+    // `new_input` *must* be a subsnxs[i]->combo_cache == NULL || nxs[i
     //
     // NB: This only removes the words from the `word_classes` lookup, it does not
     // shrink the class word lists or remove now-unused classes.
@@ -142,7 +151,7 @@ static int nx_combo_cache_compress(struct nx * nx, const struct wordset * new_in
     NONNULL(new_input);
 
     struct nx_combo_cache * cache = nx->combo_cache;
-    ASSERT(cache->wordset->words_count == cache->wordset_size);
+    ASSERT(cache->wordset->words_count == cache->wordset_progress);
     if (cache->wordset == new_input) {
         return 0;
     }
@@ -170,7 +179,7 @@ static int nx_combo_cache_compress(struct nx * nx, const struct wordset * new_in
     free(cache->word_classes);
     cache->word_classes = new_word_classes;
     cache->wordset = new_input;
-    cache->wordset_size = new_input->words_count;
+    cache->wordset_progress = new_input->words_count;
     return 0;
 }
 
@@ -273,27 +282,33 @@ void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset 
     ASSERT(n_words + 1 <= CURSOR_LIST_MAX);
     ASSERT(cursor != NULL);
 
-    cursor->total_input_items = input->words_count;
+    if (!cursor->setup_done) {
+        cursor->total_input_items = n_nxs;
+        for (size_t i = 0; i < n_nxs; i++) {
+            nx_combo_cache_create(nxs[i], input, cursor);
 
-    for (size_t i = 0; i < n_nxs; i++) {
-        if (nxs[i]->combo_cache == NULL) {
-            // XXX this doesn't validate that the input wordset hasn't changed
-            nx_combo_cache_create(nxs[i], input);
-        }
-        ASSERT(nxs[i]->combo_cache != NULL);
-        input = &nxs[i]->combo_cache->nonnull_wordset;
+            if (!cursor_update_input(cursor, i)) {
+                return;
+            }
 
-        // Building the cache can be slow, check if we exceeded the time limit
-        if (!cursor_update_input(cursor, cursor->input_index)) {
-            return;
+            ASSERT(nxs[i]->combo_cache != NULL);
+            input = &nxs[i]->combo_cache->nonnull_wordset;
         }
+
+        // This should be ~fast to do at once
+        for (size_t i = 0; i < n_nxs; i++) {
+            nx_combo_cache_compress(nxs[i], input);
+        }
+
+        cursor->setup_done = true;
+        cursor->total_input_items = input->words_count;
+        memset(cursor->input_index_list, 0, sizeof(cursor->input_index_list));
+    } else {
+        input = &nxs[n_nxs - 1]->combo_cache->nonnull_wordset;
     }
-    cursor->total_input_items = input->words_count;
 
     struct nx_set sss[n_nxs];
     for (size_t i = 0; i < n_nxs; i++) {
-        nx_combo_cache_compress(nxs[i], input);
-
         enum nx_char space[2] = {NX_CHAR_SPACE, NX_CHAR_END};
         sss[i] = nx_match_partial(nxs[i], space, 0);
     }
