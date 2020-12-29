@@ -18,7 +18,7 @@ from noodle import (
 )
 
 CHUNK_TIME_NS = 50e6  # 50ms
-TOTAL_TIME_NS = 1500e9  # 15s
+TOTAL_TIME_NS = 15e9  # 15s
 
 WORDLIST_SOURCES = [
     # "consolidated.txt",
@@ -162,7 +162,7 @@ def handle_noodle_input(input_text, output, cursor):
         return
 
     iterate = lambda: nx_combo_multi(
-        nxs, WORDLIST, n_words=4, cursor=cursor, output=output,
+        nxs, WORDLIST, n_words=10, cursor=cursor, output=output,
     )
     query_text = "".join(["    {}\n".format(f.debug()) for f in nxs])
 

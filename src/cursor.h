@@ -12,6 +12,7 @@ struct cursor {
     size_t output_index;
     size_t input_index_list[CURSOR_LIST_MAX];
     bool setup_done;
+    size_t word_index;
 
     size_t total_input_items;
     int64_t initialize_ns;

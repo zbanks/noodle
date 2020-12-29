@@ -35,19 +35,18 @@ See [Noodle Help](static/help.md).
     - Multi-word matches
     - Multi-NX matches
     - Sugar (anagrams)
-- Consolidate `struct word_callback` & `struct cursor`
-- Building the `combo_cache` should poll the cursor, it can take a long time
-- `nx_combo_multi(...)` sort outputs by word length
-    - Makes it so the user doesn't need to configure word length
-    - Is the easiest way to do this to repeatedly call it with `n_words` set to 1, then 2, etc.?
-        - This turns an `O(n^k)` process into `O(n) + O(n^2) + O(n^3) + ... + O(n^k) = O(n^k)` process (big-O notation isn't ideal for analyzing this)
+- `nx_combo_multi(...)` sort outputs by word length in what I'd call a "`O(n) + O(n^2) + O(n^3) + ... + O(n^k)`" process
+    - Although this *is* equivalent to `O(n^k)` in big-O, we may be able to get better constant factors by caching the intermediate state?
 - `nx_combo_multi(...)` could theoretically take an `n_errors` parameter?
 - Clean up explicit space/other handling
     - Flag for explicit other/punctuation
     - Convert accented letters to bare (probably in list generation?)
 - Expand `expand_expression()` in Python
     - Handle all qhex operations in `<...>` brackets (subanagram, transadd, etc.)
+        - bank/superbank/subbank (`<...:+>`)
+        - add/delete/change (`(...:+1)`)
+        - substring (`(...:?)`)
     - Set per-NX flags
     - Handle enumertations (bare "`5 1 3-1" rewrites to "`_....._._...-._`")
-- "Extract"/re-write rules for matching "inner" words, etc.
+- "Extract"/re-write rules for matching "inner" words, etc. ("cross-filtering" on qhex)
 - "Inverse" NX expressions? ("does not match") -- is this easy with NFAs?

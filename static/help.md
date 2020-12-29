@@ -26,6 +26,9 @@ TODO:
 -->
 
 Matches are case-insentive.
-Spaces/symbols are ignored both in the expression, and the matched word.
-An `_` in the expression matches an space character in a word.
-An `-` in the expression matches any symbol in the word (hyphen, apostrophe, etc.).
+
+Spaces are completely ignored in the expression. By default, spaces are ignored in the matched word or phrase.
+
+An "`_`" in the expression matches an space character in a word, and enables explicit space matching across the entire expression.
+
+An "`-`" in the expression matches any symbol in the word (hyphen, apostrophe, etc.).

@@ -2,7 +2,7 @@ CC=gcc
 PYTHON=python3.9
 
 TARGET_CFFI_LIB = noodle_ffi$(shell $(PYTHON) -c 'import importlib.machinery as m; print(m.EXTENSION_SUFFIXES[0])')
-TARGETS = libnoodle.so noodle $(TARGET_CFFI_LIB)
+TARGETS = libnoodle.so noodle $(TARGET_CFFI_LIB) tags
 
 CFLAGS += -std=c11 -D_DEFAULT_SOURCE
 CFLAGS += -Wall -Wextra -Wconversion -Werror
@@ -34,10 +34,10 @@ DEPS = $(OBJECTS:.o=.d) build/main.d
 -include $(DEPS)
 
 build/%.o: src/%.c
-	$(CC) -c $(CFLAGS) src/$*.c -o build/$*.o
+	$(CC) -c $(CFLAGS) -o build/$*.o src/$*.c
 
 build/%.d: src/%.c
-	@$(CC) -MM $(CFLAGS) src/$*.c > build/$*.d
+	@$(CC) -MM $(CFLAGS) -MF build/$*.d -MT build/$*.o src/$*.c
 
 libnoodle.so: $(OBJECTS)
 	$(CC) $^ -shared $(CFLAGS) $(LFLAGS) -o $@
@@ -47,6 +47,9 @@ noodle: build/main.o libnoodle.so
 
 $(TARGET_CFFI_LIB): build_cffi.py | libnoodle.so
 	$(PYTHON) $< && cp build/$@ $@
+
+tags: $(LIB_SRCS)
+	ctags -R .
 
 .PHONY: format clean all
 format:
@@ -58,7 +61,7 @@ clean:
 
 all: $(TARGETS)
 
-.PHONY: pylint valgrind gdb
+.PHONY: pylint valgrind gdb run-app
 pylint: noodle.py noodle_app.py | $(TARGET_CFFI_LIB)
 	pylint --extension-pkg-whitelist=noodle_ffi --errors-only $+
 
@@ -68,5 +71,7 @@ valgrind: noodle
 gdb: noodle
 	gdb --args ./$<
 
+run-app: $(TARGET_CFFI_LIB)
+	$(PYTHON) noodle_app.py
 
 .DEFAULT_GOAL = all
