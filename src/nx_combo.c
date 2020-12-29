@@ -260,12 +260,7 @@ static enum multi_return nx_combo_multi_iter(struct nx * const * nxs, size_t n_n
         }
 
         stems[word_index] = input->words[i];
-        if (n_words == word_index + 1) {
-            has_partial_match = true;
-        }
 
-        // TODO: I don't like that this yields multi-words before single words,
-        // but going in this order is important for making the cursor work
         if (n_words > word_index + 1) {
             enum multi_return rc =
                 nx_combo_multi_iter(nxs, n_nxs, input, stems, end_sss, cursor, n_words, word_index + 1);
@@ -279,6 +274,8 @@ static enum multi_return nx_combo_multi_iter(struct nx * const * nxs, size_t n_n
             struct word wp;
             word_tuple_init(&wp, stems, word_index + 1);
             cursor->callback(cursor, &wp);
+        } else {
+            has_partial_match = true;
         }
     }
     if (word_index == 0) {
@@ -335,14 +332,10 @@ void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset 
         const struct word * stems[n_words];
         enum multi_return rc = nx_combo_multi_iter(nxs, n_nxs, input, stems, sss, cursor, cursor->word_index, 0);
 
-        if (rc == MULTI_RETURN_DONE_N) {
-            if (cursor->word_index < n_words) {
-                cursor->total_input_items = input->words_count;
-                memset(cursor->input_index_list, 0, sizeof(cursor->input_index_list));
-                cursor->word_index++;
-            } else {
-                return;
-            }
+        if (rc == MULTI_RETURN_DONE_N && cursor->word_index < n_words) {
+            cursor->total_input_items = input->words_count;
+            memset(cursor->input_index_list, 0, sizeof(cursor->input_index_list));
+            cursor->word_index++;
         } else {
             return;
         }

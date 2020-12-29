@@ -92,7 +92,23 @@ def gen_transadd(anagram, n=1):
 
 
 def expand_expression(expression):
-    expression = expression.lower()
+    expression = expression.lower().strip()
+    if not expression:
+        return []
+
+    if re.match(r"[0-9 ]+", expression):
+        # Enumeration
+        # TODO: handle ' or - in enumerations (e.g. "1 3'1 5")
+        counts = re.split(r" +", expression)
+        return [Nx.new("_" + "_".join("." * int(c) for c in counts) + "_")]
+
+    expression = expression.replace(" ", "")
+
+    # Substring "(...:?)"
+    expression = re.sub(
+        r"\(([a-z_-]+):\?\)", lambda m: "({}?)".format("?".join(m.group(1))), expression
+    )
+
     if "<" in expression:
         parts = re.split(r"<(.+?)(:?)([+~-]?)(\d?)>", expression)
         plains, anagrams, colons, plusminuses, ns = (

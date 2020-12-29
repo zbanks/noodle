@@ -13,16 +13,17 @@ Noodle has additional support for anagram-like constriants with angle bracket sy
 - `<abcd+3>` -- **transadd** of `3` to `abcd`: rearranging *all* of the given letters *plus* `N` wildcards
 - `<abcd->` -- **subanagram** of `abcd`: rearranging *at most* the given letters
 - `<abcd-1>` -- **transdelete** of `3` to `abcd`: rerranging *all but `N`* of the given letters
+- `(abcd:?)` -- **partial** of `abcd`: contained within a subset of the given letters, in the same order
 
 <!--
 TODO:
 - `<abcd:~>` -- **bank**
 - `<abcd:+>` -- **superbank**
 - `<abcd:->` -- **subbank**
-- `(abcd:?)` -- **substring**
 - `(abcd:+2)` -- **add**
 - `(abcd:-2)` -- **delete**
 - `(abcd:~2)` -- **change**
+- `(abcd:~)` -- **substring**
 -->
 
 Matches are case-insentive.
