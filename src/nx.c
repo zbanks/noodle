@@ -218,6 +218,8 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
     if (nx->implicit_other) {
         implicit_char_bitset |= nx_char_bit(NX_CHAR_OTHER);
     }
+    // enum nx_char explicit_char_bitset = (nx_char_bit(NX_CHAR_SPACE) | nx_char_bit(NX_CHAR_OTHER)) &
+    // ~implicit_char_bitset;
 
     ssize_t consumed_characters = 0;
     size_t previous_initial_state = STATE_FAILURE;
@@ -272,10 +274,18 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             s->next_state[0] = (uint16_t)(nx->n_states + 1);
             s->char_bitset[0] = nx_char_bit(NX_CHAR_SPACE);
 
+            // XXX: This allows spaces to absorb an arbitrary number of spaces
+            // effectively replacing each "_" with "_+"
+            // This means we don't need to trim spaces from words when doing matches
+            s->next_state[1] = (uint16_t)(nx->n_states);
+            s->char_bitset[1] = implicit_char_bitset | nx_char_bit(NX_CHAR_SPACE);
+
+            /*
             if (implicit_char_bitset) {
                 s->next_state[1] = (uint16_t)(nx->n_states);
                 s->char_bitset[1] = implicit_char_bitset;
             }
+            */
 
             previous_initial_state = nx->n_states;
             nx->n_states++;
@@ -294,15 +304,13 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             break;
         case '.':
             s->next_state[0] = (uint16_t)(nx->n_states + 1);
-            for (enum nx_char j = NX_CHAR_OTHER; j <= NX_CHAR_Z; j++) {
+            for (enum nx_char j = NX_CHAR_A; j <= NX_CHAR_Z; j++) {
                 s->char_bitset[0] |= nx_char_bit(j);
             }
 
             if (implicit_char_bitset) {
                 s->next_state[1] = (uint16_t)(nx->n_states);
                 s->char_bitset[1] = implicit_char_bitset;
-            } else {
-                s->char_bitset[0] &= ~implicit_char_bitset;
             }
 
             previous_initial_state = nx->n_states;
@@ -578,7 +586,7 @@ struct nx * nx_compile(const char * expression) {
     struct nx * nx = NONNULL(calloc(1, sizeof(*nx)));
     nx->expression = NONNULL(strdup(expression));
     nx->implicit_spaces = (strchr(expression, '_') == NULL);
-    nx->implicit_other = (strchr(expression, '-') == NULL);
+    nx->implicit_other = (strchr(expression, '-') == NULL) && false;
 
     ssize_t rc = nx_compile_subexpression(nx, nx->expression);
     if (rc < 0) {

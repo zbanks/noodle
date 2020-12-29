@@ -69,11 +69,10 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input, 
         ASSERT(wbuf[2] != NX_CHAR_END);
 
         // XXX This is an "O(n^2)ish" algorithm that probably could be done in "O(n)ish"
-        // if we implement filling the whole transition table in one shot
+        // if we implement filling the whole transition table in one shot?
         struct nx_set transitions[nx->n_states];
         for (size_t k = 0; k < nx->n_states; k++) {
-            // Use `&wbuf[1]` to skip initial space
-            transitions[k] = nx_match_partial(nx, &wbuf[1], (uint16_t)k);
+            transitions[k] = nx_match_partial(nx, wbuf, (uint16_t)k);
         }
 
         for (size_t j = 0; j < cache->n_classes; j++) {

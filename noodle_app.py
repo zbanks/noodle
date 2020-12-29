@@ -162,13 +162,12 @@ def handle_noodle_input(input_text, output, cursor):
         return
 
     iterate = lambda: nx_combo_multi(
-        nxs, WORDLIST, n_words=3, cursor=cursor, output=output,
+        nxs, WORDLIST, n_words=4, cursor=cursor, output=output,
     )
     query_text = "".join(["    {}\n".format(f.debug()) for f in nxs])
 
     first = True
     next_output = 0
-    width = 24
     while True:
         iterate()
 
@@ -182,8 +181,7 @@ def handle_noodle_input(input_text, output, cursor):
 
         for i in range(next_output, len(output)):
             word = output[i]
-            width = max(width, len(word) + 1)
-            output_text += ("{:<%d} {}\n" % width).format(str(word), word.debug())
+            output_text += "{}\n".format(str(word))
         next_output = len(output)
 
         yield output_text

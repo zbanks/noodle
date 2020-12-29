@@ -43,6 +43,8 @@ See [Noodle Help](static/help.md).
         - This turns an `O(n^k)` process into `O(n) + O(n^2) + O(n^3) + ... + O(n^k) = O(n^k)` process (big-O notation isn't ideal for analyzing this)
 - `nx_combo_multi(...)` could theoretically take an `n_errors` parameter?
 - Clean up explicit space/other handling
+    - Flag for explicit other/punctuation
+    - Convert accented letters to bare (probably in list generation?)
 - Expand `expand_expression()` in Python
     - Handle all qhex operations in `<...>` brackets (subanagram, transadd, etc.)
     - Set per-NX flags
