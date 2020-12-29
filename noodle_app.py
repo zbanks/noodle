@@ -9,6 +9,7 @@ from noodle import (
     Word,
     WordSet,
     WordList,
+    WordSetAndBuffer,
     Nx,
     Cursor,
     nx_combo_multi,
@@ -148,7 +149,7 @@ def expand_expression(expression):
         return [Nx.new(expression)]
 
 
-def handle_noodle_input(input_text, cursor):
+def handle_noodle_input(input_text, output, cursor):
     nxs = []
     for line in input_text.split("\n"):
         line = line.strip()
@@ -160,17 +161,16 @@ def handle_noodle_input(input_text, cursor):
         yield "#0 No input"
         return
 
-    iterate = lambda output: nx_combo_multi(
+    iterate = lambda: nx_combo_multi(
         nxs, WORDLIST, n_words=3, cursor=cursor, output=output,
     )
     query_text = "".join(["    {}\n".format(f.debug()) for f in nxs])
 
     first = True
-    output = None
     next_output = 0
     width = 24
     while True:
-        output = iterate(output)
+        iterate()
 
         output_text = ""
         output_text += "#0 {}\n".format(cursor.debug())
@@ -211,11 +211,16 @@ class NoodleHandler(BaseHTTPRequestHandler):
 
         error_get_log()
         try:
-            cursor = Cursor.new()
-            cursor.set_deadline(now_ns() + CHUNK_TIME_NS, deadline_output_index=300)
+            output = WordSetAndBuffer()
+            cursor = Cursor.new_to_wordset(
+                output.wordlist,
+                output,
+                deadline_ns=now_ns() + CHUNK_TIME_NS,
+                deadline_output_index=300,
+            )
             total_deadline_ns = now_ns() + TOTAL_TIME_NS
 
-            for chunk in handle_noodle_input(data, cursor):
+            for chunk in handle_noodle_input(data, output, cursor):
                 try:
                     self.wfile.write(chunk.encode("utf-8"))
                 except BrokenPipeError:

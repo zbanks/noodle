@@ -155,12 +155,7 @@ static int nx_combo_cache_compress(struct nx * nx, const struct wordset * new_in
         const struct word * w;
         while (1) {
             w = wordset_get(cache->wordset, j);
-            if (w == NULL) {
-                // XXX: This isn't really recoverable?
-                LOG("Error: word \"%s\" was not in original wordset", word_str(nw));
-                free(new_word_classes);
-                return -1;
-            }
+            ASSERT(w != NULL);
             if (w == nw) {
                 break;
             }
@@ -185,7 +180,7 @@ static const struct cache_class * nx_combo_cache_get(const struct nx * nx, size_
 
 static bool nx_combo_multi_iter(struct nx * const * nxs, size_t n_nxs, const struct wordset * input,
                                 const struct word ** stems, const struct nx_set * stem_sss, struct cursor * cursor,
-                                size_t n_words, size_t word_index, struct word_callback * cb) {
+                                size_t n_words, size_t word_index) {
     for (size_t i = cursor->input_index_list[word_index]; i < cursor->total_input_items; i++) {
         cursor->input_index_list[word_index] = i;
 
@@ -252,7 +247,7 @@ static bool nx_combo_multi_iter(struct nx * const * nxs, size_t n_nxs, const str
         // TODO: I don't like that this yields multi-words before single words,
         // but going in this order is important for making the cursor work
         if (n_words > word_index + 1) {
-            bool rc = nx_combo_multi_iter(nxs, n_nxs, input, stems, end_sss, cursor, n_words, word_index + 1, cb);
+            bool rc = nx_combo_multi_iter(nxs, n_nxs, input, stems, end_sss, cursor, n_words, word_index + 1);
             if (!rc) {
                 return false;
             }
@@ -261,7 +256,7 @@ static bool nx_combo_multi_iter(struct nx * const * nxs, size_t n_nxs, const str
         if (all_end_match) {
             struct word wp;
             word_tuple_init(&wp, stems, word_index + 1);
-            cb->callback(cb, &wp);
+            cursor->callback(cursor, &wp);
         }
     }
     if (word_index == 0) {
@@ -271,13 +266,12 @@ static bool nx_combo_multi_iter(struct nx * const * nxs, size_t n_nxs, const str
 }
 
 void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset * input, size_t n_words,
-                    struct cursor * cursor, struct word_callback * cb) {
+                    struct cursor * cursor) {
     ASSERT(nxs != NULL);
     ASSERT(n_nxs > 0);
     ASSERT(input != NULL);
     ASSERT(n_words + 1 <= CURSOR_LIST_MAX);
     ASSERT(cursor != NULL);
-    ASSERT(cb != NULL);
 
     cursor->total_input_items = input->words_count;
 
@@ -305,5 +299,5 @@ void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset 
     }
 
     const struct word * stems[n_words];
-    nx_combo_multi_iter(nxs, n_nxs, input, stems, sss, cursor, n_words, 0, cb);
+    nx_combo_multi_iter(nxs, n_nxs, input, stems, sss, cursor, n_words, 0);
 }

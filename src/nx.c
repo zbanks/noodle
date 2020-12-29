@@ -1,4 +1,5 @@
 #include "nx.h"
+#include "nx_combo.h"
 
 static const struct nx_set NX_SET_START = {{1}};
 
@@ -458,8 +459,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             size_t copy_end = nx->n_states - 1;
             size_t repeat_iters = repeat_max == 0 ? repeat_min : repeat_max;
             LOG("Copy: [%zu, %zu]", copy_start, copy_end);
-            ASSERT(repeat_iters > 1);
-            ASSERT(copy_start <= copy_end);
 
             if (repeat_min == 0) {
                 // Insert a "?"-like state
@@ -477,7 +476,9 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
                 copy_end++;
             }
 
-            size_t initial_state;
+            ASSERT(repeat_iters > 1);
+            ASSERT(copy_start <= copy_end);
+            size_t initial_state = -1ul;
             for (size_t j = 1; j < repeat_iters; j++) {
                 initial_state = nx->n_states;
                 if (j >= repeat_min) {
@@ -505,6 +506,7 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
                     ASSERT(nx->n_states < NX_STATE_MAX);
                 }
             }
+            ASSERT(initial_state != -1ul);
             if (repeat_max == 0) {
                 // Add a "+"-like state
                 s = &nx->states[nx->n_states];

@@ -76,9 +76,8 @@ int main() {
         struct cursor cursor;
         struct wordlist buffer;
         wordlist_init(&buffer);
-        cursor_init(&cursor);
+        cursor_init_print(&cursor, 100);
         cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 1000);
-        struct word_callback * cb = word_callback_create_print(&cursor, 0);
 
         struct nx * nxs[20] = {0};
         nxs[0] = NONNULL(nx_compile("_..._._..._"));
@@ -92,7 +91,7 @@ int main() {
 
         do {
             cursor.deadline_output_index++;
-            nx_combo_multi(nxs, 8, ws, 3, &cursor, cb);
+            nx_combo_multi(nxs, 8, ws, 3, &cursor);
         } while (cursor.total_input_items != cursor.input_index && now_ns() < cursor.deadline_ns);
         LOG("Multi match: %s", cursor_debug(&cursor));
 
@@ -100,7 +99,6 @@ int main() {
             nx_destroy(*nx);
             *nx = NULL;
         }
-        free(cb);
         wordlist_term(&buffer);
         wordlist_term(&wl);
     }

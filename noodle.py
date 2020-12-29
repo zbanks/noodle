@@ -9,7 +9,6 @@ __all__ = [
     "WordSet",
     "WordList",
     "WordSetAndBuffer",
-    "WordCallback",
     "Nx",
     "Cursor",
     "error_get_log",
@@ -142,25 +141,6 @@ class WordCallback:
     def __del__(self):
         noodle_lib.word_callback_destroy(self.p)
 
-    @classmethod
-    def new_to_wordset(cls, cursor, buffer_list, output_set, unique=True):
-        constructor = (
-            noodle_lib.word_callback_create_wordset_add
-            if unique
-            else noodle_lib.word_callback_create_wordset_add_unique
-        )
-        wcb = constructor(cursor.p, buffer_list.p, output_set.p)
-        assert wcb, ValueError
-        return cls(wcb)
-
-    @classmethod
-    def new_print(cls, cursor, limit=None):
-        if limit is None:
-            limit = 0
-        wcb = noodle_lib.word_callback_create_print(cursor.p, limit)
-        assert wcb, ValueError
-        return cls(wcb)
-
 
 class Nx:
     __slots__ = ["p"]
@@ -195,40 +175,49 @@ class Nx:
         return rc
 
 
-def nx_combo_multi(nxs, input_wordset, n_words=2, cursor=None, output=None):
-    assert all(isinstance(nx, Nx) for nx in nxs)
-    assert input_wordset
-    assert n_words <= 10, "Maximum number of words in combo_multi is 10"
+class WordSetAndBuffer(WordSet):
+    __slots__ = ["p", "wordlist"]
 
-    if isinstance(input_wordset, WordList):
-        input_wordset = input_wordset.wordset
-    if cursor is None:
-        cursor = Cursor.new(now_ns() + 1e9, 1e5)
-    if output is None:
-        output = WordSetAndBuffer()
+    def __init__(self):
+        allocated_ws = ffi.new("struct wordset *")
+        noodle_lib.wordset_init(allocated_ws)
 
-    callback = WordCallback.new_to_wordset(cursor, output.wordlist, output, unique=True)
-    nxps = ffi.new("struct nx *[]", [nx.p for nx in nxs])
+        self.p = allocated_ws
+        self.wordlist = WordList.new()
 
-    noodle_lib.nx_combo_multi(
-        nxps, len(nxs), input_wordset.p, n_words, cursor.p, callback.p
-    )
-    return output
+    def __del__(self):
+        noodle_lib.wordset_term(self.p)
 
 
 class Cursor:
     __slots__ = ["p"]
 
-    def __init__(self, pointer):
+    def __init__(self, pointer, *args, **kwargs):
         assert pointer
         self.p = pointer
+        self.set_deadline(*args, **kwargs)
 
     @classmethod
     def new(cls, *args, **kwargs):
         cursor = ffi.new("struct cursor *")
         noodle_lib.cursor_init(cursor)
-        pycursor = cls(cursor)
-        pycursor.set_deadline(*args, **kwargs)
+        pycursor = cls(cursor, *args, **kwargs)
+        return pycursor
+
+    @classmethod
+    def new_print(cls, limit=None, **kwargs):
+        if limit is None:
+            limit = 0
+        cursor = ffi.new("struct cursor *")
+        noodle_lib.cursor_init_print(cursor, limit)
+        pycursor = cls(cursor, **kwargs)
+        return pycursor
+
+    @classmethod
+    def new_to_wordset(cls, buffer_list, output_set, unique=True, **kwargs):
+        cursor = ffi.new("struct cursor *")
+        noodle_lib.cursor_init_wordset(cursor, buffer_list.p, output_set.p, unique)
+        pycursor = cls(cursor, **kwargs)
         return pycursor
 
     def __str__(self):
@@ -252,18 +241,28 @@ class Cursor:
         )
 
 
-class WordSetAndBuffer(WordSet):
-    __slots__ = ["p", "wordlist"]
+def nx_combo_multi(nxs, input_wordset, n_words=2, cursor=None, output=None):
+    assert all(isinstance(nx, Nx) for nx in nxs)
+    assert input_wordset
+    assert n_words <= 10, "Maximum number of words in combo_multi is 10"
 
-    def __init__(self):
-        allocated_ws = ffi.new("struct wordset *")
-        noodle_lib.wordset_init(allocated_ws)
+    if isinstance(input_wordset, WordList):
+        input_wordset = input_wordset.wordset
+    if output is None:
+        output = WordSetAndBuffer()
+    if cursor is None:
+        cursor = Cursor.new_to_wordset(
+            output.wordlist,
+            output,
+            unique=True,
+            deadline_ns=now_ns() + 1e9,
+            deadline_output_index=1e5,
+        )
 
-        self.p = allocated_ws
-        self.wordlist = WordList.new()
+    nxps = ffi.new("struct nx *[]", [nx.p for nx in nxs])
 
-    def __del__(self):
-        noodle_lib.wordset_term(self.p)
+    noodle_lib.nx_combo_multi(nxps, len(nxs), input_wordset.p, n_words, cursor.p)
+    return output
 
 
 def error_get_log():

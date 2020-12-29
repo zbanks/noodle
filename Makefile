@@ -18,7 +18,7 @@ LIB_SRCS = \
 	src/error.c \
 	src/nx.c \
 	src/nx_combo.c \
-	src/time_util.c \
+	src/cursor.c \
 	src/word.c \
 	src/wordlist.c \
 
