@@ -63,10 +63,8 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input, 
     for (size_t i = cache->wordset_progress; i < input->words_count; i++) {
 
         enum nx_char wbuf[256];
-        nx_char_translate(word_str(input->words[i]), wbuf, 256);
-        ASSERT(wbuf[0] == NX_CHAR_SPACE);
-        ASSERT(wbuf[1] != NX_CHAR_END);
-        ASSERT(wbuf[2] != NX_CHAR_END);
+        nx_char_translate(nx, word_str(input->words[i]), wbuf, 256);
+        ASSERT(wbuf[0] != NX_CHAR_END);
 
         // XXX This is an "O(n^2)ish" algorithm that probably could be done in "O(n)ish"
         // if we implement filling the whole transition table in one shot?

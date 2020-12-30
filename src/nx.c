@@ -136,22 +136,30 @@ static const char * nx_char_set_debug(uint32_t cs) {
     return buffer;
 }
 
-void nx_char_translate(const char * input, enum nx_char * output, size_t output_size) {
-    output[0] = NX_CHAR_SPACE;
-    for (size_t i = 1;; i++) {
+void nx_char_translate(const struct nx * nx, const char * input, enum nx_char * output, size_t output_size) {
+    size_t i = 0;
+    if (!nx->ignore_whitespace) {
+        output[i++] = NX_CHAR_SPACE;
+    }
+    while (1) {
+        // TODO: Replace ASSERT
         ASSERT(i + 1 < output_size);
         output[i] = nx_char(*input++);
         if (output[i] == NX_CHAR_END) {
-            output[i] = NX_CHAR_SPACE;
-            output[i + 1] = NX_CHAR_END;
+            if (!nx->ignore_whitespace) {
+                // Replace the final END with SPACE + END
+                output[i++] = NX_CHAR_SPACE;
+                output[i++] = NX_CHAR_END;
+            }
             break;
         }
+        i++;
     }
 }
 
 static void nx_nfa_debug(const struct nx * nx) {
-    LOG("NX NFA: %zu states (implicit: %c%c)", nx->n_states, nx->implicit_spaces ? '_' : ' ',
-        nx->implicit_other ? '-' : ' ');
+    LOG("NX NFA: %zu states (implicit: %c%c)", nx->n_states, nx->ignore_whitespace ? '_' : ' ',
+        nx->ignore_other ? '-' : ' ');
     for (size_t i = 0; i < nx->n_states; i++) {
         const struct nx_state * s = &nx->states[i];
 
@@ -212,10 +220,10 @@ struct nx_state * nx_state_insert(struct nx * nx, size_t insert_index) {
 
 ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
     enum nx_char implicit_char_bitset = 0;
-    if (nx->implicit_spaces) {
+    if (nx->ignore_whitespace) {
         implicit_char_bitset |= nx_char_bit(NX_CHAR_SPACE);
     }
-    if (nx->implicit_other) {
+    if (nx->ignore_other) {
         implicit_char_bitset |= nx_char_bit(NX_CHAR_OTHER);
     }
     // enum nx_char explicit_char_bitset = (nx_char_bit(NX_CHAR_SPACE) | nx_char_bit(NX_CHAR_OTHER)) &
@@ -585,8 +593,8 @@ struct nx * nx_compile(const char * expression) {
 
     struct nx * nx = NONNULL(calloc(1, sizeof(*nx)));
     nx->expression = NONNULL(strdup(expression));
-    nx->implicit_spaces = (strchr(expression, '_') == NULL);
-    nx->implicit_other = (strchr(expression, '-') == NULL) && false;
+    nx->ignore_whitespace = (strchr(expression, '_') == NULL);
+    nx->ignore_other = (strchr(expression, '-') == NULL);
 
     ssize_t rc = nx_compile_subexpression(nx, nx->expression);
     if (rc < 0) {
@@ -817,7 +825,7 @@ static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, str
 
 int nx_match(const struct nx * nx, const char * input, size_t n_errors) {
     enum nx_char buffer[256];
-    nx_char_translate(input, buffer, 256);
+    nx_char_translate(nx, input, buffer, 256);
 
     // `epsilon_states` are accounted for *after* "normal" states in `nx_match_transition`
     // Therefore it is important to include them here for correctness
@@ -855,7 +863,7 @@ void nx_test(void) {
         LOG("> \"%s\": %d", s[i], rc);
 
         enum nx_char buffer[256];
-        nx_char_translate(s[i], buffer, 256);
+        nx_char_translate(nx, s[i], buffer, 256);
         struct nx_set ps = nx_match_partial(nx, buffer, 0);
         LOG("Partial: %s", nx_set_debug(&ps));
     }

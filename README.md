@@ -45,7 +45,7 @@ See [Noodle Help](static/help.md).
     - Handle all qhex operations in `<...>` brackets (subanagram, transadd, etc.)
         - bank/superbank/subbank (`<...:+>`)
         - add/delete/change (`(...:+1)`)
-        - substring (`(...:?)`)
+        - substring (`(...:~)`)
     - Set per-NX flags
     - Handle enumertations (bare "`5 1 3-1" rewrites to "`_....._._...-._`")
 - "Extract"/re-write rules for matching "inner" words, etc. ("cross-filtering" on qhex)

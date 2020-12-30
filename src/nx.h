@@ -53,9 +53,6 @@ enum nx_char {
     _NX_CHAR_MAX,
 };
 
-// Convert an `input` C string into an `output` sequence of `enum nx_char`s
-void nx_char_translate(const char * input, enum nx_char * output, size_t output_size);
-
 //
 // `struct nx_state` is the representation of a single node in a NFA, or
 // Non-deterministic Finite Automata.
@@ -107,8 +104,8 @@ struct nx {
     char * expression;
 
     // Flags
-    bool implicit_spaces;
-    bool implicit_other;
+    bool ignore_whitespace;
+    bool ignore_other;
 
     struct nx_combo_cache * combo_cache;
 };
@@ -117,6 +114,10 @@ struct nx {
 NOODLE_EXPORT struct nx * nx_compile(const char * expression);
 // Destroy/free a `struct nx` object
 NOODLE_EXPORT void nx_destroy(struct nx * nx);
+
+// Convert an `input` C string into an `output` sequence of `enum nx_char`s
+void nx_char_translate(const struct nx * nx, const char * input, enum nx_char * output, size_t output_size);
+
 // Check if `input` matches `nx`, with a tolerance of up to `n_errors`.
 // Returns `-1` if not, otherwise returns the Levenshtein distance from the NX expression:
 // always <= `n_errors`, and `0` for a perfect match.
