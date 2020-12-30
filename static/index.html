@@ -68,31 +68,36 @@
             <div class="column">
                 <h2>Help</h2>
 <!-- generated from `pandoc help.md` -->
+
 <p>Specify filters in the input textbox. Each line is treated as a <em>noodle expression</em>.</p>
 <p>The query runs until the input wordlist is exhausted, 300 results are returned, or 15 seconds have passed.</p>
 <!-- If `N` is provided, perform a fuzzy match with up to `N` edits. (NB: consecutive inserts are not allowed) -->
 
-<p>Standard supported regex features: <code>[...]</code>, <code>[^...]</code>, <code>.</code>, <code>*</code>, <code>+</code>, <code>?</code>, <code>(...)</code>, <code>|</code>, and <code>{...}</code>.</p>
-<p>Noodle has extra support for anagram-esque constriants, using angle brackets: <code>&lt;...&gt;</code></p>
+<p>Noodle supports the following regex syntax: <code>[...]</code>, <code>[^...]</code>, <code>.</code>, <code>*</code>, <code>+</code>, <code>?</code>, <code>(...)</code>, <code>|</code>, <code>{...}</code>.</p>
+<p>Before matching, words are converted to lowercase and stripped of whitespace and non-alphabetical symbols (punctuation, numbers).</p>
+<p>To explicitly match spaces, include &quot;<code>!_</code>&quot; at the end of the expression. When enabled, the matched phrase is surrounded by spaces, and space characters can be explicitly matched with the &quot;<code>_</code>&quot; character.</p>
+<p>To explicitly match other symbols, include &quot;<code>!'</code>&quot; at the end of the expression. When enabled, these symbols can be matched with the &quot;<code>'</code>&quot; character.</p>
+<p>Regardless of setting, and unlike normal regular expressions, the period (&quot;<code>.</code>&quot;) is only equivalent to &quot;<code>[a-z]</code>&quot;. To match <em>any</em> symbol, use &quot;<code>[a-z'_]</code>&quot;.</p>
+<p>Noodle has additional support for anagram-like constriants with angle bracket syntax: <code>&lt;...&gt;</code></p>
 <ul class="incremental">
 <li><code>&lt;abcd&gt;</code> -- <strong>anagram</strong> of <code>abcd</code>: rearranging the given letters</li>
 <li><code>&lt;abcd+&gt;</code> -- <strong>superanagram</strong> of <code>abcd</code>: rearranging <em>at least</em> the given letters</li>
 <li><code>&lt;abcd+3&gt;</code> -- <strong>transadd</strong> of <code>3</code> to <code>abcd</code>: rearranging <em>all</em> of the given letters <em>plus</em> <code>N</code> wildcards</li>
 <li><code>&lt;abcd-&gt;</code> -- <strong>subanagram</strong> of <code>abcd</code>: rearranging <em>at most</em> the given letters</li>
 <li><code>&lt;abcd-1&gt;</code> -- <strong>transdelete</strong> of <code>3</code> to <code>abcd</code>: rerranging <em>all but <code>N</code></em> of the given letters</li>
+<li><code>(abcd:?)</code> -- <strong>partial</strong> of <code>abcd</code>: contained within a subset of the given letters, in the same order</li>
 </ul>
 <!--
 TODO:
 - `<abcd:~>` -- **bank**
 - `<abcd:+>` -- **superbank**
 - `<abcd:->` -- **subbank**
-- `(abcd:?)` -- **substring**
 - `(abcd:+2)` -- **add**
 - `(abcd:-2)` -- **delete**
 - `(abcd:~2)` -- **change**
+- `(abcd:~)` -- **substring**
 -->
 
-<p>Matches are case-insentive. Spaces/symbols are ignored both in the expression, and the matched word. An <code>_</code> in the expression matches an space character in a word. An <code>-</code> in the expression matches any symbol in the word (hyphen, apostrophe, etc.).</p>
 <!-- end help -->
             </div>
         </div>
@@ -104,7 +109,7 @@ TODO:
                     window.req = null;
                 }
             }
-            function processResponse(text) {
+            function processresponse(text) {
                 if (!text) {
                     return "";
                 }

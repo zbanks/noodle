@@ -42,7 +42,7 @@ enum nx_char {
     // "Epsilon" state transition, from regex/NFA literature
     NX_CHAR_EPSILON,
     // Catch-all character for otherwise untranslatable characters from source strings
-    NX_CHAR_OTHER,
+    NX_CHAR_PUNCT,
     // Whitespace character
     NX_CHAR_SPACE,
 
@@ -105,13 +105,18 @@ struct nx {
 
     // Flags
     bool ignore_whitespace;
-    bool ignore_other;
+    bool ignore_punctuation;
 
     struct nx_combo_cache * combo_cache;
 };
 
+enum nx_flag {
+    NX_FLAG_EXPLICIT_SPACE = (1 << 0),
+    NX_FLAG_EXPLICIT_PUNCT = (1 << 1),
+};
+
 // Compile an NX text expression into a `struct nx` object
-NOODLE_EXPORT struct nx * nx_compile(const char * expression);
+NOODLE_EXPORT struct nx * nx_compile(const char * expression, enum nx_flag flags);
 // Destroy/free a `struct nx` object
 NOODLE_EXPORT void nx_destroy(struct nx * nx);
 

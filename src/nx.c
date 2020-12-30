@@ -99,7 +99,7 @@ static enum nx_char nx_char(char c) {
     case 'a' ... 'z':
         return NX_CHAR_A + (c - 'a');
     default:
-        return NX_CHAR_OTHER;
+        return NX_CHAR_PUNCT;
     }
 }
 
@@ -113,8 +113,8 @@ static char nx_char_rev_print(enum nx_char c) {
         return '_';
     case NX_CHAR_A... NX_CHAR_Z:
         return (char)('a' + (c - NX_CHAR_A));
-    case NX_CHAR_OTHER:
-        return '-';
+    case NX_CHAR_PUNCT:
+        return '\'';
     default:
         LOG("Unknown char: %d", c);
         return '?';
@@ -163,6 +163,10 @@ void nx_char_translate(const struct nx * nx, const char * input, enum nx_char * 
                 output[i++] = NX_CHAR_END;
             }
             break;
+        } else if (nx->ignore_whitespace && output[i] == NX_CHAR_SPACE) {
+            continue;
+        } else if (nx->ignore_punctuation && output[i] == NX_CHAR_PUNCT) {
+            continue;
         }
         i++;
     }
@@ -170,7 +174,7 @@ void nx_char_translate(const struct nx * nx, const char * input, enum nx_char * 
 
 static void nx_nfa_debug(const struct nx * nx) {
     LOG("NX NFA: %zu states (ignore: %c%c)", nx->n_states, nx->ignore_whitespace ? '_' : ' ',
-        nx->ignore_other ? '-' : ' ');
+        nx->ignore_punctuation ? '-' : ' ');
 
     for (size_t i = 0; i < nx->n_states; i++) {
         const struct nx_state * s = &nx->states[i];
@@ -284,9 +288,10 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             previous_initial_state = nx->n_states;
             nx->n_states++;
             break;
-        case '-': // Explicit other
+        case '\'':
+        case '-': // Explicit punctuation
             s->next_state[0] = (uint16_t)(nx->n_states + 1);
-            s->char_bitset[0] = nx_char_bit(NX_CHAR_OTHER);
+            s->char_bitset[0] = nx_char_bit(NX_CHAR_PUNCT);
 
             previous_initial_state = nx->n_states;
             nx->n_states++;
@@ -314,7 +319,11 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             s->char_bitset[0] = 0;
 
             while (*c != ']' && *c != '\0') {
-                if (nx_char(*c) >= NX_CHAR_OTHER && nx_char(*c) <= NX_CHAR_Z) {
+                if (*c == '.') {
+                    for (enum nx_char j = NX_CHAR_A; j <= NX_CHAR_Z; j++) {
+                        s->char_bitset[0] |= nx_char_bit(j);
+                    }
+                } else if (nx_char(*c) >= NX_CHAR_PUNCT && nx_char(*c) <= NX_CHAR_Z) {
                     s->char_bitset[0] |= nx_char_bit(nx_char(*c));
                 } else if (*c != ' ') {
                     LOG("Parse error; invalid character '%c' in [...] group", *c);
@@ -559,13 +568,18 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
     }
 }
 
-struct nx * nx_compile(const char * expression) {
+struct nx * nx_compile(const char * expression, enum nx_flag flags) {
     NONNULL(expression);
 
     struct nx * nx = NONNULL(calloc(1, sizeof(*nx)));
     nx->expression = NONNULL(strdup(expression));
-    nx->ignore_whitespace = (strchr(expression, '_') == NULL);
-    nx->ignore_other = (strchr(expression, '-') == NULL) && false;
+
+    nx->ignore_whitespace = !(flags & NX_FLAG_EXPLICIT_SPACE);
+    if (nx->ignore_whitespace && strchr(expression, '_') != NULL) {
+        LOG("Enabling EXPLICIT_SPACE flag because \"_\" was present in expression");
+        nx->ignore_whitespace = false;
+    }
+    nx->ignore_punctuation = !(flags & NX_FLAG_EXPLICIT_PUNCT);
 
     ssize_t rc = nx_compile_subexpression(nx, nx->expression);
     if (rc < 0) {
@@ -807,10 +821,10 @@ int nx_match(const struct nx * nx, const char * input, size_t n_errors) {
 }
 
 void nx_test(void) {
-    // struct nx * nx = nx_compile("([^asdfzyxwv]el([lw]o)+r[lheld]*)+");
-    // struct nx * nx = nx_compile("he?a?z?l+?oworld");
-    struct nx * nx = nx_compile("(thing|hello|asdf|world|a?b?c?d?e?)+");
-    // struct nx * nx = nx_compile("helloworld");
+    // struct nx * nx = nx_compile("([^asdfzyxwv]el([lw]o)+r[lheld]*)+", 0);
+    // struct nx * nx = nx_compile("he?a?z?l+?oworld", 0);
+    struct nx * nx = nx_compile("(thing|hello|asdf|world|a?b?c?d?e?)+", 0);
+    // struct nx * nx = nx_compile("helloworld", 0);
     const char * s[] = {
         "helloworld",
         "hello",

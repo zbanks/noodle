@@ -1,3 +1,5 @@
+<!-- generated from `pandoc help.md` -->
+
 Specify filters in the input textbox. Each line is treated as a *noodle expression*.
 
 The query runs until the input wordlist is exhausted, 300 results are returned, or 15 seconds have passed.
@@ -5,6 +7,14 @@ The query runs until the input wordlist is exhausted, 300 results are returned, 
 <!-- If `N` is provided, perform a fuzzy match with up to `N` edits. (NB: consecutive inserts are not allowed) -->
 
 Noodle supports the following regex syntax: `[...]`, `[^...]`, `.`, `*`, `+`, `?`, `(...)`, `|`, `{...}`.
+
+Before matching, words are converted to lowercase and stripped of whitespace and non-alphabetical symbols (punctuation, numbers).
+
+To explicitly match spaces, include "`!_`" at the end of the expression. When enabled, the matched phrase is surrounded by spaces, and space characters can be explicitly matched with the "`_`" character.
+
+To explicitly match other symbols, include "`!'`" at the end of the expression. When enabled, these symbols can be matched with the "`'`" character.
+
+Regardless of setting, and unlike normal regular expressions, the period ("`.`") is only equivalent to "`[a-z]`". To match *any* symbol, use "`[a-z'_]`".
 
 Noodle has additional support for anagram-like constriants with angle bracket syntax: `<...>`
 
@@ -25,11 +35,4 @@ TODO:
 - `(abcd:~2)` -- **change**
 - `(abcd:~)` -- **substring**
 -->
-
-Matches are case-insentive.
-
-Spaces are completely ignored in the expression. By default, spaces are ignored in the matched word or phrase.
-
-An "`_`" in the expression matches an space character in a word, and enables explicit space matching across the entire expression.
-
-An "`-`" in the expression matches any symbol in the word (hyphen, apostrophe, etc.).
+<!-- end help -->

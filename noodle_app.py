@@ -96,11 +96,20 @@ def expand_expression(expression):
     if not expression:
         return []
 
+    flags = 0
+    if "!_" in expression:
+        flags |= Nx.Flags.EXPLICIT_SPACE
+        expression = expression.replace("!_", "", 1)
+    if "!'" in expression:
+        flags |= Nx.Flags.EXPLICIT_PUNCT
+        expression = expression.replace("!'", "", 1)
+
     if re.match(r"[0-9 ]+", expression):
         # Enumeration
         # TODO: handle ' or - in enumerations (e.g. "1 3'1 5")
         counts = re.split(r" +", expression)
-        return [Nx.new("_" + "_".join("." * int(c) for c in counts) + "_")]
+        flags |= Nx.Flags.EXPLICIT_SPACE
+        return [Nx.new("_" + "_".join("." * int(c) for c in counts) + "_", flags=flags)]
 
     expression = expression.replace(" ", "")
 
@@ -158,11 +167,11 @@ def expand_expression(expression):
             expression = plains[0]
             for t, p in zip(ts, plains[1:]):
                 expression += t + p
-            nxs.append(Nx.new(expression))
+            nxs.append(Nx.new(expression, flags=flags))
         return nxs
 
     if ":" not in expression:
-        return [Nx.new(expression)]
+        return [Nx.new(expression, flags=flags)]
 
 
 def handle_noodle_input(input_text, output, cursor):

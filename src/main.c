@@ -27,7 +27,7 @@ int main() {
         // const char * regex = "^(goodbye|(hellt?o)+)worq?[aild]*d$";
         // const char *regex = "^...$";
         const char * regex = "^h?e?l*o?hello$";
-        struct nx * nx = nx_compile(regex);
+        struct nx * nx = nx_compile(regex, 0);
         int64_t t = now_ns();
         size_t n_matches[32] = {0};
         for (size_t i = 0; i < ws->words_count; i++) {
@@ -80,14 +80,14 @@ int main() {
         cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 1000);
 
         struct nx * nxs[20] = {0};
-        nxs[0] = NONNULL(nx_compile("_..._._..._"));
-        nxs[1] = NONNULL(nx_compile("[angrm][angrm][angrm][angrm][angrm][angrm][angrm]"));
-        nxs[2] = NONNULL(nx_compile("[ngrm]*a[ngrm]*a[ngrm]*a[ngrm]*"));
-        nxs[3] = NONNULL(nx_compile("[agrm]*n[agrm]*"));
-        nxs[4] = NONNULL(nx_compile("[anrm]*g[anrm]*"));
-        nxs[5] = NONNULL(nx_compile("[angm]*r[angm]*"));
-        nxs[6] = NONNULL(nx_compile("[angr]*m[angr]*"));
-        nxs[7] = NONNULL(nx_compile("a?n?a?g?r?a?m?a?n?a?g?r?a?m"));
+        nxs[0] = NONNULL(nx_compile("_..._._..._", NX_FLAG_EXPLICIT_SPACE));
+        nxs[1] = NONNULL(nx_compile("[angrm][angrm][angrm][angrm][angrm][angrm][angrm]", 0));
+        nxs[2] = NONNULL(nx_compile("[ngrm]*a[ngrm]*a[ngrm]*a[ngrm]*", 0));
+        nxs[3] = NONNULL(nx_compile("[agrm]*n[agrm]*", 0));
+        nxs[4] = NONNULL(nx_compile("[anrm]*g[anrm]*", 0));
+        nxs[5] = NONNULL(nx_compile("[angm]*r[angm]*", 0));
+        nxs[6] = NONNULL(nx_compile("[angr]*m[angr]*", 0));
+        nxs[7] = NONNULL(nx_compile("a?n?a?g?r?a?m?a?n?a?g?r?a?m", 0));
 
         do {
             cursor.deadline_output_index++;

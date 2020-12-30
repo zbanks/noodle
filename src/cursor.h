@@ -8,13 +8,9 @@ NOODLE_EXPORT int64_t now_ns();
 
 struct cursor;
 struct cursor {
+    // These fields are generic
     size_t input_index;
     size_t output_index;
-    size_t input_index_list[CURSOR_LIST_MAX];
-
-    bool setup_done;
-    size_t word_index;
-    bool has_partial_match;
 
     size_t total_input_items;
     int64_t initialize_ns;
@@ -22,6 +18,13 @@ struct cursor {
     int64_t deadline_ns;
     size_t deadline_output_index;
 
+    // These fields are specific to nx_combo
+    size_t input_index_list[CURSOR_LIST_MAX];
+    bool setup_done;
+    size_t word_index;
+    bool has_partial_match;
+
+    // Callback on each result
     void (*callback)(struct cursor * c, const struct word * w);
     union {
         void * callback_cookie;

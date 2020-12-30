@@ -145,6 +145,10 @@ class WordCallback:
 class Nx:
     __slots__ = ["p"]
 
+    class Flags:
+        EXPLICIT_SPACE = noodle_lib.NX_FLAG_EXPLICIT_SPACE
+        EXPLICIT_PUNCT = noodle_lib.NX_FLAG_EXPLICIT_PUNCT
+
     def __init__(self, pointer):
         assert pointer
         self.p = pointer
@@ -153,8 +157,8 @@ class Nx:
         noodle_lib.nx_destroy(self.p)
 
     @classmethod
-    def new(cls, expr):
-        n = noodle_lib.nx_compile(expr.encode("utf-8"))
+    def new(cls, expr, flags=0):
+        n = noodle_lib.nx_compile(expr.encode("utf-8"), flags)
         assert n, ValueError
         return cls(n)
 
