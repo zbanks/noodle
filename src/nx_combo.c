@@ -185,16 +185,13 @@ static const struct cache_class * nx_combo_cache_get(const struct nx * nx, size_
 }
 
 enum multi_return {
-    MULTI_RETURN_ERROR,
     MULTI_RETURN_CONTINUE,
-    MULTI_RETURN_DONE_N,
-    MULTI_RETURN_DONE_ALL,
+    MULTI_RETURN_DONE,
 };
 
 static enum multi_return nx_combo_multi_iter(struct nx * const * nxs, size_t n_nxs, const struct wordset * input,
                                              const struct word ** stems, const struct nx_set * stem_sss,
                                              struct cursor * cursor, size_t n_words, size_t word_index) {
-    bool has_partial_match = false;
     for (size_t i = cursor->input_index_list[word_index]; i < cursor->total_input_items; i++) {
         cursor->input_index_list[word_index] = i;
 
@@ -262,9 +259,7 @@ static enum multi_return nx_combo_multi_iter(struct nx * const * nxs, size_t n_n
         if (n_words > word_index + 1) {
             enum multi_return rc =
                 nx_combo_multi_iter(nxs, n_nxs, input, stems, end_sss, cursor, n_words, word_index + 1);
-            if (rc == MULTI_RETURN_DONE_N) {
-                has_partial_match = true;
-            } else if (rc == MULTI_RETURN_ERROR || rc == MULTI_RETURN_CONTINUE) {
+            if (rc == MULTI_RETURN_CONTINUE) {
                 return rc;
             }
             cursor->input_index_list[word_index + 1] = 0;
@@ -273,17 +268,13 @@ static enum multi_return nx_combo_multi_iter(struct nx * const * nxs, size_t n_n
             word_tuple_init(&wp, stems, word_index + 1);
             cursor->callback(cursor, &wp);
         } else {
-            has_partial_match = true;
+            cursor->has_partial_match = true;
         }
     }
     if (word_index == 0) {
         cursor_update_input(cursor, cursor->total_input_items);
     }
-    if (has_partial_match) {
-        return MULTI_RETURN_DONE_N;
-    } else {
-        return MULTI_RETURN_DONE_ALL;
-    }
+    return MULTI_RETURN_DONE;
 }
 
 void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset * input, size_t n_words,
@@ -316,6 +307,7 @@ void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset 
         cursor->total_input_items = input->words_count;
         memset(cursor->input_index_list, 0, sizeof(cursor->input_index_list));
         cursor->word_index = 1;
+        cursor->has_partial_match = false;
     } else {
         input = &nxs[n_nxs - 1]->combo_cache->nonnull_wordset;
     }
@@ -330,10 +322,11 @@ void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset 
         const struct word * stems[n_words];
         enum multi_return rc = nx_combo_multi_iter(nxs, n_nxs, input, stems, sss, cursor, cursor->word_index, 0);
 
-        if (rc == MULTI_RETURN_DONE_N && cursor->word_index < n_words) {
+        if (rc == MULTI_RETURN_DONE && cursor->has_partial_match && cursor->word_index < n_words) {
             cursor->total_input_items = input->words_count;
             memset(cursor->input_index_list, 0, sizeof(cursor->input_index_list));
             cursor->word_index++;
+            cursor->has_partial_match = false;
         } else {
             return;
         }
