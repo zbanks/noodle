@@ -322,8 +322,8 @@ void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset 
 
     struct nx_set sss[n_nxs];
     for (size_t i = 0; i < n_nxs; i++) {
-        enum nx_char space[2] = {NX_CHAR_SPACE, NX_CHAR_END};
-        sss[i] = nx_match_partial(nxs[i], space, 0);
+        enum nx_char end[1] = {NX_CHAR_END};
+        sss[i] = nx_match_partial(nxs[i], end, 0);
     }
 
     while (1) {

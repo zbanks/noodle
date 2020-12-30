@@ -136,6 +136,17 @@ static const char * nx_char_set_debug(uint32_t cs) {
     return buffer;
 }
 
+__attribute__((unused)) static const char * nx_char_print(const enum nx_char * cs) {
+    static char buffer[1024];
+    char * b = buffer;
+    while (*cs != NX_CHAR_END) {
+        *b++ = nx_char_rev_print(*cs++);
+    }
+    *b++ = '$';
+    *b++ = '\0';
+    return buffer;
+}
+
 void nx_char_translate(const struct nx * nx, const char * input, enum nx_char * output, size_t output_size) {
     size_t i = 0;
     if (!nx->ignore_whitespace) {
@@ -158,8 +169,9 @@ void nx_char_translate(const struct nx * nx, const char * input, enum nx_char * 
 }
 
 static void nx_nfa_debug(const struct nx * nx) {
-    LOG("NX NFA: %zu states (implicit: %c%c)", nx->n_states, nx->ignore_whitespace ? '_' : ' ',
+    LOG("NX NFA: %zu states (ignore: %c%c)", nx->n_states, nx->ignore_whitespace ? '_' : ' ',
         nx->ignore_other ? '-' : ' ');
+
     for (size_t i = 0; i < nx->n_states; i++) {
         const struct nx_state * s = &nx->states[i];
 
@@ -219,16 +231,6 @@ struct nx_state * nx_state_insert(struct nx * nx, size_t insert_index) {
 }
 
 ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
-    enum nx_char implicit_char_bitset = 0;
-    if (nx->ignore_whitespace) {
-        implicit_char_bitset |= nx_char_bit(NX_CHAR_SPACE);
-    }
-    if (nx->ignore_other) {
-        implicit_char_bitset |= nx_char_bit(NX_CHAR_OTHER);
-    }
-    // enum nx_char explicit_char_bitset = (nx_char_bit(NX_CHAR_SPACE) | nx_char_bit(NX_CHAR_OTHER)) &
-    // ~implicit_char_bitset;
-
     ssize_t consumed_characters = 0;
     size_t previous_initial_state = STATE_FAILURE;
     size_t subexpression_initial_state = nx->n_states;
@@ -254,10 +256,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             s->next_state[0] = STATE_SUCCESS;
             s->char_bitset[0] = nx_char_bit(NX_CHAR_END);
 
-            // NB: This technically matches an arbitrary number of spaces (or none at all)
-            s->next_state[1] = (uint16_t)(nx->n_states);
-            s->char_bitset[1] = nx_char_bit(NX_CHAR_SPACE) | implicit_char_bitset;
-
             nx->n_states++;
 
             if (subexpression_final_state != STATE_FAILURE) {
@@ -270,11 +268,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             s->next_state[0] = (uint16_t)(nx->n_states + 1);
             s->char_bitset[0] = nx_char_bit(nc);
 
-            if (implicit_char_bitset) {
-                s->next_state[1] = (uint16_t)(nx->n_states);
-                s->char_bitset[1] = implicit_char_bitset;
-            }
-
             previous_initial_state = nx->n_states;
             nx->n_states++;
             break;
@@ -286,14 +279,7 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             // effectively replacing each "_" with "_+"
             // This means we don't need to trim spaces from words when doing matches
             s->next_state[1] = (uint16_t)(nx->n_states);
-            s->char_bitset[1] = implicit_char_bitset | nx_char_bit(NX_CHAR_SPACE);
-
-            /*
-            if (implicit_char_bitset) {
-                s->next_state[1] = (uint16_t)(nx->n_states);
-                s->char_bitset[1] = implicit_char_bitset;
-            }
-            */
+            s->char_bitset[1] = nx_char_bit(NX_CHAR_SPACE);
 
             previous_initial_state = nx->n_states;
             nx->n_states++;
@@ -302,11 +288,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             s->next_state[0] = (uint16_t)(nx->n_states + 1);
             s->char_bitset[0] = nx_char_bit(NX_CHAR_OTHER);
 
-            if (implicit_char_bitset) {
-                s->next_state[1] = (uint16_t)(nx->n_states);
-                s->char_bitset[1] = implicit_char_bitset;
-            }
-
             previous_initial_state = nx->n_states;
             nx->n_states++;
             break;
@@ -314,11 +295,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
             s->next_state[0] = (uint16_t)(nx->n_states + 1);
             for (enum nx_char j = NX_CHAR_A; j <= NX_CHAR_Z; j++) {
                 s->char_bitset[0] |= nx_char_bit(j);
-            }
-
-            if (implicit_char_bitset) {
-                s->next_state[1] = (uint16_t)(nx->n_states);
-                s->char_bitset[1] = implicit_char_bitset;
             }
 
             previous_initial_state = nx->n_states;
@@ -355,11 +331,6 @@ ssize_t nx_compile_subexpression(struct nx * nx, const char * subexpression) {
                 for (enum nx_char j = NX_CHAR_A; j <= NX_CHAR_Z; j++) {
                     s->char_bitset[0] ^= nx_char_bit(j);
                 }
-            }
-
-            if (implicit_char_bitset) {
-                s->next_state[1] = (uint16_t)(nx->n_states);
-                s->char_bitset[1] = implicit_char_bitset;
             }
 
             previous_initial_state = nx->n_states;
@@ -594,7 +565,7 @@ struct nx * nx_compile(const char * expression) {
     struct nx * nx = NONNULL(calloc(1, sizeof(*nx)));
     nx->expression = NONNULL(strdup(expression));
     nx->ignore_whitespace = (strchr(expression, '_') == NULL);
-    nx->ignore_other = (strchr(expression, '-') == NULL);
+    nx->ignore_other = (strchr(expression, '-') == NULL) && false;
 
     ssize_t rc = nx_compile_subexpression(nx, nx->expression);
     if (rc < 0) {
