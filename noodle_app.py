@@ -280,6 +280,7 @@ def load_wordlist():
 if __name__ == "__main__":
     load_wordlist()
 
-    server = HTTPServer(("0", 8081), NoodleHandler)
-    print("Running webserver")
+    bind = ("127.0.0.1", 8081)
+    server = HTTPServer(bind, NoodleHandler)
+    print("Running webserver on {}".format(bind))
     server.serve_forever()

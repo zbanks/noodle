@@ -142,7 +142,7 @@ TODO:
                     var div = document.querySelector("#output");
                     div.innerText = "No response from server" + "\n\n" + div.innerText;
                 });
-                req.open("POST", "/");
+                req.open("POST", "/noodle");
                 req.setRequestHeader("Content-Type", "text/plain");
                 req.send(inputText);
                 window.req = req;

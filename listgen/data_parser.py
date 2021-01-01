@@ -151,8 +151,8 @@ def consolidate():
                     words[canonical] = [weight, w]
 
     with open("out/consolidated.txt", "w") as f:
-        for weight, w in sorted(words.values(), key=lambda x: x[0], reverse=True):
-            f.write("{} {}\n".format(int(weight), w))
+        for _weight, w in sorted(words.values(), key=lambda x: x[0], reverse=True):
+            f.write("{} {}\n".format(w))
 
 
 def main():
