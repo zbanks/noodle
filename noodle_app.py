@@ -2,6 +2,7 @@
 
 import os
 import re
+import unicodedata
 from itertools import zip_longest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -39,6 +40,13 @@ def load_wordlist(wordlist_filename, preprocess=False):
     with open(wordlist_filename) as f:
         for line in f:
             word = line.strip()
+            word = (
+                word.replace("æ", "ae")
+                .replace("Æ", "AE")
+                .replace("œ", "oe")
+                .replace("Œ", "OE")
+            )
+            word = unicodedata.normalize("NFKD", word)
             if preprocess:
                 if len(word) < 2 and word not in ("a", "I"):
                     continue

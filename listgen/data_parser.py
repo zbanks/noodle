@@ -20,6 +20,7 @@ import orjson as json
 import os
 import re
 import sys
+import unicodedata
 
 invalid_re = re.compile(r"([0-9@<>{}]|http|\[|\])")
 canonicalize_re = re.compile(r"[^a-zA-Z']")
@@ -134,6 +135,14 @@ def consolidate():
                 else:
                     weight = weight_b
                 canonical = canonicalize_re.sub("", w).lower().replace("'", "")
+                canonical = (
+                    canonical.replace("æ", "ae")
+                    .replace("Æ", "AE")
+                    .replace("œ", "oe")
+                    .replace("Œ", "OE")
+                )
+                canonical = unicodedata.normalize("NFKD", word)
+
                 if not canonical:
                     continue
                 if canonical == w:
