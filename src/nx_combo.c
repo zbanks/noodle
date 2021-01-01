@@ -129,7 +129,7 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input, 
     free(cache->classes[0].transitions);
     cache->classes[0].transitions = NULL;
 
-    LOG("Populated cache of %zu words in %ldms: %zu classes, %zu non-null", input->words_count,
+    LOG("Populated cache of %zu words in " PRIlong "ms: %zu classes, %zu non-null", input->words_count,
         (now_ns() - start_ns) / 1000000, cache->n_classes, cache->nonnull_wordset.words_count);
 }
 
@@ -204,7 +204,7 @@ static enum multi_return nx_combo_multi_iter(struct nx * const * nxs, size_t n_n
         bool no_match = false;
         bool all_end_match = true;
         for (size_t n = 0; n < n_nxs; n++) {
-            end_sss[n] = (struct nx_set){0};
+            end_sss[n] = (struct nx_set){{0}};
             const struct cache_class * class = nx_combo_cache_get(nxs[n], i);
             const struct nx_set * transitions = class->transitions;
             if (transitions == NULL) {
@@ -222,7 +222,7 @@ static enum multi_return nx_combo_multi_iter(struct nx * const * nxs, size_t n_n
             for (size_t ki = 0; ki < (nxs[n]->n_states + 63) / 64; ki++) {
                 uint64_t ks = stem_sss[n].xs[ki];
                 while (ks != 0) {
-                    size_t r = (size_t)__builtin_ctzl(ks);
+                    size_t r = (size_t)__builtin_ctzll(ks); // TODO: depends on sizeof(long) __EMSCRIPTEN__
                     uint64_t t = ks & -ks;
                     ks ^= t;
 

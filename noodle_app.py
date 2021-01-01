@@ -92,6 +92,7 @@ def gen_transadd(anagram, n=1):
 
 
 def expand_expression(expression):
+    print(">", expression)
     expression = expression.lower().strip()
     if not expression:
         return []
@@ -279,6 +280,6 @@ def load_wordlist():
 if __name__ == "__main__":
     load_wordlist()
 
-    server = HTTPServer(("0", 8080), NoodleHandler)
+    server = HTTPServer(("0", 8081), NoodleHandler)
     print("Running webserver")
     server.serve_forever()

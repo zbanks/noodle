@@ -4,7 +4,7 @@
 static const unsigned char STR_FLAG_OWNED = 0x01;
 
 void wordset_init(struct wordset * ws) {
-    *ws = (struct wordset){0};
+    memset(ws, 0, sizeof(*ws));
     ws->words_count = 0;
     ws->words_capacity = 32;
     ws->words = NONNULL(calloc(ws->words_capacity, sizeof(*ws->words)));
@@ -52,7 +52,7 @@ void wordset_print(const struct wordset * ws) {
 //
 
 void wordlist_init(struct wordlist * wl) {
-    *wl = (struct wordlist){0};
+    memset(wl, 0, sizeof(*wl));
     wl->chunks = NULL;
     wl->insert_index = 0;
     wordset_init(&wl->self_set);

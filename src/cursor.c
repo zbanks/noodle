@@ -3,9 +3,27 @@
 #include <time.h>
 
 int64_t now_ns() {
+//#define CACHE_TIME
+#ifdef CACHE_TIME
+    static size_t cache = 0;
+    static int64_t now = 0;
+    if (cache == 0) {
+        struct timespec t;
+        clock_gettime(CLOCK_MONOTONIC, &t);
+        now = (int64_t)t.tv_sec;
+        now *= (int64_t)1000000000ul;
+        now += (int64_t)t.tv_nsec;
+    }
+    cache = (cache + 1) % 2048;
+    return now;
+#else
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
-    return t.tv_sec * 1000000000 + t.tv_nsec;
+    int64_t now = (int64_t)t.tv_sec;
+    now *= (int64_t)1000000000ul;
+    now += (int64_t)t.tv_nsec;
+    return now;
+#endif
 }
 
 static void cursor_init(struct cursor * c) {

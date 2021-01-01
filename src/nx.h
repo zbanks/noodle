@@ -11,6 +11,7 @@
 #define NX_SET_ARRAYLEN ((size_t)4)
 //#define NX_SET_ARRAYLEN ((NX_SET_SIZE + 63) / 64)
 _Static_assert(NX_SET_ARRAYLEN == ((NX_SET_SIZE + 63) / 64), "Invalid NX_SET_ARRAYLEN");
+_Static_assert(sizeof(uint64_t) == 8, "sizeof(uint64_t) != 8");
 
 struct nx_set {
     uint64_t xs[NX_SET_ARRAYLEN];

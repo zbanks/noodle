@@ -11,11 +11,11 @@ int main() {
     word_term(&w);
 
     struct wordlist wl;
-    ASSERT(wordlist_init_from_file(&wl, "/usr/share/dict/words") == 0);
-    // ASSERT(wordlist_init_from_file(&wl, "consolidated.txt") == 0);
+    // ASSERT(wordlist_init_from_file(&wl, "/usr/share/dict/words") == 0);
+    ASSERT(wordlist_init_from_file(&wl, "consolidated.txt") == 0);
     struct wordset * ws = &wl.self_set;
 
-    {
+    if (0) {
         // const char * regex = "^\\(test\\|hello\\|as\\|pen\\|world\\|[isdf][isdf]\\|a\\?b\\?c\\?d\\?e\\?\\)\\+$";
         // const char * regex = "^hellt?oworld$";
         // const char * regex = "T?E?R?O?L?K?C?I?L?S?T?G?O?N?C?I?L?B?K?S?M?A?G?T?F?O?D?N?I?K?O?P?G?A?E?E?H?T?H?E?R?C?";
@@ -37,8 +37,8 @@ int main() {
             // if (rc == 0) LOG("> match: %s", s);
         }
         t = now_ns() - t;
-        LOG("> %zu misses; %zu perfect matches; %zu 1-off matches: %ld ns (%ld ms; %0.1lf ns/word)", n_matches[0],
-            n_matches[1], n_matches[2], t, t / (long)1e6, (double)t / (double)ws->words_count);
+        LOG("> %zu misses; %zu perfect matches; %zu 1-off matches: " PRIlong " ns (" PRIlong " ms; %0.1lf ns/word)",
+            n_matches[0], n_matches[1], n_matches[2], t, t / (long)1e6, (double)t / (double)ws->words_count);
         LOG("> [%zu, %zu, %zu, %zu, %zu, %zu, %zu, %zu, ...]", n_matches[0], n_matches[1], n_matches[2], n_matches[3],
             n_matches[4], n_matches[5], n_matches[6], n_matches[7]);
 
@@ -55,7 +55,7 @@ int main() {
             }
         }
         t = now_ns() - t;
-        LOG("Time for regexec evaluation: %ld ns (%ld ms)", t, t / (long)1e6);
+        LOG("Time for regexec evaluation: " PRIlong " ns (" PRIlong " ms)", t, t / (long)1e6);
 
         size_t n_mismatches = 0;
         for (size_t i = 0; i < ws->words_count; i++) {

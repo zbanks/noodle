@@ -7,13 +7,13 @@ bool nx_set_test(const struct nx_set * s, size_t i) {
     if (i >= NX_SET_SIZE + 1) {
         return false;
     }
-    return (s->xs[i / 64] & (1ul << (i % 64))) != 0;
+    return (s->xs[i / 64] & (1ull << (i % 64))) != 0;
 }
 
 #define EMPTYBIT // ~5% speedup when NX_STATE_MAX=255
 bool nx_set_isempty(const struct nx_set * s) {
 #ifdef EMPTYBIT
-    return (s->xs[NX_SET_SIZE / 64] & (1ul << 63u)) == 0;
+    return (s->xs[NX_SET_SIZE / 64] & (1ull << 63u)) == 0;
 #else
     for (size_t i = 0; i < NX_SET_ARRAYLEN; i++) {
         if (s->xs[i]) {
@@ -31,9 +31,9 @@ bool nx_set_add(struct nx_set * s, size_t i) {
     if (nx_set_test(s, i)) {
         return false;
     }
-    s->xs[i / 64] |= (1ul << (i % 64));
+    s->xs[i / 64] |= (1ull << (i % 64));
 #ifdef EMPTYBIT
-    s->xs[NX_SET_SIZE / 64] |= (1ul << 63u);
+    s->xs[NX_SET_SIZE / 64] |= (1ull << 63u);
 #endif
     return true;
 }
@@ -49,7 +49,7 @@ bool nx_set_intersect(const struct nx_set * s, const struct nx_set * t) {
         uint64_t overlap = s->xs[i] & t->xs[i];
 #ifdef EMPTYBIT
         if (i == NX_SET_ARRAYLEN - 1) {
-            overlap &= ~(1ul << 63u);
+            overlap &= ~(1ull << 63u);
         }
 #endif
         if (overlap) {
@@ -95,9 +95,9 @@ static enum nx_char nx_char(char c) {
     case ' ':
         return NX_CHAR_SPACE;
     case 'A' ... 'Z':
-        return NX_CHAR_A + (c - 'A');
+        return NX_CHAR_A + (unsigned char)(c - 'A');
     case 'a' ... 'z':
-        return NX_CHAR_A + (c - 'a');
+        return NX_CHAR_A + (unsigned char)(c - 'a');
     default:
         return NX_CHAR_PUNCT;
     }
@@ -179,38 +179,38 @@ static void nx_nfa_debug(const struct nx * nx) {
     for (size_t i = 0; i < nx->n_states; i++) {
         const struct nx_state * s = &nx->states[i];
 
-        printf("     %3zu: ", i);
+        fprintf(stderr, "     %3zu: ", i);
         for (size_t j = 0; j < NX_BRANCH_COUNT; j++) {
             if (s->char_bitset[j] == 0) {
                 // These two cases are just to catch potentially-invalid representations
                 if (j + 1 < NX_BRANCH_COUNT && s->char_bitset[j + 1] != 0) {
-                    printf("(missing %zu)    ", j);
+                    fprintf(stderr, "(missing %zu)    ", j);
                 }
                 // 0 is technically a valid state; this just catches _most_ errors
                 if (s->next_state[j] != 0) {
-                    printf("(null) -> %hu    ", s->next_state[j]);
+                    fprintf(stderr, "(null) -> %hu    ", s->next_state[j]);
                 }
                 continue;
             }
-            printf("%s -> ", nx_char_set_debug(s->char_bitset[j]));
+            fprintf(stderr, "%s -> ", nx_char_set_debug(s->char_bitset[j]));
             if (s->next_state[j] > STATE_SUCCESS) {
-                printf("!!!%hu", s->next_state[j]);
+                fprintf(stderr, "!!!%hu", s->next_state[j]);
             } else if (s->next_state[j] == STATE_SUCCESS) {
-                printf("MATCH");
+                fprintf(stderr, "MATCH");
             } else {
-                printf("%-3hu", s->next_state[j]);
+                fprintf(stderr, "%-3hu", s->next_state[j]);
             }
-            printf("      ");
+            fprintf(stderr, "      ");
         }
         if (!nx_set_isempty(&s->epsilon_states)) {
-            printf("* -> %s", nx_set_debug(&s->epsilon_states));
+            fprintf(stderr, "* -> %s", nx_set_debug(&s->epsilon_states));
         }
-        // printf("\t [%#x->%u %#x->%u]",
+        // fprintf(stderr, "\t [%#x->%u %#x->%u]",
         //        s->char_bitset[0], s->next_state[0],
         //        s->char_bitset[1], s->next_state[1]);
-        printf("\n");
+        fprintf(stderr, "\n");
     }
-    printf("\n");
+    fprintf(stderr, "\n");
 }
 
 struct nx_state * nx_state_insert(struct nx * nx, size_t insert_index) {
@@ -653,7 +653,7 @@ void nx_destroy(struct nx * nx) {
 // and consuming one character from `char_bitset`.
 static struct nx_set nx_match_transition(const struct nx * nx, uint32_t char_bitset, struct nx_set start_states) {
     // Start with an empty result set.
-    struct nx_set end_states = {0};
+    struct nx_set end_states = {{0}};
 
     // If there are no valid `start_states`, there are no valid end states!
     if (nx_set_isempty(&start_states)) {
@@ -697,7 +697,7 @@ static struct nx_set nx_match_transition(const struct nx * nx, uint32_t char_bit
 
 struct nx_set nx_match_partial(const struct nx * nx, const enum nx_char * buffer, uint16_t initial_state) {
     // Start with an initial `state_set` containing only `initial_state`
-    struct nx_set state_set = {0};
+    struct nx_set state_set = {{0}};
     nx_set_add(&state_set, initial_state);
 
     // Add all `epsilon_states`, which are the states reachable from `initial_state`
@@ -738,7 +738,7 @@ static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, str
     }
 
     // Keep track of which states are reachable with *exactly* 1 error, initially empty
-    struct nx_set error_state_set = {0};
+    struct nx_set error_state_set = {{0}};
 
     // Iterate over the characters in `buffer` (exactly 1 character per iteration)
     while (true) {
@@ -799,6 +799,9 @@ static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, str
 
         // The NFA should be constructed such that `*buffer` can't be `NX_CHAR_END` here.
         // If it were, either `next_state_set` would contain SUCCESS or be empty, and we would have returned.
+        if (*buffer == NX_CHAR_END) {
+            LOG("Buffer is end: next_state_set = %s", nx_set_debug(&next_state_set));
+        }
         ASSERT(*buffer != NX_CHAR_END);
 
         // Advance the buffer to the next character, and shift the state sets

@@ -7,7 +7,7 @@ char * word_init(struct word * w, const char * c, size_t len) {
     ASSERT(w != NULL);
     ASSERT(c == NULL || c[0] != WORD_LARGE);
 
-    *w = (struct word){0};
+    memset(w, 0, sizeof(*w));
 
     if (len + 1 > sizeof(w->small)) {
         w->small[0] = WORD_LARGE;
@@ -85,7 +85,7 @@ void word_tuple_init(struct word * w, const struct word * const * tuple_words, s
     NONNULL(w);
     NONNULL(tuple_words);
 
-    *w = (struct word){0};
+    memset(w, 0, sizeof(*w));
 
     size_t total_len = 0;
     for (size_t i = 0; i < n_tuple_words; i++) {
