@@ -124,6 +124,9 @@ class WordList:
         w = noodle_lib.wordlist_add(self.p, word_string.encode("utf-8"))
         return Word(w)
 
+    def __len__(self):
+        return len(self.wordset)
+
     def __repr__(self):
         return '<{}: "{}">'.format(self.__class__.__name__, self.debug())
 

@@ -19,12 +19,61 @@ from noodle import (
 
 CHUNK_TIME_NS = 50e6  # 50ms
 TOTAL_TIME_NS = 15e9  # 15s
+N_WORDS_DEFAULT = 10
 
-WORDLIST_SOURCES = [
-    # "consolidated.txt",
-    # "/usr/share/dict/american-english-insane",
-    "/usr/share/dict/words",
-]
+WORDLIST_SOURCES = {
+    "words": "/usr/share/dict/words",
+    "small": "/usr/share/dict/american-english-small",
+    "huge": "/usr/share/dict/american-english-huge",
+    "large": "/usr/share/dict/american-english-large",
+    "insane": "/usr/share/dict/american-english-insane",
+    "all": "consolidated.txt",
+}
+
+WORDLISTS = {}
+DEFAULT_WORDLIST = None
+
+
+def load_wordlist(wordlist_filename, preprocess=False):
+    raw_words = []
+    with open(wordlist_filename) as f:
+        for line in f:
+            word = line.strip()
+            if preprocess:
+                if len(word) < 2 and word not in ("a", "I"):
+                    continue
+            raw_words.append(word)
+
+    if preprocess:
+        values_and_words = []
+        for word in raw_words:
+            value = 0
+            value += len(word) ** 2
+            if re.match(r"^[a-z]+$", word):
+                value += 100
+            elif word.lower() == word:
+                value += 10
+            values_and_words.append((value, word))
+        raw_words = list(zip(*sorted(values_and_words, reverse=True)))[1]
+
+    wordlist = WordList.new()
+    for word in raw_words:
+        wordlist.add(word)
+    return wordlist
+
+
+def load_wordlists():
+    for name, filename in WORDLIST_SOURCES.items():
+        if os.path.exists(filename):
+            wl = load_wordlist(
+                filename, preprocess=filename.startswith("/usr/share/dict/")
+            )
+            WORDLISTS[name] = wl
+            print("Loaded wordlist {} from {}: {}".format(name, filename, wl.debug()))
+    if not WORDLISTS:
+        raise Exception(
+            "No wordlist found from {} candidates".format(len(WORDLIST_SOURCES))
+        )
 
 
 def gen_anagram(anagram):
@@ -91,12 +140,33 @@ def gen_transadd(anagram, n=1):
         yield ".*".join([""] + [l] * anagram.count(l) + [""])
 
 
-def expand_expression(expression):
+def expand_expression(expression, replacements):
     print(">", expression)
-    expression = expression.lower().strip()
-    if not expression:
+
+    # Collapse whitespace
+    expression = re.sub(r"\s+", " ", expression)
+
+    # Remove comments
+    expression = re.sub(r"#.*", "", expression)
+
+    # Macro definition
+    if "=" in expression:
+        name, _eq, value = expression.partition("=")
+        name = name.strip()
+        value = value.strip()
+        assert "=" not in value, "Expression contained multiple '=' characters"
+        assert name not in replacements, "Macro '{}' redefined".format(name)
+        replacements[name] = value
         return []
 
+    # Macro replacement
+    for name, value in replacements.items():
+        expression = expression.replace(name, value)
+
+    # Convert to lowercase
+    expression = expression.lower()
+
+    # Flags: "!_" and "!'"
     flags = 0
     if "!_" in expression:
         flags |= Nx.Flags.EXPLICIT_SPACE
@@ -105,13 +175,20 @@ def expand_expression(expression):
         flags |= Nx.Flags.EXPLICIT_PUNCT
         expression = expression.replace("!'", "", 1)
 
-    if re.match(r"[0-9 ]+", expression):
-        # Enumeration
-        # TODO: handle ' or - in enumerations (e.g. "1 3'1 5")
-        counts = re.split(r" +", expression)
+    # Enumerations (e.g. "1 3'1 5")
+    if re.match(r"^[0-9' ]+$", expression):
+        full_expr = ""
+        for term in re.split(r"([0-9]+)", expression):
+            if term in ("", " "):
+                full_expr += "_"
+            elif re.match(r"^[0-9]+$", term):
+                full_expr += "." * int(term)
+            else:
+                full_expr += term
         flags |= Nx.Flags.EXPLICIT_SPACE
-        return [Nx.new("_" + "_".join("." * int(c) for c in counts) + "_", flags=flags)]
+        return [Nx.new(full_expr, flags=flags)]
 
+    # Remove whitespace entirely
     expression = expression.replace(" ", "")
 
     # Substring "(...:?)"
@@ -119,6 +196,7 @@ def expand_expression(expression):
         r"\(([a-z_-]+):\?\)", lambda m: "({}?)".format("?".join(m.group(1))), expression
     )
 
+    # <...> terms
     if "<" in expression:
         parts = re.split(r"<(.+?)(:?)([+~-]?)(\d?)>", expression)
         plains, anagrams, colons, plusminuses, ns = (
@@ -171,24 +249,40 @@ def expand_expression(expression):
             nxs.append(Nx.new(expression, flags=flags))
         return nxs
 
-    if ":" not in expression:
-        return [Nx.new(expression, flags=flags)]
+    if not expression:
+        return []
+
+    return [Nx.new(expression, flags=flags)]
 
 
 def handle_noodle_input(input_text, output, cursor):
+    wordlist_name = "words"
+    n_words = N_WORDS_DEFAULT
+    replacements = {}
     nxs = []
     for line in input_text.split("\n"):
         line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        nxs.extend(expand_expression(line))
+        if line.startswith("#list"):
+            wordlist_name = line.split()[1]
+        elif line.startswith("#n_words"):
+            n_words = int(line.split()[1])
+        else:
+            nxs.extend(expand_expression(line, replacements))
 
     if not nxs:
-        yield "#0 No input"
+        yield "#0 No input\n"
+        return
+
+    wordlist = WORDLISTS.get(wordlist_name.lower())
+    if wordlist is None:
+        yield (
+            "#0 Unknown wordlist '{}'\n".format(wordlist_name)
+            + "#1 Options: {}\n".format("".join(WORDLISTS.keys()))
+        )
         return
 
     iterate = lambda: nx_combo_multi(
-        nxs, WORDLIST, n_words=10, cursor=cursor, output=output,
+        nxs, wordlist, n_words=N_WORDS_DEFAULT, cursor=cursor, output=output,
     )
     query_text = "".join(["    {}\n".format(f.debug()) for f in nxs])
 
@@ -199,7 +293,9 @@ def handle_noodle_input(input_text, output, cursor):
 
         output_text = ""
         output_text += "#0 {}\n".format(cursor.debug())
-        output_text += "#1 {} matches\n".format(len(output))
+        output_text += "#1 {} matches from wordlist {}\n".format(
+            len(output), wordlist_name
+        )
 
         if first:
             output_text += "\nExpanded Query:\n{}\n".format(query_text)
@@ -265,20 +361,8 @@ class NoodleHandler(BaseHTTPRequestHandler):
             raise e
 
 
-def load_wordlist():
-    global WORDLIST
-    for filename in WORDLIST_SOURCES:
-        if os.path.exists(filename):
-            WORDLIST = WordList.new_from_file(filename)
-            print("Loaded wordlist:", WORDLIST.debug())
-            return
-    raise Exception(
-        "No wordlist found from {} candidates".format(len(WORDLIST_SOURCES))
-    )
-
-
 if __name__ == "__main__":
-    load_wordlist()
+    load_wordlists()
 
     bind = ("127.0.0.1", 8081)
     server = HTTPServer(bind, NoodleHandler)
