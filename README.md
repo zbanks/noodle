@@ -35,18 +35,14 @@ See [Noodle Help](static/help.md).
     - Multi-word matches
     - Multi-NX matches
     - Sugar (anagrams)
-- `nx_combo_multi(...)` sort outputs by word length in what I'd call a "`O(n) + O(n^2) + O(n^3) + ... + O(n^k)`" process
-    - Although this *is* equivalent to `O(n^k)` in big-O, we may be able to get better constant factors by caching the intermediate state?
-- `nx_combo_multi(...)` could theoretically take an `n_errors` parameter?
-- Clean up explicit space/other handling
-    - Flag for explicit other/punctuation
-    - Convert accented letters to bare (probably in list generation?)
 - Expand `expand_expression()` in Python
     - Handle all qhex operations in `<...>` brackets (subanagram, transadd, etc.)
         - bank/superbank/subbank (`<...:+>`)
         - add/delete/change (`(...:+1)`)
         - substring (`(...:~)`)
-    - Set per-NX flags
-    - Handle enumertations (bare "`5 1 3-1" rewrites to "`_....._._...-._`")
 - "Extract"/re-write rules for matching "inner" words, etc. ("cross-filtering" on qhex)
 - "Inverse" NX expressions? ("does not match") -- is this easy with NFAs?
+- Fuzzy matching around spaces is a bit weird
+    - Internally `"hello world"` becomes `"_hello__world_"` and spaces are collapsed together. This makes `"helloworld"` be edit distance **2** away instead of 1.
+    - Collapsing spaces also leads to `"_hell_no_"` matching `"shelling"` with edit distance 3
+    - Only seems to be an issue for internal spaces; in practice it can be constrained with an additional strict filter

@@ -107,12 +107,13 @@ struct nx {
     // Flags
     bool ignore_whitespace;
     bool ignore_punctuation;
+    uint32_t letter_set;
     size_t fuzz;
 
     struct nx_combo_cache * combo_cache;
 };
 
-#define NX_FUZZ_MAX ((size_t)15)
+#define NX_FUZZ_MAX ((size_t)8)
 
 enum nx_flag {
     NX_FLAG_FUZZ_MASK = (1 << 5) - 1,
@@ -141,4 +142,6 @@ NOODLE_EXPORT void nx_test(void);
 // Incremental match used by `nx_combo_match`.
 // From a given `initial_state`, return the set of possible result states
 // after consuming every character in `buffer`.
-struct nx_set nx_match_partial(const struct nx * nx, const enum nx_char * buffer, uint16_t initial_state);
+// TODO: redocument
+void nx_match_partial(const struct nx * nx, const enum nx_char * buffer, uint16_t initial_state,
+                      struct nx_set * state_sets);

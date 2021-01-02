@@ -575,12 +575,30 @@ struct nx * nx_compile(const char * expression, enum nx_flag flags) {
     nx->expression = NONNULL(strdup(expression));
 
     nx->fuzz = flags & NX_FLAG_FUZZ_MASK;
+    if (nx->fuzz > NX_FUZZ_MAX) {
+        LOG("Invalid fuzz value %zu: max is %zu", nx->fuzz, NX_FUZZ_MAX);
+        free(nx);
+        return NULL;
+    }
     nx->ignore_whitespace = !(flags & NX_FLAG_EXPLICIT_SPACE);
     if (nx->ignore_whitespace && strchr(expression, '_') != NULL) {
         LOG("Enabling EXPLICIT_SPACE flag because \"_\" was present in expression");
         nx->ignore_whitespace = false;
     }
     nx->ignore_punctuation = !(flags & NX_FLAG_EXPLICIT_PUNCT);
+
+    // `letter_set` contains every valid letter (A-Z, no metacharacters)
+    // It is used to represent which items can be added during fuzzy matching.
+    nx->letter_set = 0;
+    for (enum nx_char j = NX_CHAR_A; j <= NX_CHAR_Z; j++) {
+        nx->letter_set |= nx_char_bit(j);
+    }
+    if (!nx->ignore_whitespace) {
+        nx->letter_set |= nx_char_bit(NX_CHAR_SPACE);
+    }
+    if (!nx->ignore_punctuation) {
+        nx->letter_set |= nx_char_bit(NX_CHAR_PUNCT);
+    }
 
     ssize_t rc = nx_compile_subexpression(nx, nx->expression);
     if (rc < 0) {
@@ -696,27 +714,62 @@ static struct nx_set nx_match_transition(const struct nx * nx, uint32_t char_bit
     return end_states;
 }
 
-struct nx_set nx_match_partial(const struct nx * nx, const enum nx_char * buffer, uint16_t initial_state) {
-    // Start with an initial `state_set` containing only `initial_state`
-    struct nx_set state_set = {{0}};
-    nx_set_add(&state_set, initial_state);
+void nx_match_partial(const struct nx * nx, const enum nx_char * buffer, uint16_t initial_state,
+                      struct nx_set * state_sets) {
+
+    // Start with an initial `state_sets` containing only `initial_state` with 0 fuzz
+    memset(state_sets, 0, sizeof(*state_sets) * (nx->fuzz + 1));
+    nx_set_add(&state_sets[0], initial_state);
 
     // Add all `epsilon_states`, which are the states reachable from `initial_state`
     // without consuming a character from `buffer`
-    nx_set_orequal(&state_set, &nx->states[initial_state].epsilon_states);
+    nx_set_orequal(&state_sets[0], &nx->states[initial_state].epsilon_states);
 
     for (size_t bi = 0; buffer[bi] != NX_CHAR_END; bi++) {
         // Consume 1 character from the buffer and compute the set of possible resulting states
-        state_set = nx_match_transition(nx, nx_char_bit(buffer[bi]), state_set);
+        struct nx_set next_state_sets[nx->fuzz + 1];
+        for (size_t fi = 0; fi <= nx->fuzz; fi++) {
+            next_state_sets[fi] = nx_match_transition(nx, nx_char_bit(buffer[bi]), state_sets[fi]);
+        }
+
+        // For a fuzzy match, expand `next_error_sets[fi+1]` by adding all states
+        // reachable from `state_sets[fi]` *but* with a 1-character change to `buffer`
+        for (size_t fi = 0; fi < nx->fuzz; fi++) {
+            ASSERT(buffer[bi] != NX_CHAR_END);
+
+            // Deletion: skip over using `buffer[bi]` to do a transition
+            nx_set_orequal(&next_state_sets[fi + 1], &state_sets[fi]);
+
+            // Change: use a different char (any letter) to do a transition instead of `buffer[bi]`
+            struct nx_set es = nx_match_transition(nx, nx->letter_set, state_sets[fi]);
+            nx_set_orequal(&next_state_sets[fi + 1], &es);
+
+            // Insertion: insert any char(s) (letters(s)) before `buffer[bi]`...
+            // Unlike deletion/change, we can insert up to `nx->fuzz` letters before `buffer[bi]`
+            struct nx_set ins = {0};
+            for (size_t fd = 0; fd + fi < nx->fuzz; fd++) {
+                struct nx_set es = nx_match_transition(nx, nx->letter_set, state_sets[fi]);
+                nx_set_orequal(&ins, &es);
+            }
+            // ...then use *buffer
+            ins = nx_match_transition(nx, nx_char_bit(buffer[bi]), ins);
+            nx_set_orequal(&next_state_sets[fi + 1], &ins);
+        }
+
+        // Shift next_state_sets into state_sets
+        memcpy(state_sets, next_state_sets, sizeof(next_state_sets));
 
         // We can terminate early if there are no possible valid states
-        if (nx_set_isempty(&state_set)) {
+        bool all_empty = true;
+        for (size_t fi = 0; fi <= nx->fuzz; fi++) {
+            if (!nx_set_isempty(&state_sets[fi])) {
+                all_empty = false;
+            }
+        }
+        if (all_empty) {
             break;
         }
     }
-
-    // Return the set of possible result states from consuming every character in `buffer`
-    return state_set;
 }
 
 // Perform a fuzzy match against an NX NFA.
@@ -853,7 +906,8 @@ void nx_test(void) {
 
         enum nx_char buffer[256];
         nx_char_translate(nx, s[i], buffer, 256);
-        struct nx_set ps = nx_match_partial(nx, buffer, 0);
+        struct nx_set ps;
+        nx_match_partial(nx, buffer, 0, &ps);
         LOG("Partial: %s", nx_set_debug(&ps));
     }
     nx_destroy(nx);

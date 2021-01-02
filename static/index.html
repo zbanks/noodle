@@ -65,9 +65,11 @@
                         <li><a class="example">_h...._w...._; &lt;hello+&gt;; &lt;world+5&gt;; [hale]+&lt;owl&gt;.*</a></li>
                         <li><a class="example">&lt;smiles&gt;</a></li>
                         <li><a class="example">&lt;smiles&gt;; .*ss.*</a></li>
-                        <li><a class="example">ahumongoussentenceofmultiplewords</a></li>
+                        <li><a class="example">ahumongoussentencewithmultiplewords</a></li>
+                        <li><a class="example">ahumongoussentincewithmultiplewords !' !1</a></li>
                         <li><a class="example">3 3 8 7; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:?) !'</a></li>
-                        <!-- <li><a class="example">nx 2: breadfast</a></li> -->
+                        <li><a class="example">hen !1; hay !1</a></li>
+                        <li><a class="example">breadfast !2</a></li>
                     </ul>
                 </div>
             </div>
@@ -80,15 +82,22 @@
                 <h2>Help</h2>
 <!-- generated from `pandoc help.md` -->
 
-<p>Specify filters in the input textbox. Each line is treated as a <em>noodle expression</em>.</p>
-<p>The query runs until the input wordlist is exhausted, 300 results are returned, or 15 seconds have passed.</p>
-<!-- If `N` is provided, perform a fuzzy match with up to `N` edits. (NB: consecutive inserts are not allowed) -->
-
-<p>Noodle supports the following regex syntax: <code>[...]</code>, <code>[^...]</code>, <code>.</code>, <code>*</code>, <code>+</code>, <code>?</code>, <code>(...)</code>, <code>|</code>, <code>{...}</code>.</p>
+<h3>Basics</h3>
+<p>Specify filters in the input textbox. Each line is treated as a <em>noodle expression</em>. You can specify multiple expressions, and only results that match <em>all</em> expressions are returned.</p>
+<p>The query runs until one of the following:</p>
+<ul class="incremental">
+<li>The input wordlist is exhausted, combining up to <strong>10 words</strong> into a phrase</li>
+<li><strong>300 results</strong> are returned</li>
+<li><strong>15 seconds</strong> have passed</li>
+<li>The <code>Stop</code> button is pressed</li>
+</ul>
+<h3>Regex features</h3>
+<p>Noodle supports the following regualar expression syntax: <code>[...]</code>, <code>[^...]</code>, <code>.</code>, <code>*</code>, <code>+</code>, <code>?</code>, <code>(...)</code>, <code>|</code>, <code>{...}</code>.</p>
 <p>Before matching, words are converted to lowercase and stripped of whitespace and non-alphabetical symbols (punctuation, numbers).</p>
 <p>To explicitly match spaces, include &quot;<code>!_</code>&quot; at the end of the expression. When enabled, the matched phrase is surrounded by spaces, and space characters can be explicitly matched with the &quot;<code>_</code>&quot; character.</p>
 <p>To explicitly match other symbols, include &quot;<code>!'</code>&quot; at the end of the expression. When enabled, these symbols can be matched with the &quot;<code>'</code>&quot; character.</p>
 <p>Regardless of setting, and unlike normal regular expressions, the period (&quot;<code>.</code>&quot;) is only equivalent to &quot;<code>[a-z]</code>&quot;. To match <em>any</em> symbol, use &quot;<code>[a-z'_]</code>&quot;.</p>
+<h3>Anagram constraints</h3>
 <p>Noodle has additional support for anagram-like constriants with angle bracket syntax: <code>&lt;...&gt;</code></p>
 <ul class="incremental">
 <li><code>&lt;abcd&gt;</code> -- <strong>anagram</strong> of <code>abcd</code>: rearranging the given letters</li>
@@ -98,17 +107,20 @@
 <li><code>&lt;abcd-1&gt;</code> -- <strong>transdelete</strong> of <code>3</code> to <code>abcd</code>: rerranging <em>all but <code>N</code></em> of the given letters</li>
 <li><code>(abcd:?)</code> -- <strong>partial</strong> of <code>abcd</code>: contained within a subset of the given letters, in the same order</li>
 </ul>
-<!--
-TODO:
-- `<abcd:~>` -- **bank**
-- `<abcd:+>` -- **superbank**
-- `<abcd:->` -- **subbank**
-- `(abcd:+2)` -- **add**
-- `(abcd:-2)` -- **delete**
-- `(abcd:~2)` -- **change**
-- `(abcd:~)` -- **substring**
--->
-
+<p>Anagram constraints are not compatible with fuzzy matching</p>
+<h3>Fuzzy matching</h3>
+<p>Noodle supports performing <em>fuzzy matching</em> for certain expressions.</p>
+<p>This will find words &amp; phrases that would match within a given <a href="https://en.wikipedia.org/wiki/Levenshtein_distance">edit distance</a> of the expression.</p>
+<p>To allow matches within edit distance 2, include &quot;<code>!2</code>&quot; at the end of the expression.</p>
+<p>Fuzzy matching can make queries take much longer, so it works best when there are additional constraints.</p>
+<h4>Fuzzy Caveats</h4>
+<p>Fuzzy matching will treat internal spaces in phrases as <em>two</em> spaces, leading to a few false positives.</p>
+<p>If there are multiple constraints with fuzzy matching, the edits between expressions may not be consistent. For example, <code>&quot;hey&quot;</code> will match the query <code>&quot;hen !1; hay !1&quot;</code> even though the edits <em>to get to</em> &quot;hen&quot; or &quot;hay&quot; are different.</p>
+<p>Anagram-like constraints (&quot;<code>&lt;...&gt;</code>&quot;) may produce false positives when combined with fuzzy matching.</p>
+<h3>Keyboard shortcuts</h3>
+<ul class="incremental">
+<li><code>Ctrl-Enter</code> -- submit query</li>
+</ul>
 <!-- end help -->
             </div>
         </div>

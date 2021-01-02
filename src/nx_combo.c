@@ -9,7 +9,6 @@ struct nx_combo_cache {
 
         // Array of initial_state -> final_stateset
         struct nx_set * transitions;
-        struct nx_set * transitions_by_fuzz[NX_FUZZ_MAX + 1];
     } * classes;
     size_t n_classes;
 
@@ -40,7 +39,6 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input, 
 
     int64_t start_ns = now_ns();
 
-    ASSERT(nx->fuzz == 0); // TODO: Allow fuzz
     ASSERT(nx->fuzz <= NX_FUZZ_MAX);
     size_t transitions_size = nx->n_states * (nx->fuzz + 1) * sizeof(struct nx_set);
     struct nx_combo_cache * cache = nx->combo_cache;
@@ -57,9 +55,6 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input, 
 
         // The first class is always the "empty" class (complete no-match)
         cache->classes[0].transitions = NONNULL(calloc(1, transitions_size));
-        for (size_t i = 0; i <= nx->fuzz; i++) {
-            cache->classes[0].transitions_by_fuzz[i] = &cache->classes[0].transitions[nx->n_states * i];
-        }
         cache->n_classes++;
     } else if (cache->wordset_progress >= input->words_count) {
         ASSERT(cache->wordset_progress == input->words_count);
@@ -74,8 +69,9 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input, 
         // XXX This is an "O(n^2)ish" algorithm that probably could be done in "O(n)ish"
         // if we implement filling the whole transition table in one shot?
         struct nx_set transitions[nx->n_states * (nx->fuzz + 1)];
+        memset(transitions, 0, sizeof(transitions));
         for (size_t k = 0; k < nx->n_states; k++) {
-            transitions[k] = nx_match_partial(nx, wbuf, (uint16_t)k);
+            nx_match_partial(nx, wbuf, (uint16_t)k, &transitions[k * (nx->fuzz + 1)]); // XXX
         }
 
         for (size_t j = 0; j < cache->n_classes; j++) {
@@ -91,8 +87,9 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input, 
             memcpy(cache->word_classes[i]->transitions, transitions, transitions_size);
             cache->word_classes[i]->n_words++;
 
+            // XXX
             for (size_t k = 0; k < nx->n_states; k++) {
-                if (!nx_set_isempty(&transitions[k])) {
+                if (!nx_set_isempty(&transitions[k * (nx->fuzz + 1)])) {
                     nx_set_add(&cache->word_classes[i]->nonnull_transitions, k);
                 }
             }
@@ -195,7 +192,7 @@ enum multi_return {
 };
 
 static enum multi_return nx_combo_multi_iter(struct nx * const * nxs, size_t n_nxs, const struct wordset * input,
-                                             const struct word ** stems, const struct nx_set * stem_sss,
+                                             const struct word ** stems, const struct nx_set (*stem_sss)[NX_FUZZ_MAX],
                                              struct cursor * cursor, size_t n_words, size_t word_index) {
     for (size_t i = cursor->input_index_list[word_index]; i < cursor->total_input_items; i++) {
         cursor->input_index_list[word_index] = i;
@@ -205,11 +202,11 @@ static enum multi_return nx_combo_multi_iter(struct nx * const * nxs, size_t n_n
             return MULTI_RETURN_CONTINUE;
         }
 
-        struct nx_set end_sss[n_nxs];
+        struct nx_set end_sss[n_nxs][NX_FUZZ_MAX];
+        memset(end_sss, 0, sizeof(end_sss));
         bool no_match = false;
         bool all_end_match = true;
         for (size_t n = 0; n < n_nxs; n++) {
-            end_sss[n] = (struct nx_set){{0}};
             const struct cache_class * class = nx_combo_cache_get(nxs[n], i);
             const struct nx_set * transitions = class->transitions;
             if (transitions == NULL) {
@@ -217,35 +214,58 @@ static enum multi_return nx_combo_multi_iter(struct nx * const * nxs, size_t n_n
                 break;
             }
 
+            // XXX: I don't think this is sound anymore
             // Unclear if this optimization helps
-            if (!nx_set_intersect(&class->nonnull_transitions, &stem_sss[n])) {
-                no_match = true;
-                break;
-            }
+            // bool all_empty = true;
+            // for (size_t fi = 0; fi <= nx->fuzz; fi++) {
+            //    if (nx_set_intersect(&class->nonnull_transitions, &stem_sss[n][0])) {
+            //        all_empty = false;
+            //        break;
+            //    }
+            //}
+            // if (all_empty) {
+            //    no_match = true;
+            //    break;
+            //}
 
-            // This code based on https://lemire.me/blog/2018/02/21/iterating-over-set-bits-quickly/
-            for (size_t ki = 0; ki < (nxs[n]->n_states + 63) / 64; ki++) {
-                uint64_t ks = stem_sss[n].xs[ki];
-                while (ks != 0) {
-                    size_t r = (size_t)__builtin_ctzll(ks); // TODO: depends on sizeof(long) __EMSCRIPTEN__
-                    uint64_t t = ks & -ks;
-                    ks ^= t;
+            for (size_t fi = 0; fi <= nxs[n]->fuzz; fi++) {
+                // This code based on https://lemire.me/blog/2018/02/21/iterating-over-set-bits-quickly/
+                for (size_t ki = 0; ki < (nxs[n]->n_states + 63) / 64; ki++) {
+                    uint64_t ks = stem_sss[n][fi].xs[ki];
+                    while (ks != 0) {
+                        size_t r = (size_t)__builtin_ctzl(ks); // TODO: depends on sizeof(long) __EMSCRIPTEN__
+                        uint64_t t = ks & -ks;
+                        ks ^= t;
 
-                    size_t idx = ki * 64 + r;
-                    if (idx >= nxs[n]->n_states) {
-                        break;
+                        size_t idx = ki * 64 + r;
+                        if (idx >= nxs[n]->n_states) {
+                            break;
+                        }
+                        for (size_t fd = 0; fi + fd <= nxs[n]->fuzz; fd++) {
+                            nx_set_orequal(&end_sss[n][fi + fd], &transitions[idx * (nxs[n]->fuzz + 1) + fd]);
+                        }
                     }
-                    nx_set_orequal(&end_sss[n], &transitions[idx]);
                 }
             }
 
-            // This branch should be impossible, after the earlier nonnull_transitions test
-            if (nx_set_isempty(&end_sss[n])) {
-                ASSERT(0);
+            // TODO: // This branch should be impossible, after the earlier nonnull_transitions test
+            bool all_empty = true;
+            bool any_end_match = false;
+            for (size_t fi = 0; fi <= nxs[n]->fuzz; fi++) {
+                if (nx_set_test(&end_sss[n][fi], nxs[n]->n_states - 1)) {
+                    any_end_match = true;
+                    all_empty = false;
+                    break;
+                } else if (!nx_set_isempty(&end_sss[n][fi])) {
+                    all_empty = false;
+                }
+            }
+            if (all_empty) {
+                ASSERT(!any_end_match);
                 no_match = true;
                 break;
             }
-            if (!nx_set_test(&end_sss[n], nxs[n]->n_states - 1)) {
+            if (!any_end_match) {
                 all_end_match = false;
             }
         }
@@ -317,10 +337,11 @@ void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset 
         input = &nxs[n_nxs - 1]->combo_cache->nonnull_wordset;
     }
 
-    struct nx_set sss[n_nxs];
+    struct nx_set sss[n_nxs][NX_FUZZ_MAX];
+    memset(sss, 0, sizeof(sss));
     for (size_t i = 0; i < n_nxs; i++) {
         enum nx_char end[1] = {NX_CHAR_END};
-        sss[i] = nx_match_partial(nxs[i], end, 0);
+        nx_match_partial(nxs[i], end, 0, sss[i]);
     }
 
     while (1) {

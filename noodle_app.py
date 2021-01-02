@@ -19,7 +19,7 @@ from noodle import (
 )
 
 CHUNK_TIME_NS = 50e6  # 50ms
-TOTAL_TIME_NS = 15e9  # 15s
+TOTAL_TIME_NS = 120e9  # 15s
 N_WORDS_DEFAULT = 10
 
 WORDLIST_SOURCES = {

@@ -11,8 +11,8 @@ int main() {
     word_term(&w);
 
     struct wordlist wl;
-    // ASSERT(wordlist_init_from_file(&wl, "/usr/share/dict/words") == 0);
-    ASSERT(wordlist_init_from_file(&wl, "consolidated.txt") == 0);
+    ASSERT(wordlist_init_from_file(&wl, "/usr/share/dict/words") == 0);
+    // ASSERT(wordlist_init_from_file(&wl, "consolidated.txt") == 0);
     struct wordset * ws = &wl.self_set;
 
     if (0) {
@@ -76,10 +76,14 @@ int main() {
         struct cursor cursor;
         struct wordlist buffer;
         wordlist_init(&buffer);
-        cursor_init_print(&cursor, 100);
+        cursor_init_print(&cursor, 10000);
         cursor_set_deadline(&cursor, now_ns() + (int64_t)10e9, 1000);
 
         struct nx * nxs[20] = {0};
+        /*
+        nxs[0] = NONNULL(nx_compile("_hell_a_", 2 | NX_FLAG_EXPLICIT_SPACE));
+        nxs[1] = NONNULL(nx_compile("hell.", 0));
+        */
         nxs[0] = NONNULL(nx_compile("_..._._..._", NX_FLAG_EXPLICIT_SPACE));
         nxs[1] = NONNULL(nx_compile("[angrm][angrm][angrm][angrm][angrm][angrm][angrm]", 0));
         nxs[2] = NONNULL(nx_compile("[ngrm]*a[ngrm]*a[ngrm]*a[ngrm]*", 0));
