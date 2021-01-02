@@ -9,6 +9,7 @@ struct nx_combo_cache {
 
         // Array of initial_state -> final_stateset
         struct nx_set * transitions;
+        struct nx_set * transitions_by_fuzz[NX_FUZZ_MAX + 1];
     } * classes;
     size_t n_classes;
 
@@ -39,7 +40,9 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input, 
 
     int64_t start_ns = now_ns();
 
-    size_t transitions_size = nx->n_states * sizeof(struct nx_set);
+    ASSERT(nx->fuzz == 0); // TODO: Allow fuzz
+    ASSERT(nx->fuzz <= NX_FUZZ_MAX);
+    size_t transitions_size = nx->n_states * (nx->fuzz + 1) * sizeof(struct nx_set);
     struct nx_combo_cache * cache = nx->combo_cache;
 
     if (cache == NULL) {
@@ -54,6 +57,9 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input, 
 
         // The first class is always the "empty" class (complete no-match)
         cache->classes[0].transitions = NONNULL(calloc(1, transitions_size));
+        for (size_t i = 0; i <= nx->fuzz; i++) {
+            cache->classes[0].transitions_by_fuzz[i] = &cache->classes[0].transitions[nx->n_states * i];
+        }
         cache->n_classes++;
     } else if (cache->wordset_progress >= input->words_count) {
         ASSERT(cache->wordset_progress == input->words_count);
@@ -61,14 +67,13 @@ static void nx_combo_cache_create(struct nx * nx, const struct wordset * input, 
     }
 
     for (size_t i = cache->wordset_progress; i < input->words_count; i++) {
-
         enum nx_char wbuf[256];
         nx_char_translate(nx, word_str(input->words[i]), wbuf, 256);
         ASSERT(wbuf[0] != NX_CHAR_END);
 
         // XXX This is an "O(n^2)ish" algorithm that probably could be done in "O(n)ish"
         // if we implement filling the whole transition table in one shot?
-        struct nx_set transitions[nx->n_states];
+        struct nx_set transitions[nx->n_states * (nx->fuzz + 1)];
         for (size_t k = 0; k < nx->n_states; k++) {
             transitions[k] = nx_match_partial(nx, wbuf, (uint16_t)k);
         }

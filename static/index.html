@@ -46,6 +46,17 @@
                 <div>
                     <button id="query">Query</button>
                     <button id="stop">Stop</button>
+                    <span style="margin-left: 2em">
+                        Wordlist:
+                        <select id="wordlist">
+                            <option>default</option>
+                            <option>small</option>
+                            <option>large</option>
+                            <option>huge</option>
+                            <option>insane</option>
+                            <option>all</option>
+                        </select>
+                    </span>
                 </div>
                 <div class="examples">
                     <h2>Examples</h2>
@@ -127,9 +138,10 @@ TODO:
                 return header.join("\n") + "\n" + output;
             }
             var input = document.querySelector("#input");
+            var wordlist = document.querySelector("#wordlist");
             function submit() {
                 stop();
-                var inputText = input.value;
+                var inputText = "#list " + wordlist.value + "\n" + input.value;
                 var req = new XMLHttpRequest();
                 var updateOutput = function() {
                     document.querySelector("#output").innerText = processResponse(this.responseText);

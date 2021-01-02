@@ -107,14 +107,20 @@ struct nx {
     // Flags
     bool ignore_whitespace;
     bool ignore_punctuation;
+    size_t fuzz;
 
     struct nx_combo_cache * combo_cache;
 };
 
+#define NX_FUZZ_MAX ((size_t)15)
+
 enum nx_flag {
-    NX_FLAG_EXPLICIT_SPACE = (1 << 0),
-    NX_FLAG_EXPLICIT_PUNCT = (1 << 1),
+    NX_FLAG_FUZZ_MASK = (1 << 5) - 1,
+    NX_FLAG_EXPLICIT_SPACE = (1 << 5),
+    NX_FLAG_EXPLICIT_PUNCT = (1 << 6),
 };
+
+_Static_assert(NX_FUZZ_MAX <= NX_FLAG_FUZZ_MASK, "NX_FUZZ_MAX cannot fit in masked bits of flags");
 
 // Compile an NX text expression into a `struct nx` object
 NOODLE_EXPORT struct nx * nx_compile(const char * expression, enum nx_flag flags);

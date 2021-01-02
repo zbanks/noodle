@@ -23,12 +23,13 @@ TOTAL_TIME_NS = 15e9  # 15s
 N_WORDS_DEFAULT = 10
 
 WORDLIST_SOURCES = {
-    "words": "/usr/share/dict/words",
     "small": "/usr/share/dict/american-english-small",
-    "huge": "/usr/share/dict/american-english-huge",
+    "default": "/usr/share/dict/words",
     "large": "/usr/share/dict/american-english-large",
-    "insane": "/usr/share/dict/american-english-insane",
-    "all": "consolidated.txt",
+    "huge": "/usr/share/dict/american-english-huge",
+    # These are slow to load
+    # "insane": "/usr/share/dict/american-english-insane",
+    # "all": "consolidated.txt",
 }
 
 WORDLISTS = {}
@@ -40,6 +41,8 @@ def load_wordlist(wordlist_filename, preprocess=False):
     with open(wordlist_filename) as f:
         for line in f:
             word = line.strip()
+
+            # Normalize all non-[a-z] characters
             word = (
                 word.replace("æ", "ae")
                 .replace("Æ", "AE")
@@ -47,12 +50,16 @@ def load_wordlist(wordlist_filename, preprocess=False):
                 .replace("Œ", "OE")
             )
             word = unicodedata.normalize("NFKD", word)
+
             if preprocess:
+                # Remove all one-letter words except "a" & "I"
                 if len(word) < 2 and word not in ("a", "I"):
                     continue
+
             raw_words.append(word)
 
     if preprocess:
+        # Sort words by length & if they contain special characters
         values_and_words = []
         for word in raw_words:
             value = 0
@@ -169,12 +176,13 @@ def expand_expression(expression, replacements):
 
     # Macro replacement
     for name, value in replacements.items():
+        # NB: This requires Python 3.6+ dict ordering
         expression = expression.replace(name, value)
 
     # Convert to lowercase
     expression = expression.lower()
 
-    # Flags: "!_" and "!'"
+    # Flags: "!_", "!'", and "!2"
     flags = 0
     if "!_" in expression:
         flags |= Nx.Flags.EXPLICIT_SPACE
@@ -182,6 +190,11 @@ def expand_expression(expression, replacements):
     if "!'" in expression:
         flags |= Nx.Flags.EXPLICIT_PUNCT
         expression = expression.replace("!'", "", 1)
+    fuzzy_flag = re.search(r"![0-9]", expression)
+    if fuzzy_flag:
+        fuzzy_flag = fuzzy_flag.group(0)
+        flags |= int(fuzzy_flag[1:])
+        expression = expression.replace(fuzzy_flag, "", 1)
 
     # Enumerations (e.g. "1 3'1 5")
     if re.match(r"^[0-9' ]+$", expression):
@@ -264,7 +277,7 @@ def expand_expression(expression, replacements):
 
 
 def handle_noodle_input(input_text, output, cursor):
-    wordlist_name = "words"
+    wordlist_name = "default"
     n_words = N_WORDS_DEFAULT
     replacements = {}
     nxs = []
@@ -285,7 +298,7 @@ def handle_noodle_input(input_text, output, cursor):
     if wordlist is None:
         yield (
             "#0 Unknown wordlist '{}'\n".format(wordlist_name)
-            + "#1 Options: {}\n".format("".join(WORDLISTS.keys()))
+            + "#1 Options: {}\n".format(" ".join(WORDLISTS.keys()))
         )
         return
 
@@ -301,8 +314,8 @@ def handle_noodle_input(input_text, output, cursor):
 
         output_text = ""
         output_text += "#0 {}\n".format(cursor.debug())
-        output_text += "#1 {} matches from wordlist {}\n".format(
-            len(output), wordlist_name
+        output_text += "#1 {} matches from wordlist {} ({})\n".format(
+            len(output), wordlist_name, len(wordlist)
         )
 
         if first:

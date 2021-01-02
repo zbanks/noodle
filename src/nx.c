@@ -574,6 +574,7 @@ struct nx * nx_compile(const char * expression, enum nx_flag flags) {
     struct nx * nx = NONNULL(calloc(1, sizeof(*nx)));
     nx->expression = NONNULL(strdup(expression));
 
+    nx->fuzz = flags & NX_FLAG_FUZZ_MASK;
     nx->ignore_whitespace = !(flags & NX_FLAG_EXPLICIT_SPACE);
     if (nx->ignore_whitespace && strchr(expression, '_') != NULL) {
         LOG("Enabling EXPLICIT_SPACE flag because \"_\" was present in expression");
