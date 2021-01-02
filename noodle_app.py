@@ -5,6 +5,7 @@ import re
 import unicodedata
 from itertools import zip_longest
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import urllib
 
 from noodle import (
     Word,
@@ -21,6 +22,7 @@ from noodle import (
 CHUNK_TIME_NS = 50e6  # 50ms
 TOTAL_TIME_NS = 120e9  # 15s
 N_WORDS_DEFAULT = 10
+OUTPUT_LIMIT_DEFAULT = 300
 
 WORDLIST_SOURCES = {
     "small": "/usr/share/dict/american-english-small",
@@ -280,18 +282,24 @@ def handle_noodle_input(input_text, output, cursor):
     wordlist_name = "default"
     n_words = N_WORDS_DEFAULT
     replacements = {}
+    quiet = False
     nxs = []
-    for line in input_text.split("\n"):
+    for line in input_text.replace(";", "\n").split("\n"):
         line = line.strip()
-        if line.startswith("#list"):
+        if line.startswith("#quiet"):
+            quiet = True
+        elif line.startswith("#list"):
             wordlist_name = line.split()[1]
-        elif line.startswith("#n_words"):
+        elif line.startswith("#words"):
             n_words = int(line.split()[1])
+        elif line.startswith("#limit"):
+            limit = int(line.split()[1])
+            cursor.set_deadline(deadline_output_index=limit)
         else:
             nxs.extend(expand_expression(line, replacements))
 
     if not nxs:
-        yield "#0 No input\n"
+        yield "#0 No input\n" if not quiet else "\n"
         return
 
     wordlist = WORDLISTS.get(wordlist_name.lower())
@@ -299,11 +307,11 @@ def handle_noodle_input(input_text, output, cursor):
         yield (
             "#0 Unknown wordlist '{}'\n".format(wordlist_name)
             + "#1 Options: {}\n".format(" ".join(WORDLISTS.keys()))
-        )
+        ) if not quiet else "\n"
         return
 
     iterate = lambda: nx_combo_multi(
-        nxs, wordlist, n_words=N_WORDS_DEFAULT, cursor=cursor, output=output,
+        nxs, wordlist, n_words=n_words, cursor=cursor, output=output,
     )
     query_text = "".join(["    {}\n".format(f.debug()) for f in nxs])
 
@@ -313,14 +321,15 @@ def handle_noodle_input(input_text, output, cursor):
         iterate()
 
         output_text = ""
-        output_text += "#0 {}\n".format(cursor.debug())
-        output_text += "#1 {} matches from wordlist {} ({})\n".format(
-            len(output), wordlist_name, len(wordlist)
-        )
+        if not quiet:
+            output_text += "#0 {}\n".format(cursor.debug())
+            output_text += "#1 {} matches from wordlist {} ({})\n".format(
+                len(output), wordlist_name, len(wordlist)
+            )
 
-        if first:
-            output_text += "\nExpanded Query:\n{}\n".format(query_text)
-            first = False
+            if first:
+                output_text += "\nExpanded Query:\n{}\n".format(query_text)
+        first = False
 
         for i in range(next_output, len(output)):
             word = output[i]
@@ -335,21 +344,30 @@ class NoodleHandler(BaseHTTPRequestHandler):
         path = "static/" + self.path
         if self.path == "/":
             path = "static/index.html"
+        if self.path.startswith("/noodle"):
+            query = self.path.partition("?")[2]
+            query = urllib.parse.unquote(query)
+            self.send_response(200)
+            self.end_headers()
+            return self.handle_query("#quiet\n" + query)
+
         path = path.replace("//", "/")
         if self.path.count("/") > 1 or not os.path.exists(path):
             self.send_error(404, "Not Found: {}".format(path))
 
-        with open(path) as f:
+        with open(path, "rb") as f:
             self.send_response(200)
             self.end_headers()
-            self.wfile.write(f.read().encode("utf-8"))
+            self.wfile.write(f.read())
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
-        data = self.rfile.read(length).decode("utf-8")
+        query = self.rfile.read(length).decode("utf-8")
         self.send_response(200)
         self.end_headers()
+        return self.handle_query(query)
 
+    def handle_query(self, query):
         error_get_log()
         try:
             output = WordSetAndBuffer()
@@ -357,11 +375,11 @@ class NoodleHandler(BaseHTTPRequestHandler):
                 output.wordlist,
                 output,
                 deadline_ns=now_ns() + CHUNK_TIME_NS,
-                deadline_output_index=300,
+                deadline_output_index=OUTPUT_LIMIT_DEFAULT,
             )
             total_deadline_ns = now_ns() + TOTAL_TIME_NS
 
-            for chunk in handle_noodle_input(data, output, cursor):
+            for chunk in handle_noodle_input(query, output, cursor):
                 try:
                     self.wfile.write(chunk.encode("utf-8"))
                 except BrokenPipeError:

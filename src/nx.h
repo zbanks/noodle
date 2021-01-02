@@ -133,8 +133,8 @@ void nx_char_translate(const struct nx * nx, const char * input, enum nx_char * 
 
 // Check if `input` matches `nx`, with a tolerance of up to `n_errors`.
 // Returns `-1` if not, otherwise returns the Levenshtein distance from the NX expression:
-// always <= `n_errors`, and `0` for a perfect match.
-NOODLE_EXPORT int nx_match(const struct nx * nx, const char * input, size_t n_errors);
+// always <= `nx->fuzz`, and `0` for a perfect match.
+NOODLE_EXPORT int nx_match(const struct nx * nx, const char * input);
 
 // Run some internal tests
 NOODLE_EXPORT void nx_test(void);

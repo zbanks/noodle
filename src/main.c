@@ -32,7 +32,7 @@ int main() {
         size_t n_matches[32] = {0};
         for (size_t i = 0; i < ws->words_count; i++) {
             const char * s = word_str(ws->words[i]);
-            int rc = nx_match(nx, s, 0);
+            int rc = nx_match(nx, s);
             n_matches[(size_t)(rc + 1)]++;
             // if (rc == 0) LOG("> match: %s", s);
         }
@@ -60,7 +60,7 @@ int main() {
         size_t n_mismatches = 0;
         for (size_t i = 0; i < ws->words_count; i++) {
             const char * s = word_str(ws->words[i]);
-            int rc1 = nx_match(nx, s, 0);
+            int rc1 = nx_match(nx, s);
             int rc2 = regexec(&preg, s, 0, NULL, 0);
             if ((rc1 == 0) != (rc2 == 0)) {
                 // LOG("Mismatch on \"%s\": nx=%d, regexec=%d", s, rc1, rc2);

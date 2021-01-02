@@ -1,8 +1,6 @@
 #include "nx.h"
 #include "nx_combo.h"
 
-static const struct nx_set NX_SET_START = {{1}};
-
 bool nx_set_test(const struct nx_set * s, size_t i) {
     if (i >= NX_SET_SIZE + 1) {
         return false;
@@ -865,22 +863,23 @@ static int nx_match_fuzzy(const struct nx * nx, const enum nx_char * buffer, str
     }
 }
 
-int nx_match(const struct nx * nx, const char * input, size_t n_errors) {
+int nx_match(const struct nx * nx, const char * input) {
     enum nx_char buffer[256];
     nx_char_translate(nx, input, buffer, 256);
 
     // `epsilon_states` are accounted for *after* "normal" states in `nx_match_transition`
     // Therefore it is important to include them here for correctness
-    struct nx_set ss = nx->states[0].epsilon_states;
-    nx_set_orequal(&ss, &NX_SET_START);
+    struct nx_set ss = {0};
+    nx_set_add(&ss, 0);
+    nx_set_orequal(&ss, &nx->states[0].epsilon_states);
 
-    return nx_match_fuzzy(nx, buffer, ss, n_errors);
+    return nx_match_fuzzy(nx, buffer, ss, nx->fuzz);
 }
 
 void nx_test(void) {
     // struct nx * nx = nx_compile("([^asdfzyxwv]el([lw]o)+r[lheld]*)+", 0);
     // struct nx * nx = nx_compile("he?a?z?l+?oworld", 0);
-    struct nx * nx = nx_compile("(thing|hello|asdf|world|a?b?c?d?e?)+", 0);
+    struct nx * nx = nx_compile("(thing|hello|asdf|world|a?b?c?d?e?)+", 3);
     // struct nx * nx = nx_compile("helloworld", 0);
     const char * s[] = {
         "helloworld",
@@ -901,7 +900,7 @@ void nx_test(void) {
     };
     // LOG("rc = %d", nx_match(nx, "hellowor", 0));
     for (size_t i = 0; s[i] != NULL; i++) {
-        int rc = nx_match(nx, s[i], 3);
+        int rc = nx_match(nx, s[i]);
         LOG("> \"%s\": %d", s[i], rc);
 
         enum nx_char buffer[256];

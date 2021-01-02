@@ -19,8 +19,14 @@ struct cursor {
     size_t deadline_output_index;
 
     // These fields are specific to nx_combo
+    enum cursor_stage {
+        CURSOR_STAGE_INITIAL = 0,
+        CURSOR_STAGE_SINGLE_MATCH,
+        CURSOR_STAGE_CACHE_SETUP,
+        CURSOR_STAGE_MULTI_MATCH,
+        CURSOR_STAGE_DONE,
+    } stage;
     size_t input_index_list[CURSOR_LIST_MAX];
-    bool setup_done;
     size_t word_index;
     bool has_partial_match;
 

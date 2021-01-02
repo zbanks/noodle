@@ -310,7 +310,44 @@ void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset 
     ASSERT(n_words + 1 <= CURSOR_LIST_MAX);
     ASSERT(cursor != NULL);
 
-    if (!cursor->setup_done) {
+    if (cursor->stage == CURSOR_STAGE_INITIAL) {
+        cursor->stage = CURSOR_STAGE_SINGLE_MATCH;
+    }
+
+    // First, perform simple, 1-word matches before building caches etc. for phrase matches
+    // This work is slightly redundant, it's repeated while building the caches, but it is
+    // super fast. If we fill the output, then we can avoid building the caches at all
+    if (cursor->stage == CURSOR_STAGE_SINGLE_MATCH) {
+        cursor->word_index = 1;
+        cursor->total_input_items = input->words_count;
+        for (size_t i = 0; i < input->words_count; i++) {
+            if (!cursor_update_input(cursor, i)) {
+                return;
+            }
+            bool is_match = true;
+            for (size_t n = 0; n < n_nxs; n++) {
+                int rc = nx_match(nxs[n], word_str(input->words[i]));
+                if (rc < 0) {
+                    is_match = false;
+                    break;
+                }
+            }
+            if (is_match) {
+                cursor->callback(cursor, input->words[i]);
+            }
+        }
+        // If we're limited to only 1 word, there's no need to build caches at all!
+        if (n_words <= 1) {
+            cursor_update_input(cursor, cursor->total_input_items);
+            cursor->stage = CURSOR_STAGE_DONE;
+            return;
+        } else {
+            cursor->input_index = 0;
+            cursor->stage = CURSOR_STAGE_CACHE_SETUP;
+        }
+    }
+
+    if (cursor->stage == CURSOR_STAGE_CACHE_SETUP) {
         cursor->total_input_items = n_nxs;
         for (size_t i = 0; i < n_nxs; i++) {
             nx_combo_cache_create(nxs[i], input, cursor);
@@ -328,33 +365,39 @@ void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset 
             nx_combo_cache_compress(nxs[i], input);
         }
 
-        cursor->setup_done = true;
         cursor->total_input_items = input->words_count;
         memset(cursor->input_index_list, 0, sizeof(cursor->input_index_list));
-        cursor->word_index = 1;
+        cursor->word_index = 2;
         cursor->has_partial_match = false;
+        cursor->stage = CURSOR_STAGE_MULTI_MATCH;
     } else {
         input = &nxs[n_nxs - 1]->combo_cache->nonnull_wordset;
     }
 
-    struct nx_set sss[n_nxs][NX_FUZZ_MAX];
-    memset(sss, 0, sizeof(sss));
-    for (size_t i = 0; i < n_nxs; i++) {
-        enum nx_char end[1] = {NX_CHAR_END};
-        nx_match_partial(nxs[i], end, 0, sss[i]);
-    }
+    if (cursor->stage == CURSOR_STAGE_MULTI_MATCH) {
+        struct nx_set sss[n_nxs][NX_FUZZ_MAX];
+        memset(sss, 0, sizeof(sss));
+        for (size_t i = 0; i < n_nxs; i++) {
+            enum nx_char end[1] = {NX_CHAR_END};
+            nx_match_partial(nxs[i], end, 0, sss[i]);
+        }
 
-    while (1) {
-        const struct word * stems[n_words];
-        enum multi_return rc = nx_combo_multi_iter(nxs, n_nxs, input, stems, sss, cursor, cursor->word_index, 0);
+        while (1) {
+            const struct word * stems[n_words];
+            enum multi_return rc = nx_combo_multi_iter(nxs, n_nxs, input, stems, sss, cursor, cursor->word_index, 0);
 
-        if (rc == MULTI_RETURN_DONE && cursor->has_partial_match && cursor->word_index < n_words) {
-            cursor->total_input_items = input->words_count;
-            memset(cursor->input_index_list, 0, sizeof(cursor->input_index_list));
-            cursor->word_index++;
-            cursor->has_partial_match = false;
-        } else {
-            return;
+            if (rc == MULTI_RETURN_DONE) {
+                cursor->stage = CURSOR_STAGE_DONE;
+            }
+            if (rc == MULTI_RETURN_DONE && cursor->has_partial_match && cursor->word_index < n_words) {
+                cursor->total_input_items = input->words_count;
+                memset(cursor->input_index_list, 0, sizeof(cursor->input_index_list));
+                cursor->word_index++;
+                cursor->has_partial_match = false;
+                cursor->stage = CURSOR_STAGE_MULTI_MATCH;
+            } else {
+                return;
+            }
         }
     }
 }

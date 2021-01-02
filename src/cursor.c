@@ -83,6 +83,14 @@ void cursor_set_deadline(struct cursor * c, int64_t deadline_ns, size_t deadline
     c->deadline_output_index = deadline_output_index;
 }
 
+static const char *stage_names[] = {
+    [CURSOR_STAGE_INITIAL] = "initializing",
+    [CURSOR_STAGE_SINGLE_MATCH] = "matching",
+    [CURSOR_STAGE_CACHE_SETUP] = "preprocessing for phrases",
+    [CURSOR_STAGE_MULTI_MATCH] = "matching",
+    [CURSOR_STAGE_DONE] = "matched",
+};
+
 const char * cursor_debug(const struct cursor * c) {
     static char buffer[2048];
     int64_t now = now_ns();
@@ -92,7 +100,7 @@ const char * cursor_debug(const struct cursor * c) {
     }
 
     snprintf(buffer, sizeof(buffer), "%zu/%zu (%0.2lf%%) %s, up to %zu word(s); %zu output; in %0.0lfms",
-             c->input_index, c->total_input_items, percent, c->setup_done ? "input" : "preprocessing", c->word_index,
+             c->input_index, c->total_input_items, percent, stage_names[c->stage], c->word_index,
              c->output_index, (double)(now - c->initialize_ns) / 1e6);
     return buffer;
 }
