@@ -10,7 +10,7 @@ The query runs until one of the following:
 
 - The input wordlist is exhausted, combining up to **10 words** into a phrase
 - **300 results** are returned
-- **15 seconds** have passed
+- **120 seconds** have passed
 - The `Stop` button is pressed
 
 ### Regex features
@@ -59,5 +59,27 @@ Anagram-like constraints ("`<...>`") may produce false positives when combined w
 ### Keyboard shortcuts
 
 - `Ctrl-Enter` -- submit query
+
+### Directives
+
+There are a few special directives for modifying how the whole query operates.
+They all start with `#`:
+
+- `#limit <N>` -- set the maximum number of results to return
+- `#list <default|small|...>` -- set the input wordlist to use (equivalent to the dropdown)
+- `#words <N>` -- set the maximum number of words to try to combine into a phrase. `#words 1` completely bypasses phrase matching.
+- `#quiet` -- do not print header/progress information.
+
+### Google Sheets Integration
+
+You can query Noodle directly from Google Sheets! Here's an example formula:
+
+```
+=IMPORTDATA(CONCAT("https://zbanks.ddns.net/noodle?", ENCODEURL("yourqueryhere")))
+```
+
+You can wrap it in `TRANSPOSE(...)` to have it fill out horizontally instead of vertically.
+
+For `GET` requests like this, headers/progress are suppressed and the default results limit is lowered to 15 (this can be changed with `#limit`).
 
 <!-- end help -->

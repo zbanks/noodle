@@ -92,7 +92,7 @@
 <ul class="incremental">
 <li>The input wordlist is exhausted, combining up to <strong>10 words</strong> into a phrase</li>
 <li><strong>300 results</strong> are returned</li>
-<li><strong>15 seconds</strong> have passed</li>
+<li><strong>120 seconds</strong> have passed</li>
 <li>The <code>Stop</code> button is pressed</li>
 </ul>
 <h3>Regex features</h3>
@@ -125,6 +125,20 @@
 <ul class="incremental">
 <li><code>Ctrl-Enter</code> -- submit query</li>
 </ul>
+<h3>Directives</h3>
+<p>There are a few special directives for modifying how the whole query operates. They all start with <code>#</code>:</p>
+<ul class="incremental">
+<li><code>#limit &lt;N&gt;</code> -- set the maximum number of results to return</li>
+<li><code>#list &lt;default|small|...&gt;</code> -- set the input wordlist to use (equivalent to the dropdown)</li>
+<li><code>#words &lt;N&gt;</code> -- set the maximum number of words to try to combine into a phrase. <code>#words 1</code> completely bypasses phrase matching.</li>
+<li><code>#quiet</code> -- do not print header/progress information.</li>
+</ul>
+<h3>Google Sheets Integration</h3>
+<p>You can query Noodle directly from Google Sheets! Here's an example formula:</p>
+<pre><code>=IMPORTDATA(CONCAT(&quot;https://zbanks.ddns.net/noodle?&quot;, ENCODEURL(&quot;yourqueryhere&quot;)))
+</code></pre>
+<p>You can wrap it in <code>TRANSPOSE(...)</code> to have it fill out horizontally instead of vertically.</p>
+<p>For <code>GET</code> requests like this, headers/progress are suppressed and the default results limit is lowered to 15 (this can be changed with <code>#limit</code>).</p>
 <!-- end help -->
             </div>
         </div>

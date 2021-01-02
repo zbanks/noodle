@@ -20,7 +20,7 @@ from noodle import (
 )
 
 CHUNK_TIME_NS = 50e6  # 50ms
-TOTAL_TIME_NS = 120e9  # 15s
+TOTAL_TIME_NS = 120e9  # 120s
 N_WORDS_DEFAULT = 10
 OUTPUT_LIMIT_DEFAULT = 300
 
@@ -349,7 +349,7 @@ class NoodleHandler(BaseHTTPRequestHandler):
             query = urllib.parse.unquote(query)
             self.send_response(200)
             self.end_headers()
-            return self.handle_query("#quiet\n" + query)
+            return self.handle_query("#quiet\n#limit 15\n" + query)
 
         path = path.replace("//", "/")
         if self.path.count("/") > 1 or not os.path.exists(path):
