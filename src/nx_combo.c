@@ -320,7 +320,7 @@ void nx_combo_multi(struct nx * const * nxs, size_t n_nxs, const struct wordset 
     if (cursor->stage == CURSOR_STAGE_SINGLE_MATCH) {
         cursor->word_index = 1;
         cursor->total_input_items = input->words_count;
-        for (size_t i = 0; i < input->words_count; i++) {
+        for (size_t i = cursor->input_index; i < cursor->total_input_items; i++) {
             if (!cursor_update_input(cursor, i)) {
                 return;
             }
