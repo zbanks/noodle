@@ -30,7 +30,7 @@ WORDLIST_SOURCES = {
     "large": "/usr/share/dict/american-english-large",
     "huge": "/usr/share/dict/american-english-huge",
     "scrabble": "listgen/raw/enable1.txt",
-    "uk_cryptics": "listgen/raw/ukadc16.txt",
+    "uk_cryptics": "listgen/raw/ukacd16.txt",
     # These are slow to load
     "insane": "/usr/share/dict/american-english-insane",
     "all": "listgen/out/consolidated.txt",
