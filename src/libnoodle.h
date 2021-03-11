@@ -1,6 +1,0 @@
-#include "cursor.h"
-#include "error.h"
-#include "nx.h"
-#include "nx_combo.h"
-#include "word.h"
-#include "wordlist.h"
