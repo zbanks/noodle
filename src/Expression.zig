@@ -15,7 +15,7 @@ next_state_sets: []State.Set,
 
 const Self = @This();
 
-pub const ParseError = error {
+pub const ParseError = error{
     BareModifier,
     UnmatchedParentheses,
     UnmatchedSquareBrackets,
@@ -429,20 +429,6 @@ fn compile_subexpression(self: *Self, subexpression: []const u8) CompileError!us
     return i;
 }
 
-pub fn match(self: *Self, input_text: []const u8, n_errors: usize) !?usize {
-    var input_chars: []Char = try self.allocator.alloc(Char, input_text.len + 1);
-    defer self.allocator.free(input_chars);
-    Char.translate(input_text, input_chars);
-
-    // `epsilon_states` are accounted for *after* "normal" states in `nx_match_transition`
-    // Therefore it is important to include them here for correctness
-    var ss = State.Set.initEmpty();
-    ss.set(0);
-    ss.setUnion(self.states.items[0].epsilon_states);
-
-    return self.matchFuzzy(input_chars, ss, n_errors);
-}
-
 pub fn matchPartial(self: *Self, input: []const Char, initial_state: State.Index, state_sets: []State.Set) void {
     // Start with an initial `state_sets` containing only `initial_state` with 0 fuzz
     std.debug.assert(state_sets.len >= self.fuzz + 1);
@@ -507,74 +493,6 @@ pub fn matchFuzzyTest(self: *Self, input: []const Char, n_errors: usize, count: 
     }
 
     return self.matchFuzzy(input, ss, n_errors);
-}
-
-// TODO: Delete this function; use matchPartial instead
-pub fn matchFuzzy(self: *Self, input: []const Char, initial_state_set: State.Set, n_errors: usize) ?usize {
-    // If the initial `state_set` is already a match, we're done!
-    if (initial_state_set.isSet(State.Set.success)) {
-        return 0;
-    }
-
-    var state_set = initial_state_set;
-
-    // Keep track of which states are reachable with *exactly* 1 error, initially empty
-    var error_state_set = State.Set.initEmpty();
-
-    // Iterate over the characters in `buffer` (exactly 1 character per iteration)
-    for (input) |c, i| {
-        var next_state_set = self.matchTransition(c.toBitset(), state_set);
-        var next_error_set = State.Set.initEmpty();
-
-        if (next_state_set.isSet(State.Set.success)) {
-            std.debug.assert(c == .end);
-            return 0;
-        }
-
-        if (n_errors > 0) {
-            next_error_set = self.matchTransition(c.toBitset(), error_state_set);
-
-            if (next_error_set.isSet(State.Set.success)) {
-                std.debug.assert(c == .end);
-                return 1;
-            }
-
-            if (c != .end) {
-                // Deletion
-                next_error_set.setUnion(state_set);
-                // Change
-                const es = self.matchTransition(self.letters_bitset, state_set);
-                next_error_set.setUnion(es);
-            }
-
-            // XXX: handle two inserts in a row
-            // Insertion
-            var es = self.matchTransition(self.letters_bitset, state_set);
-            es = self.matchTransition(c.toBitset(), es);
-            next_error_set.setUnion(es);
-        }
-
-        if (next_state_set.isEmpty()) {
-            if (n_errors > 0) {
-                const rc = self.matchFuzzy(input[i + 1 ..], next_error_set, n_errors - 1);
-                if (rc) |errors| {
-                    return errors + 1;
-                }
-            }
-
-            return null;
-        }
-
-        if (c == .end) {
-            log.err("Buffer is end: next_state_set = {}", .{next_state_set});
-            unreachable;
-        }
-
-        state_set = next_state_set;
-        error_state_set = next_error_set;
-    }
-
-    unreachable;
 }
 
 fn matchTransition(self: *Self, char_bitset: Char.Bitset, start_states: State.Set) State.Set {

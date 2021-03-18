@@ -3,7 +3,7 @@ const nx = @import("nx.zig");
 const Char = @import("char.zig").Char;
 const log = std.log;
 
-pub const log_level: std.log.Level = .info;
+pub const log_level: std.log.Level = .warn;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -22,19 +22,11 @@ pub fn main() !void {
     defer gpa.allocator.free(input_chars);
     Char.translate(input_text, input_chars);
 
-    var timer = try std.time.Timer.start();
-    timer.reset();
-    const cycles: usize = 100;
-    const m1 = n.matchFuzzyTest(input_chars, 0, cycles);
-    var dt = timer.read();
-    const m2 = try n.match("ekpresiontqest", 3);
-    std.debug.print("Match results: {}, {}; dt={} for {} cycles ({} ns/cycle)\n", .{ m1, m2, dt, cycles, dt / cycles });
-    std.debug.print("input: {a}\n", .{input_chars});
-
-    timer.reset();
     var words = try nx.Wordlist.initFromFile("/usr/share/dict/words", &gpa.allocator);
     defer words.deinit();
-    dt = timer.read();
+
+    var timer = try std.time.Timer.start();
+    var dt = timer.read();
     std.debug.print("loading wordlist took {} ns ({} ms)\n", .{ dt, dt / 1_000_000 });
 
     var n2 = try nx.Expression.init("express[^i].*", 0, &gpa.allocator);

@@ -216,48 +216,44 @@ const Layer = struct {
 };
 
 pub fn init(expressions: []*Expression, wordlist: Wordlist, words_max: usize, allocator: *std.mem.Allocator) !@This() {
-    var caches = try allocator.alloc(MatchCache, expressions.len);
-    errdefer allocator.free(caches);
+    var caches = try std.ArrayList(MatchCache).initCapacity(allocator, expressions.len);
+    errdefer caches.deinit();
 
     var words = wordlist.pointer_slice;
+    errdefer for (caches.items) |*cache| cache.deinit();
     for (expressions) |expr, i| {
-        caches[i] = try MatchCache.init(expr, words);
-        words = caches[i].nonnull_words;
-    }
-    errdefer {
-        // TODO: errdefer free caches incrementally
-        for (caches) |*cache| {
-            cache.deinit();
-        }
+        caches.appendAssumeCapacity(try MatchCache.init(expr, words));
+        words = caches.items[i].nonnull_words;
     }
 
-    for (caches[0 .. caches.len - 1]) |*cache| {
+    for (caches.items[0 .. caches.items.len - 1]) |*cache| {
         try cache.reduceWordlist(words);
     }
 
     var fuzz_max: usize = 0;
-    for (caches) |*cache| {
+    for (caches.items) |*cache| {
         fuzz_max = std.math.max(fuzz_max, cache.expression.fuzz);
     }
     log.info("fuzz_max={}", .{fuzz_max});
 
-    var layers = try allocator.alloc(Layer, words_max + 2);
-    errdefer allocator.free(layers);
+    var layers = try std.ArrayList(Layer).initCapacity(allocator, words_max + 2);
+    errdefer layers.deinit();
 
-    // TODO: errdefer free states
-    for (layers) |*layer| {
-        layer.states = try MatchCache.TransitionsSet.init(caches.len * (fuzz_max + 1), allocator);
+    errdefer for (layers.items) |*layer| layer.states.free(allocator);
+    var l: usize = 0;
+    while (l < layers.capacity) : (l += 1) {
+        layers.addOneAssumeCapacity().states = try MatchCache.TransitionsSet.init(caches.items.len * (fuzz_max + 1), allocator);
     }
 
-    layers[0].states.clear();
+    layers.items[0].states.clear();
     for (expressions) |expr, i| {
-        expr.matchPartial(&.{.end}, 0, layers[0].states.slice(fuzz_max + 1, i));
+        expr.matchPartial(&.{.end}, 0, layers.items[0].states.slice(fuzz_max + 1, i));
     }
-    layers[0].wi = 0;
+    layers.items[0].wi = 0;
 
     return @This(){
-        .caches = caches,
-        .layers = layers,
+        .caches = caches.toOwnedSlice(),
+        .layers = layers.toOwnedSlice(),
         .fuzz_max = fuzz_max,
         .words_max = words_max,
         .allocator = allocator,

@@ -33,8 +33,8 @@ pub const Char = enum(u5) {
     y,
     z,
 
-    // TODO: Should this use std.bit_set.IntegerBitSet?
     const Self = @This();
+    // TODO: Should this use std.bit_set.IntegerBitSet?
     pub const Bitset = u32;
 
     pub const letters_bitset: Bitset = comptime {

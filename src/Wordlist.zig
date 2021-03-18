@@ -50,13 +50,11 @@ pub fn initFromFile(filename: []const u8, allocator: *std.mem.Allocator) FileErr
         var word = try self.words.addOne();
         word.text = line;
     }
-    // TODO: cleanup words on error
-
-    self.pointer_slice = try allocator.alloc(*const Word, self.words.items.len);
-    errdefer allocator.free(self.pointer_slice);
 
     std.sort.sort(Word, self.words.items, {}, Word.compareLengthDesc);
 
+    self.pointer_slice = try allocator.alloc(*const Word, self.words.items.len);
+    errdefer allocator.free(self.pointer_slice);
     for (self.words.items) |*word, i| {
         self.pointer_slice[i] = word;
     }
