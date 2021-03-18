@@ -90,7 +90,7 @@ pub const Char = enum(u5) {
         while (true) {
             var c = @intToEnum(Self, i);
             if ((bitset & c.toBitset()) != 0) {
-                try writer.print("{c}", .{c.toU8()});
+                try writer.print("{any}", .{c});
             }
             if (c == .z) {
                 break;
@@ -100,3 +100,17 @@ pub const Char = enum(u5) {
         try writer.print("]", .{});
     }
 };
+
+test "Char enum reflection" {
+    inline for (@typeInfo(Char).Enum.fields) |field| {
+        const c1 = @field(Char, field.name);
+        const u = c1.toU8();
+        const c2 = Char.fromU8(u);
+
+        switch (c1) {
+            // Exceptions to reflection
+            .end, .epsilon => {},
+            else => std.testing.expectEqual(c1, c2),
+        }
+    }
+}
