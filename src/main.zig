@@ -1,6 +1,7 @@
 const std = @import("std");
 const nx = @import("nx.zig");
 const Char = @import("char.zig").Char;
+const Trie = @import("Trie.zig");
 const log = std.log;
 
 pub const log_level: std.log.Level = .info;
