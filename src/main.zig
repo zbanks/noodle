@@ -1,8 +1,9 @@
 const std = @import("std");
 const nx = @import("nx.zig");
 const Char = @import("char.zig").Char;
-const wordlist = @import("wordlist.zig");
 const log = std.log;
+
+pub const log_level: std.log.Level = .info;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -31,14 +32,10 @@ pub fn main() !void {
     std.debug.print("input: {a}\n", .{input_chars});
 
     timer.reset();
-    var words = try wordlist.Wordlist.initFromFile("/usr/share/dict/words", &gpa.allocator);
+    var words = try nx.Wordlist.initFromFile("/usr/share/dict/words", &gpa.allocator);
     defer words.deinit();
     dt = timer.read();
     std.debug.print("loading wordlist took {} ns ({} ms)\n", .{ dt, dt / 1_000_000 });
-
-    //var combo_cache = try nx.ComboCache.init(&n, &words);
-    //defer combo_cache.deinit();
-    //log.info("test: {any}", .{combo_cache.classes.items()[0..20]});
 
     var n2 = try nx.Expression.init("express[^i].*", 0, &gpa.allocator);
     //var n2 = try nx.Expression.init("expressiontest", 0, &gpa.allocator);
@@ -47,13 +44,13 @@ pub fn main() !void {
     _ = n2;
 
     timer.reset();
-    var combo_match = try nx.ComboMatcher.init(&.{ &n, &n2 }, words, 7, &gpa.allocator);
-    defer combo_match.deinit();
+    var matcher = try nx.Matcher.init(&.{ &n, &n2 }, words, 7, &gpa.allocator);
+    defer matcher.deinit();
 
-    while (combo_match.match()) |m| {
+    while (matcher.match()) |m| {
         log.info("Match {s}", .{m});
     }
 
     dt = timer.read();
-    std.debug.print("results: {} in {}ns ({} ms)\n", .{ combo_match.match_count, dt, dt / 1_000_000 });
+    std.debug.print("results: {} in {}ns ({} ms)\n", .{ matcher.match_count, dt, dt / 1_000_000 });
 }
