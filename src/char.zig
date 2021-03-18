@@ -72,12 +72,12 @@ pub const Char = enum(u5) {
         return one << @enumToInt(self);
     }
 
-    pub fn translate(text: []const u8, chars: []Self) void {
-        std.debug.assert(text.len + 1 <= chars.len);
+    pub fn translate(text: []const u8, chars: *std.ArrayList(Self)) !void {
+        try chars.resize(text.len + 1);
         for (text) |t, i| {
-            chars[i] = Self.fromU8(t);
+            chars.items[i] = Self.fromU8(t);
         }
-        chars[text.len] = Self.end;
+        chars.items[text.len] = Self.end;
     }
 
     pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {

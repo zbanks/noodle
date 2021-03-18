@@ -33,12 +33,12 @@ pub const State = struct {
     pub const Index = Set.Index;
 
     const Branch = struct {
-        next_state: Index,
-        char_bitset: Char.Bitset,
+        next_state: Index = 0,
+        char_bitset: Char.Bitset = 0,
     };
 
-    branches: [2]Branch,
-    epsilon_states: Set,
+    branches: [2]Branch = [_]Branch{.{}} ** 2,
+    epsilon_states: Set = Set.initEmpty(),
 };
 
 fn StateSet(comptime num_states: comptime_int) type {
@@ -51,27 +51,24 @@ fn StateSet(comptime num_states: comptime_int) type {
         pub const Index = std.math.IntFittingRange(0, num_states - 1);
         //pub const Index = u32;
         const BitSet = std.bit_set.StaticBitSet(num_states);
-        const SSelf = @This();
+        const Set = @This();
 
         pub const nonempty = num_states - 1;
-        pub const failure = num_states - 2;
-        pub const success = num_states - 3;
-        pub const max_normal = num_states - 4;
+        pub const max_normal = num_states - 2;
 
         /// Creates a bit set with no elements present.
-        pub fn initEmpty() SSelf {
-            //@compileLog("Index = ", Index);
+        pub fn initEmpty() Set {
             return .{ .bitset = BitSet.initEmpty() };
         }
 
         /// Returns true if the bit at the specified index
         /// is present in the set, false otherwise.
-        pub fn isSet(self: SSelf, index: usize) bool {
+        pub fn isSet(self: Set, index: usize) bool {
             return self.bitset.isSet(index);
         }
 
         /// Adds a specific bit to the bit set
-        pub fn set(self: *SSelf, index: usize) void {
+        pub fn set(self: *Set, index: usize) void {
             self.bitset.set(nonempty);
             self.bitset.set(index);
         }
@@ -79,7 +76,7 @@ fn StateSet(comptime num_states: comptime_int) type {
         /// Performs a union of two bit sets, and stores the
         /// result in the first one.  Bits in the result are
         /// set if the corresponding bits were set in either input.
-        pub fn setUnion(self: *SSelf, other: SSelf) void {
+        pub fn setUnion(self: *Set, other: Set) void {
             return self.bitset.setUnion(other.bitset);
         }
 
@@ -87,11 +84,11 @@ fn StateSet(comptime num_states: comptime_int) type {
         /// Modifications to the underlying bit set may or may not be
         /// observed by the iterator.
         const Iterator = @TypeOf(BitSet.iterator(&BitSet.initEmpty(), .{}));
-        pub fn iterator(self: *const SSelf) Iterator {
+        pub fn iterator(self: *const Set) Iterator {
             return self.bitset.iterator(.{});
         }
 
-        pub fn eql(self: SSelf, other: SSelf) bool {
+        pub fn eql(self: Set, other: Set) bool {
             if (@hasField(BitSet, "masks")) {
                 if (self.isEmpty() and other.isEmpty()) {
                     return true;
@@ -104,7 +101,6 @@ fn StateSet(comptime num_states: comptime_int) type {
 
         pub fn isEmpty(self: @This()) bool {
             return !self.bitset.isSet(nonempty);
-            //return self.bitset.findFirstSet() == null;
         }
 
         pub fn format(self: @This(), comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -112,7 +108,7 @@ fn StateSet(comptime num_states: comptime_int) type {
             var first = true;
             var iter = self.iterator();
             while (iter.next()) |i| {
-                if (i == SSelf.nonempty) {
+                if (i == Set.nonempty) {
                     continue;
                 }
                 if (!first) {
@@ -205,25 +201,21 @@ pub fn printNfa(self: Self) !void {
         _ = try writer.print("    {:3}: ", .{i});
         for (s.branches) |b, j| {
             if (b.char_bitset == 0) {
-                // These two cases are just to catch potentially-invalid representations
-                if (j + 1 < s.branches.len and s.branches[j + 1].char_bitset != 0) {
-                    unreachable;
-                }
-                // 0 is technically a valid state; this just catches _most_ errors
                 if (b.next_state != 0) {
                     _ = try writer.print("(null) -> {}    ", .{b.next_state});
                 }
+
+                // These two cases are just to catch potentially-invalid representations
+                // (0 is technically a valid state; this just catches _most_ errors)
+                std.debug.assert(j + 1 >= s.branches.len or s.branches[j + 1].char_bitset == 0);
+                std.debug.assert(b.next_state == 0);
                 continue;
             }
             try Char.formatBitset(writer, b.char_bitset);
             try writer.print(" -> ", .{});
-            if (b.next_state > State.Set.success) {
-                _ = try writer.print("!!!{}", .{b.next_state});
-            } else if (b.next_state == State.Set.success) {
-                _ = try writer.print("MATCH", .{});
-            } else {
-                _ = try writer.print("{:3}", .{b.next_state});
-            }
+
+            std.debug.assert(b.next_state < self.states.items.len);
+            _ = try writer.print("{:3}", .{b.next_state});
             _ = try writer.print("     ", .{});
         }
         if (!s.epsilon_states.isEmpty()) {
@@ -239,13 +231,8 @@ fn addState(self: *Self) !*State {
     if (self.states.items.len >= Self.State.Set.max_normal) {
         return error.TooManyStates;
     }
-
     var state = try self.states.addOne();
-    for (state.branches) |*b| {
-        b.next_state = 0;
-        b.char_bitset = 0;
-    }
-    state.epsilon_states = State.Set.initEmpty();
+    state.* = State {};
     return state;
 }
 
@@ -404,7 +391,23 @@ fn compile_subexpression(self: *Self, subexpression: []const u8) CompileError!us
                 s.branches[0] = epsilon_s.branches[0];
                 s.branches[1] = epsilon_s.branches[1];
             },
-            // TODO: *, +, ?, |, {,
+            '+' => {
+                if (previous_initial_state == null) {
+                    log.err("parse error: '{}' without preceeding group", .{c});
+                    return error.BareModifier;
+                }
+
+                var s: *State = try self.addState();
+                s.branches[0] = .{
+                    .next_state = @intCast(State.Index, previous_initial_state.?),
+                    .char_bitset = Char.epsilon.toBitset(),
+                };
+                s.branches[1] = .{
+                    .next_state = @intCast(State.Index, self.states.items.len),
+                    .char_bitset = Char.epsilon.toBitset(),
+                };
+            },
+            // TODO: +, ?, |, {,
             else => {
                 log.err("Invalid character in noodle expression: '{c}'\n", .{c});
                 // raise ...
@@ -416,10 +419,6 @@ fn compile_subexpression(self: *Self, subexpression: []const u8) CompileError!us
 
     // End of (full) expression
     var s: *State = try self.addState();
-    s.branches[0] = .{
-        .next_state = State.Set.success,
-        .char_bitset = Char.end.toBitset(),
-    };
 
     if (subexpression_final_state != null) {
         log.info("Subexpression {}\n", .{subexpression_final_state});
@@ -509,23 +508,17 @@ fn matchTransition(self: *Self, char_bitset: Char.Bitset, start_states: State.Se
                 continue;
             }
 
+            // TODO: We may be able to guarantee that only branches[0] is used?
+            // (May need to refactor '_' handling)
             for (state.branches) |b| {
                 if ((char_bitset & b.char_bitset) != 0) {
                     end_states.set(b.next_state);
 
-                    if (b.next_state < self.states.items.len) {
-                        end_states.setUnion(self.states.items[b.next_state].epsilon_states);
-                    }
+                    std.debug.assert(b.next_state < self.states.items.len);
+                    end_states.setUnion(self.states.items[b.next_state].epsilon_states);
                 }
             }
         }
-
-        //for (self.states.items) |*state, si| {
-        //    if (!end_states.isSet(@intCast(State.Index, si))) {
-        //        continue;
-        //    }
-        //    end_states.setUnion(state.epsilon_states);
-        //}
     } else {
         // This style is faster for dense (small) bitsets
         var iter = start_states.iterator();
@@ -536,16 +529,9 @@ fn matchTransition(self: *Self, char_bitset: Char.Bitset, start_states: State.Se
             for (self.states.items[si].branches) |b| {
                 if ((char_bitset & b.char_bitset) != 0) {
                     end_states.set(b.next_state);
+                    end_states.setUnion(self.states.items[si].epsilon_states);
                 }
             }
-        }
-
-        iter = end_states.iterator();
-        while (iter.next()) |si| {
-            if (si >= self.states.items.len) {
-                break;
-            }
-            end_states.setUnion(self.states.items[si].epsilon_states);
         }
     }
 

@@ -129,16 +129,16 @@ const MatchCache = struct {
         var temp_class = try CacheClass.init(expression, allocator);
         defer temp_class.deinit();
 
+        var buffer = std.ArrayList(Char).init(allocator);
+        defer buffer.deinit();
+
         for (wordlist) |word, w| {
-            // TODO remove stack buffer?
-            var buffer: [256]Char = undefined;
-            var wbuf = buffer[0 .. word.text.len + 1];
-            Char.translate(word.text, wbuf);
+            try Char.translate(word.text, &buffer);
 
             // TODO: This is O(n^2)ish, could probably be closer to O(n)ish
             temp_class.transitions.clear();
             for (expression.states.items) |state, i| {
-                expression.matchPartial(wbuf, @intCast(Expression.State.Index, i), temp_class.transitionsSlice(i));
+                expression.matchPartial(buffer.items, @intCast(Expression.State.Index, i), temp_class.transitionsSlice(i));
             }
 
             var result = try self.classes.getOrPut(temp_class.transitions);
