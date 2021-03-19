@@ -187,6 +187,20 @@ pub const TransitionTable = struct {
         };
     }
 
+    pub fn charSliceRange(self: TransitionTable, char_index: usize) TransitionTable {
+        std.debug.assert(char_index < self.num_chars);
+
+        const width = self.num_states * self.num_fuzz;
+        const index = char_index * width;
+
+        return TransitionTable{
+            .items = self.items[index..],
+            .num_chars = self.num_chars - char_index,
+            .num_states = self.num_states,
+            .num_fuzz = self.num_fuzz,
+        };
+    }
+
     pub fn stateSlice(self: TransitionTable, char_index: usize, state_index: usize) TransitionTable {
         std.debug.assert(char_index < self.num_chars);
         std.debug.assert(state_index < self.num_states);
@@ -545,12 +559,13 @@ pub fn initTransitionTable(self: *Self, transition_table: TransitionTable) void 
     }
 }
 
-pub fn fillTransitionTable(self: *Self, chars: []const Char, transition_table: TransitionTable) void {
+pub fn fillTransitionTable(self: *Self, chars: []const Char, transition_table: TransitionTable) usize {
     const fuzz_range = @as([*]u0, undefined)[0 .. self.fuzz + 1];
 
     for (chars) |char, char_index| {
         //const char_table = transition_table.charSlice(char_index);
         const char_bitset = char.toBitset();
+        var all_states_are_empty = true;
 
         // Consume 1 character from the buffer and compute the set of possible resulting states
         for (self.states.items) |state, state_index| {
@@ -560,9 +575,19 @@ pub fn fillTransitionTable(self: *Self, chars: []const Char, transition_table: T
             const next_state_table = transition_table.stateSlice(char_index + 1, state_index).items;
             std.debug.assert(next_state_table.len == self.fuzz + 1);
 
+            var all_fuzz_are_empty = true;
             for (fuzz_range) |_, fuzz_index| {
-                next_state_table[fuzz_index] = self.matchTransition(char_bitset, state_table[fuzz_index]);
+                if (state_table[fuzz_index].isEmpty()) {
+                    next_state_table[fuzz_index] = State.Set.initEmpty();
+                } else {
+                    next_state_table[fuzz_index] = self.matchTransition(char_bitset, state_table[fuzz_index]);
+                    all_fuzz_are_empty = false;
+                }
             }
+            if (all_fuzz_are_empty) {
+                continue;
+            }
+            all_states_are_empty = false;
 
             // For a fuzzy match, expand `next_state_table[fi+1]` by adding all states
             // reachable from `state_table[f]` *but* with a 1-character change to `chars`
@@ -583,70 +608,11 @@ pub fn fillTransitionTable(self: *Self, chars: []const Char, transition_table: T
                 next_state_table[fuzz_index + 1].setUnion(insertion_set);
             }
         }
-    }
-}
-
-pub fn matchPartial(self: *Self, input: []const Char, initial_state: State.Index, state_sets: []State.Set) void {
-    // Start with an initial `state_sets` containing only `initial_state` with 0 fuzz
-    std.debug.assert(state_sets.len >= self.fuzz + 1);
-    var i: usize = 0;
-    while (i < self.fuzz + 1) : (i += 1) {
-        state_sets[i] = State.Set.initEmpty();
-    }
-    state_sets[0].set(initial_state);
-
-    // Add all `epsilon_states`, which are the states reachable from `initial_state`
-    // without consuming a character from `buffer`
-    state_sets[0].setUnion(self.states.items[initial_state].epsilon_states);
-
-    for (input) |c| {
-        // Consume 1 character from the buffer and compute the set of possible resulting states
-        i = 0;
-        while (i < self.fuzz + 1) : (i += 1) {
-            self.next_state_sets[i] = self.matchTransition(c.toBitset(), state_sets[i]);
-        }
-
-        // For a fuzzy match, expand `next_error_sets[fi+1]` by adding all states
-        // reachable from `state_sets[fi]` *but* with a 1-character change to `buffer`
-        i = 0;
-        while (i < self.fuzz) : (i += 1) {
-            // Deletion
-            self.next_state_sets[i + 1].setUnion(state_sets[i]);
-
-            // Change
-            var change_set = self.matchTransition(self.letters_bitset, state_sets[i]);
-            self.next_state_sets[i + 1].setUnion(change_set);
-
-            // Insertion
-            var insertion_set = self.matchTransition(c.toBitset(), change_set);
-            self.next_state_sets[i + 1].setUnion(insertion_set);
-        }
-
-        // Shift next_state_sets into state_sets
-        std.mem.copy(State.Set, state_sets, self.next_state_sets);
-
-        // We can terminate early if there are no possible valid states
-        for (state_sets) |*s| {
-            if (!s.isEmpty()) {
-                break;
-            }
-        } else {
-            return;
+        if (all_states_are_empty) {
+            return char_index;
         }
     }
-}
-
-pub fn matchFuzzyTest(self: *Self, input: []const Char, n_errors: usize, count: usize) ?usize {
-    var ss = Self.State.Set.initEmpty();
-    ss.set(0);
-    ss.setUnion(self.states.items[0].epsilon_states);
-
-    var i: usize = 0;
-    while (i < count) : (i += 1) {
-        _ = self.matchFuzzy(input, ss, 0);
-    }
-
-    return self.matchFuzzy(input, ss, n_errors);
+    return chars.len;
 }
 
 fn matchTransition(self: *Self, char_bitset: Char.Bitset, start_states: State.Set) State.Set {

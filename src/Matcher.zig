@@ -89,16 +89,23 @@ const MatchCache = struct {
         var previous_chars: []const Char = &[0]Char{};
 
         for (wordlist) |word, w| {
-            // TODO: This is O(n^2)ish, could probably be closer to O(n)ish
-            expression.initTransitionTable(transition_table);
-            expression.fillTransitionTable(word.chars, transition_table);
-            //for (expression.states.items) |state, i| {
-            //    expression.matchPartial(word.chars, @intCast(Expression.State.Index, i), temp_class.transitionsSlice(i));
-            //}
-            previous_chars = word.chars;
+            var si: usize = 0;
+            while (si < word.chars.len and si < previous_chars.len and word.chars[si] == previous_chars[si]) : (si += 1) {}
+
+            const prefixed_table = transition_table.charSliceRange(si);
+            if (si == 0) {
+                expression.initTransitionTable(prefixed_table);
+            }
+            const valid_len = expression.fillTransitionTable(word.chars[si..], prefixed_table) + si;
+
+            previous_chars = word.chars[0..valid_len];
+
+            if (valid_len < word.chars.len) {
+                continue;
+            }
+            std.debug.assert(valid_len == word.chars.len);
 
             const word_transitions = transition_table.charSlice(word.chars.len);
-
             var result = try self.classes.getOrPut(word_transitions);
             if (!result.found_existing) {
                 result.entry.value = try CacheClass.init(expression, allocator);

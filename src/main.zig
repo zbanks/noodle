@@ -16,7 +16,7 @@ pub fn main() !void {
     std.debug.print("loading wordlist took {} ns ({} ms)\n", .{ dt, dt / 1_000_000 });
 
     //var nx = try Expression.init("e.p[^aeiou][aeiou](ss)iontest", &gpa.allocator);
-    var n = try nx.Expression.init("expres*iontest", 1, &gpa.allocator);
+    var n = try nx.Expression.init("ex.+res*iontest", 1, &gpa.allocator);
     defer n.deinit();
     try n.printNfa();
     _ = n;
@@ -28,11 +28,11 @@ pub fn main() !void {
     _ = n2;
 
     timer.reset();
-    var matcher = try nx.Matcher.init(&.{ &n, &n2 }, words, 3, &gpa.allocator);
+    var matcher = try nx.Matcher.init(&.{ &n, &n2 }, words, 2, &gpa.allocator);
     defer matcher.deinit();
 
     while (matcher.match()) |m| {
-        log.info("Match {s}", .{m});
+        log.info("  - \"{s}\"", .{m});
     }
 
     dt = timer.read();
