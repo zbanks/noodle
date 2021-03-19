@@ -24,8 +24,16 @@ pub fn deinit(self: Self) void {
     self.allocator.free(self.pointer_slice);
     for (self.words.items) |word| {
         self.allocator.free(word.text);
+        self.allocator.free(word.chars);
     }
     self.words.deinit();
+}
+
+fn inputWordFilter(word: []const u8) bool {
+    if (word.len == 1 and !(word[0] == 'a' or word[0] == 'I')) {
+        return false;
+    }
+    return true;
 }
 
 pub fn initFromFile(filename: []const u8, allocator: *std.mem.Allocator) FileError!Self {
@@ -41,14 +49,21 @@ pub fn initFromFile(filename: []const u8, allocator: *std.mem.Allocator) FileErr
     while (try reader.readUntilDelimiterOrEofAlloc(allocator, '\n', max_length)) |line| {
         errdefer allocator.free(line);
 
-        // XXX: Drop single-letter "words" - this should be done on the input, not here
-        if (line.len == 1 and !(line[0] == 'a' or line[0] == 'I')) {
+        // XXX: Drop single-letter "words" - this should be done on the file, not here
+        if (!inputWordFilter(line)) {
             allocator.free(line);
             continue;
         }
 
+        var chars = std.ArrayList(Char).init(allocator);
+        errdefer chars.deinit();
+
+        try Char.translate(line, &chars);
         var word = try self.words.addOne();
-        word.text = line;
+        word.* = Word{
+            .text = line,
+            .chars = chars.toOwnedSlice(),
+        };
     }
 
     std.sort.sort(Word, self.words.items, {}, Word.compareLengthDesc);

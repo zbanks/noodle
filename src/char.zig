@@ -2,10 +2,6 @@ const std = @import("std");
 const log = std.log.scoped(.char);
 
 pub const Char = enum(u5) {
-    end,
-    epsilon,
-    punct,
-    space,
     a,
     b,
     c,
@@ -32,6 +28,9 @@ pub const Char = enum(u5) {
     x,
     y,
     z,
+    punct,
+    space,
+    epsilon,
 
     const Self = @This();
     // TODO: Should this use std.bit_set.IntegerBitSet?
@@ -49,7 +48,6 @@ pub const Char = enum(u5) {
 
     pub fn toU8(self: Self) u8 {
         return switch (self) {
-            .end => '$',
             .epsilon => '*',
             .punct => '\'',
             .space => '_',
@@ -59,7 +57,6 @@ pub const Char = enum(u5) {
 
     pub fn fromU8(u: u8) Self {
         return switch (u) {
-            0 => .end,
             ' ', '_' => .space,
             'A'...'Z' => @intToEnum(Self, @intCast(u5, u - 'A') + @enumToInt(Self.a)),
             'a'...'z' => @intToEnum(Self, @intCast(u5, u - 'a') + @enumToInt(Self.a)),
@@ -73,11 +70,11 @@ pub const Char = enum(u5) {
     }
 
     pub fn translate(text: []const u8, chars: *std.ArrayList(Self)) !void {
-        try chars.resize(text.len + 1);
+        // TODO: normalize input strings to A-Z + punctuation + spaces
+        try chars.resize(text.len);
         for (text) |t, i| {
             chars.items[i] = Self.fromU8(t);
         }
-        chars.items[text.len] = Self.end;
     }
 
     pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -109,7 +106,7 @@ test "Char enum reflection" {
 
         switch (c1) {
             // Exceptions to reflection
-            .end, .epsilon => {},
+            .epsilon => {},
             else => std.testing.expectEqual(c1, c2),
         }
     }

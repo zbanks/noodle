@@ -129,16 +129,11 @@ const MatchCache = struct {
         var temp_class = try CacheClass.init(expression, allocator);
         defer temp_class.deinit();
 
-        var buffer = std.ArrayList(Char).init(allocator);
-        defer buffer.deinit();
-
         for (wordlist) |word, w| {
-            try Char.translate(word.text, &buffer);
-
             // TODO: This is O(n^2)ish, could probably be closer to O(n)ish
             temp_class.transitions.clear();
             for (expression.states.items) |state, i| {
-                expression.matchPartial(buffer.items, @intCast(Expression.State.Index, i), temp_class.transitionsSlice(i));
+                expression.matchPartial(word.chars, @intCast(Expression.State.Index, i), temp_class.transitionsSlice(i));
             }
 
             var result = try self.classes.getOrPut(temp_class.transitions);
@@ -247,7 +242,7 @@ pub fn init(expressions: []*Expression, wordlist: Wordlist, words_max: usize, al
 
     layers.items[0].states.clear();
     for (expressions) |expr, i| {
-        expr.matchPartial(&.{.end}, 0, layers.items[0].states.slice(fuzz_max + 1, i));
+        expr.matchPartial(&.{}, 0, layers.items[0].states.slice(fuzz_max + 1, i));
     }
     layers.items[0].wi = 0;
 

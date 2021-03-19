@@ -3,6 +3,7 @@ const Char = @import("char.zig").Char;
 const log = std.log.scoped(.Word);
 
 text: []u8,
+chars: []Char,
 
 const Self = @This();
 

@@ -232,7 +232,7 @@ fn addState(self: *Self) !*State {
         return error.TooManyStates;
     }
     var state = try self.states.addOne();
-    state.* = State {};
+    state.* = State{};
     return state;
 }
 
@@ -338,7 +338,7 @@ fn compile_subexpression(self: *Self, subexpression: []const u8) CompileError!us
                     const sc = subexpression[i];
                     const sn = Char.fromU8(sc);
                     char_bitset |= switch (sn) {
-                        .end, .epsilon => unreachable,
+                        .epsilon => unreachable,
                         .punct => switch (sc) {
                             ',', '\'' => sn.toBitset(),
                             '.' => Char.letters_bitset,
@@ -442,9 +442,6 @@ pub fn matchPartial(self: *Self, input: []const Char, initial_state: State.Index
     state_sets[0].setUnion(self.states.items[initial_state].epsilon_states);
 
     for (input) |c| {
-        if (c == .end) {
-            break;
-        }
         // Consume 1 character from the buffer and compute the set of possible resulting states
         i = 0;
         while (i < self.fuzz + 1) : (i += 1) {
