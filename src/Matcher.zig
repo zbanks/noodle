@@ -87,6 +87,9 @@ const MatchCache = struct {
         defer transition_table.free(allocator);
 
         var previous_chars: []const Char = &[0]Char{};
+        var total_prefixed: usize = 0;
+        var total_matched: usize = 0;
+        var total_length: usize = 0;
 
         for (wordlist) |word, w| {
             var si: usize = 0;
@@ -97,6 +100,10 @@ const MatchCache = struct {
                 expression.initTransitionTable(prefixed_table);
             }
             const valid_len = expression.fillTransitionTable(word.chars[si..], prefixed_table) + si;
+
+            total_prefixed += si;
+            total_matched += valid_len;
+            total_length += word.chars.len;
 
             previous_chars = word.chars[0..valid_len];
 
@@ -139,6 +146,7 @@ const MatchCache = struct {
 
         const num_classes = self.classes.count();
         const dt = timer.read();
+        std.debug.print("prefixed={}, matched={}, total_len={} (saved {}/word on prefix and {}/word on early term)\n", .{ total_prefixed, total_matched, total_length, total_prefixed / wordlist.len, (total_length - total_matched) / wordlist.len });
         std.debug.print("{} distinct classes with {} words in {}ms ({} ns/word)\n", .{ num_classes, self.nonnull_words.len, dt / 1_000_000, dt / wordlist.len });
         //std.debug.print("{} input words; {} nonmatch\n", .{wordlist.words.items.len, self.classes[0].words.items.len});
 

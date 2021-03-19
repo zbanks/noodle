@@ -66,7 +66,8 @@ pub fn initFromFile(filename: []const u8, allocator: *std.mem.Allocator) FileErr
         };
     }
 
-    std.sort.sort(Word, self.words.items, {}, Word.compareLengthDesc);
+    //std.sort.sort(Word, self.words.items, {}, Word.compareLengthDesc);
+    std.sort.sort(Word, self.words.items, {}, Word.compareChars);
 
     self.pointer_slice = try allocator.alloc(*const Word, self.words.items.len);
     errdefer allocator.free(self.pointer_slice);
