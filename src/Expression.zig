@@ -122,6 +122,104 @@ fn StateSet(comptime num_states: comptime_int) type {
     };
 }
 
+pub const TransitionTable = struct {
+    items: []State.Set,
+    num_chars: usize,
+    num_states: usize,
+    num_fuzz: usize,
+
+    pub fn init(num_chars: usize, num_states: usize, num_fuzz: usize, allocator: *std.mem.Allocator) !TransitionTable {
+        std.debug.assert(num_chars > 0);
+        std.debug.assert(num_states > 0);
+        std.debug.assert(num_fuzz > 0);
+
+        const size = num_chars * num_states * num_fuzz;
+        var self = TransitionTable{
+            .items = try allocator.alloc(State.Set, size),
+            .num_chars = num_chars,
+            .num_states = num_states,
+            .num_fuzz = num_fuzz,
+        };
+        self.clear();
+        return self;
+    }
+
+    pub fn clear(self: *TransitionTable) void {
+        for (self.items) |*t| {
+            t.* = State.Set.initEmpty();
+        }
+    }
+
+    pub fn free(self: *TransitionTable, allocator: *std.mem.Allocator) void {
+        allocator.free(self.items);
+    }
+
+    pub fn hash(self: TransitionTable) u32 {
+        var hasher = std.hash.Wyhash.init(0);
+        std.hash.autoHashStrat(&hasher, self, .Deep);
+        return @truncate(u32, hasher.final());
+    }
+
+    pub fn eql(a: TransitionTable, b: TransitionTable) bool {
+        std.debug.assert(a.items.len == b.items.len);
+        std.debug.assert(a.num_states == b.num_states);
+        std.debug.assert(a.num_fuzz == b.num_fuzz);
+        for (a.items) |x, i| {
+            if (!std.meta.eql(x, b.items[i])) {
+                return false;
+            }
+        }
+        return true;
+        //return std.mem.eql(State.Set, a, b);
+    }
+
+    pub fn charSlice(self: TransitionTable, char_index: usize) TransitionTable {
+        std.debug.assert(char_index < self.num_chars);
+
+        const width = self.num_states * self.num_fuzz;
+        const index = char_index * width;
+
+        return TransitionTable{
+            .items = self.items[index .. index + width],
+            .num_chars = 1,
+            .num_states = self.num_states,
+            .num_fuzz = self.num_fuzz,
+        };
+    }
+
+    pub fn stateSlice(self: TransitionTable, char_index: usize, state_index: usize) TransitionTable {
+        std.debug.assert(char_index < self.num_chars);
+        std.debug.assert(state_index < self.num_states);
+
+        const width = self.num_fuzz;
+        const index = (char_index * self.num_states + state_index) * width;
+
+        return TransitionTable{
+            .items = self.items[index .. index + width],
+            .num_chars = 1,
+            .num_states = 1,
+            .num_fuzz = self.num_fuzz,
+        };
+    }
+
+    pub fn format(self: TransitionTable, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("TransitionTable({}, {}, {}) {{\n", .{ self.num_chars, self.num_states, self.num_fuzz });
+        var c: usize = 0;
+        while (c < self.num_chars) : (c += 1) {
+            var s: usize = 0;
+            while (s < self.num_states) : (s += 1) {
+                try writer.print("      ({}, {}): ", .{ c, s });
+                var f: usize = 0;
+                while (f < self.num_fuzz) : (f += 1) {
+                    try writer.print("{a}; ", .{self.stateSlice(c, s).items[f]});
+                }
+                try writer.print("\n", .{});
+            }
+        }
+        try writer.print("}}", .{});
+    }
+};
+
 pub fn init(expression: []const u8, fuzz: usize, allocator: *std.mem.Allocator) !Self {
     const expr = try std.mem.dupe(allocator, u8, expression);
     errdefer allocator.free(expr);
@@ -426,6 +524,66 @@ fn compile_subexpression(self: *Self, subexpression: []const u8) CompileError!us
     }
 
     return i;
+}
+
+pub fn initTransitionTable(self: *Self, transition_table: TransitionTable) void {
+    std.debug.assert(transition_table.num_states == self.states.items.len or transition_table.num_states == 1);
+    for (self.states.items) |state, i| {
+        var state_slice = transition_table.stateSlice(0, i);
+        for (state_slice.items) |*s| {
+            s.* = State.Set.initEmpty();
+        }
+
+        // Add all `epsilon_states`, which are the states reachable from `initial_state`
+        // without consuming a character from `buffer`
+        state_slice.items[0].set(i);
+        state_slice.items[0].setUnion(state.epsilon_states);
+
+        if (transition_table.num_states == 1) {
+            break;
+        }
+    }
+}
+
+pub fn fillTransitionTable(self: *Self, chars: []const Char, transition_table: TransitionTable) void {
+    const fuzz_range = @as([*]u0, undefined)[0 .. self.fuzz + 1];
+
+    for (chars) |char, char_index| {
+        //const char_table = transition_table.charSlice(char_index);
+        const char_bitset = char.toBitset();
+
+        // Consume 1 character from the buffer and compute the set of possible resulting states
+        for (self.states.items) |state, state_index| {
+            const state_table = transition_table.stateSlice(char_index, state_index).items;
+            std.debug.assert(state_table.len == self.fuzz + 1);
+
+            const next_state_table = transition_table.stateSlice(char_index + 1, state_index).items;
+            std.debug.assert(next_state_table.len == self.fuzz + 1);
+
+            for (fuzz_range) |_, fuzz_index| {
+                next_state_table[fuzz_index] = self.matchTransition(char_bitset, state_table[fuzz_index]);
+            }
+
+            // For a fuzzy match, expand `next_state_table[fi+1]` by adding all states
+            // reachable from `state_table[f]` *but* with a 1-character change to `chars`
+            for (fuzz_range[1..]) |_, fuzz_index| {
+                if (state_table[fuzz_index].isEmpty()) {
+                    continue;
+                }
+
+                // Deletion
+                next_state_table[fuzz_index + 1].setUnion(state_table[fuzz_index]);
+
+                // Change
+                const change_set = self.matchTransition(self.letters_bitset, state_table[fuzz_index]);
+                next_state_table[fuzz_index + 1].setUnion(change_set);
+
+                // Insertion
+                const insertion_set = self.matchTransition(char_bitset, change_set);
+                next_state_table[fuzz_index + 1].setUnion(insertion_set);
+            }
+        }
+    }
 }
 
 pub fn matchPartial(self: *Self, input: []const Char, initial_state: State.Index, state_sets: []State.Set) void {

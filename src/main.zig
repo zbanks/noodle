@@ -1,7 +1,6 @@
 const std = @import("std");
 const nx = @import("nx.zig");
 const Char = @import("char.zig").Char;
-const Trie = @import("Trie.zig");
 const log = std.log;
 
 pub const log_level: std.log.Level = .info;
@@ -37,5 +36,6 @@ pub fn main() !void {
     }
 
     dt = timer.read();
+    // ~265-280ms
     std.debug.print("results: {} in {}ns ({} ms)\n", .{ matcher.match_count, dt, dt / 1_000_000 });
 }

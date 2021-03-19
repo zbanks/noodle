@@ -16,65 +16,17 @@ wordlist: []*const Word,
 output_buffer: [1024]u8,
 
 const MatchCache = struct {
-    const TransitionsSet = struct {
-        items: []Expression.State.Set,
-
-        fn init(size: usize, allocator: *std.mem.Allocator) !TransitionsSet {
-            std.debug.assert(size > 0);
-            var self = TransitionsSet{ .items = try allocator.alloc(Expression.State.Set, size) };
-            self.clear();
-            return self;
-        }
-
-        fn clear(self: *TransitionsSet) void {
-            for (self.items) |*t| {
-                t.* = Expression.State.Set.initEmpty();
-            }
-        }
-
-        fn free(self: *TransitionsSet, allocator: *std.mem.Allocator) void {
-            allocator.free(self.items);
-        }
-
-        fn hash(self: TransitionsSet) u32 {
-            var hasher = std.hash.Wyhash.init(0);
-            std.hash.autoHashStrat(&hasher, self, .Deep);
-            return @truncate(u32, hasher.final());
-        }
-
-        fn eql(a: TransitionsSet, b: TransitionsSet) bool {
-            std.debug.assert(a.items.len == b.items.len);
-            for (a.items) |x, i| {
-                if (!std.meta.eql(x, b.items[i])) {
-                    return false;
-                }
-            }
-            return true;
-            //return std.mem.eql(Expression.State.Set, a, b);
-        }
-
-        fn slice(self: TransitionsSet, width: usize, index: usize) []Expression.State.Set {
-            const i = index * width;
-            return self.items[i .. i + width];
-        }
-    };
-
     const CacheClass = struct {
         words: std.ArrayList(*const Word),
         nonnull_transitions: Expression.State.Set,
-        transitions: TransitionsSet,
-        transitions_width: usize,
+        transitions: Expression.TransitionTable,
         allocator: *std.mem.Allocator,
 
         fn init(expression: *const Expression, allocator: *std.mem.Allocator) !CacheClass {
-            const transitions_width = expression.fuzz + 1;
-            const transitions_size = expression.states.items.len * (expression.fuzz + 1);
-
             return CacheClass{
                 .words = std.ArrayList(*const Word).init(allocator),
                 .nonnull_transitions = Expression.State.Set.initEmpty(),
-                .transitions = try TransitionsSet.init(transitions_size, allocator),
-                .transitions_width = transitions_width,
+                .transitions = try Expression.TransitionTable.init(1, expression.states.items.len, expression.fuzz + 1, allocator),
                 .allocator = allocator,
             };
         }
@@ -85,11 +37,11 @@ const MatchCache = struct {
         }
 
         fn transitionsSlice(self: CacheClass, index: usize) []Expression.State.Set {
-            return self.transitions.slice(self.transitions_width, index);
+            return self.transitions.stateSlice(0, index).items;
         }
     };
 
-    const ClassesHashMap = std.array_hash_map.ArrayHashMap(TransitionsSet, CacheClass, TransitionsSet.hash, TransitionsSet.eql, false);
+    const ClassesHashMap = std.array_hash_map.ArrayHashMap(Expression.TransitionTable, CacheClass, Expression.TransitionTable.hash, Expression.TransitionTable.eql, false);
 
     classes: ClassesHashMap,
     //classes: []CacheClass,
@@ -126,21 +78,33 @@ const MatchCache = struct {
         var empty_class = try CacheClass.init(expression, allocator);
         try self.classes.put(empty_class.transitions, empty_class);
 
-        var temp_class = try CacheClass.init(expression, allocator);
-        defer temp_class.deinit();
+        var word_len_max: usize = 1;
+        for (wordlist) |word| {
+            word_len_max = std.math.max(word_len_max, word.chars.len + 1);
+        }
+
+        var transition_table = try Expression.TransitionTable.init(word_len_max, expression.states.items.len, expression.fuzz + 1, allocator);
+        defer transition_table.free(allocator);
+
+        var previous_chars: []const Char = &[0]Char{};
 
         for (wordlist) |word, w| {
             // TODO: This is O(n^2)ish, could probably be closer to O(n)ish
-            temp_class.transitions.clear();
-            for (expression.states.items) |state, i| {
-                expression.matchPartial(word.chars, @intCast(Expression.State.Index, i), temp_class.transitionsSlice(i));
-            }
+            expression.initTransitionTable(transition_table);
+            expression.fillTransitionTable(word.chars, transition_table);
+            //for (expression.states.items) |state, i| {
+            //    expression.matchPartial(word.chars, @intCast(Expression.State.Index, i), temp_class.transitionsSlice(i));
+            //}
+            previous_chars = word.chars;
 
-            var result = try self.classes.getOrPut(temp_class.transitions);
+            const word_transitions = transition_table.charSlice(word.chars.len);
+
+            var result = try self.classes.getOrPut(word_transitions);
             if (!result.found_existing) {
                 result.entry.value = try CacheClass.init(expression, allocator);
                 var class = &result.entry.value;
-                std.mem.copy(Expression.State.Set, class.transitions.items, temp_class.transitions.items);
+                std.debug.assert(class.transitions.items.len == word_transitions.items.len);
+                std.mem.copy(Expression.State.Set, class.transitions.items, word_transitions.items);
                 result.entry.key = class.transitions;
 
                 for (expression.states.items) |state, i| {
@@ -152,6 +116,8 @@ const MatchCache = struct {
                 const c = self.classes.count();
                 if (c < 20) {
                     log.info("{}: nonnull: {a}: {s}", .{ c - 1, class.nonnull_transitions, word.text });
+                    //log.info("{a}", .{transition_table.charSlice(0)});
+                    //log.info("{a}", .{word_transitions});
                 }
             }
             try result.entry.value.words.append(word);
@@ -207,7 +173,7 @@ const MatchCache = struct {
 const Layer = struct {
     wi: usize,
     stem: *const Word,
-    states: MatchCache.TransitionsSet,
+    states: Expression.TransitionTable,
 };
 
 pub fn init(expressions: []*Expression, wordlist: Wordlist, words_max: usize, allocator: *std.mem.Allocator) !@This() {
@@ -237,12 +203,13 @@ pub fn init(expressions: []*Expression, wordlist: Wordlist, words_max: usize, al
     errdefer for (layers.items) |*layer| layer.states.free(allocator);
     var l: usize = 0;
     while (l < layers.capacity) : (l += 1) {
-        layers.addOneAssumeCapacity().states = try MatchCache.TransitionsSet.init(caches.items.len * (fuzz_max + 1), allocator);
+        layers.addOneAssumeCapacity().states = try Expression.TransitionTable.init(1, caches.items.len, fuzz_max + 1, allocator);
     }
 
     layers.items[0].states.clear();
     for (expressions) |expr, i| {
-        expr.matchPartial(&.{}, 0, layers.items[0].states.slice(fuzz_max + 1, i));
+        expr.initTransitionTable(layers.items[0].states.stateSlice(0, i));
+        //expr.matchPartial(&.{}, 0, layers.items[0].states.stateSlice(fuzz_max + 1, i));
     }
     layers.items[0].wi = 0;
 
@@ -294,8 +261,8 @@ pub fn match(self: *@This()) ?[]const u8 {
                     break :match; // non-match
                 }
 
-                var end_ss = self.layers[self.index + 1].states.slice(self.fuzz_max + 1, c)[0..(cache.expression.fuzz + 1)];
-                var states = layer.states.slice(self.fuzz_max + 1, c)[0..(cache.expression.fuzz + 1)];
+                var end_ss = self.layers[self.index + 1].states.stateSlice(0, c).items[0..(cache.expression.fuzz + 1)];
+                var states = layer.states.stateSlice(0, c).items[0..(cache.expression.fuzz + 1)];
 
                 for (end_ss) |*e| {
                     e.* = Expression.State.Set.initEmpty();
