@@ -42,6 +42,8 @@ pub const State = struct {
 };
 
 fn StateSet(comptime num_states: comptime_int) type {
+    const BitSet = std.bit_set.StaticBitSet(num_states);
+    const is_array_bitset = @hasField(BitSet, "masks");
     return struct {
         // TODO: Size at compile time, based on desired max # of states
         bitset: BitSet,
@@ -50,7 +52,6 @@ fn StateSet(comptime num_states: comptime_int) type {
         //pub const Index = std.math.IntFittingRange(0, std.math.max(num_states - 1, std.math.maxInt(u32)));
         pub const Index = std.math.IntFittingRange(0, num_states - 1);
         //pub const Index = u32;
-        const BitSet = std.bit_set.StaticBitSet(num_states);
         const Set = @This();
 
         pub const nonempty = num_states - 1;
@@ -69,7 +70,9 @@ fn StateSet(comptime num_states: comptime_int) type {
 
         /// Adds a specific bit to the bit set
         pub fn set(self: *Set, index: usize) void {
-            self.bitset.set(nonempty);
+            if (is_array_bitset) {
+                self.bitset.set(nonempty);
+            }
             self.bitset.set(index);
         }
 
@@ -78,6 +81,21 @@ fn StateSet(comptime num_states: comptime_int) type {
         /// set if the corresponding bits were set in either input.
         pub fn setUnion(self: *Set, other: Set) void {
             return self.bitset.setUnion(other.bitset);
+        }
+
+        pub fn setDifference(self: *Set, other: Set) void {
+            if (is_array_bitset) {
+                var empty: bool = true;
+                for (self.bitset.masks) |*mask, i| {
+                    mask.* &= ~other.bitset.masks[i];
+                    empty = empty and mask.* == 0;
+                }
+                if (!empty) {
+                    self.bitset.set(nonempty);
+                }
+            } else {
+                self.bitset.mask &= ~other.bitset.mask;
+            }
         }
 
         /// Iterates through the items in the set, according to the options.
@@ -89,7 +107,7 @@ fn StateSet(comptime num_states: comptime_int) type {
         }
 
         pub fn eql(self: Set, other: Set) bool {
-            if (@hasField(BitSet, "masks")) {
+            if (is_array_bitset) {
                 if (self.isEmpty() and other.isEmpty()) {
                     return true;
                 }
@@ -100,7 +118,11 @@ fn StateSet(comptime num_states: comptime_int) type {
         }
 
         pub fn isEmpty(self: @This()) bool {
-            return !self.bitset.isSet(nonempty);
+            if (is_array_bitset) {
+                return !self.bitset.isSet(nonempty);
+            } else {
+                return self.bitset.mask == 0;
+            }
         }
 
         pub fn format(self: @This(), comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -150,7 +172,7 @@ pub const TransitionTable = struct {
         }
     }
 
-    pub fn free(self: *TransitionTable, allocator: *std.mem.Allocator) void {
+    pub fn free(self: TransitionTable, allocator: *std.mem.Allocator) void {
         allocator.free(self.items);
     }
 
@@ -297,7 +319,7 @@ pub fn init(expression: []const u8, fuzz: usize, allocator: *std.mem.Allocator) 
     return self;
 }
 
-pub fn deinit(self: *Self) void {
+pub fn deinit(self: Self) void {
     self.allocator.free(self.expression);
     self.allocator.free(self.next_state_sets);
     self.states.deinit();
@@ -563,12 +585,11 @@ pub fn fillTransitionTable(self: *Self, chars: []const Char, transition_table: T
     const fuzz_range = @as([*]u0, undefined)[0 .. self.fuzz + 1];
 
     for (chars) |char, char_index| {
-        //const char_table = transition_table.charSlice(char_index);
         const char_bitset = char.toBitset();
         var all_states_are_empty = true;
 
         // Consume 1 character from the buffer and compute the set of possible resulting states
-        for (self.states.items) |state, state_index| {
+        for (self.states.items) |_, state_index| {
             const state_table = transition_table.stateSlice(char_index, state_index).items;
             std.debug.assert(state_table.len == self.fuzz + 1);
 
@@ -591,6 +612,7 @@ pub fn fillTransitionTable(self: *Self, chars: []const Char, transition_table: T
 
             // For a fuzzy match, expand `next_state_table[fi+1]` by adding all states
             // reachable from `state_table[f]` *but* with a 1-character change to `chars`
+            var fuzz_superset: State.Set = next_state_table[0];
             for (fuzz_range[1..]) |_, fuzz_index| {
                 if (state_table[fuzz_index].isEmpty()) {
                     continue;
@@ -606,6 +628,10 @@ pub fn fillTransitionTable(self: *Self, chars: []const Char, transition_table: T
                 // Insertion
                 const insertion_set = self.matchTransition(char_bitset, change_set);
                 next_state_table[fuzz_index + 1].setUnion(insertion_set);
+
+                // Optimization: discard the states we can get to with less fuzz
+                next_state_table[fuzz_index + 1].setDifference(fuzz_superset);
+                fuzz_superset.setUnion(next_state_table[fuzz_index + 1]);
             }
         }
         if (all_states_are_empty) {

@@ -18,14 +18,12 @@ output_buffer: [1024]u8,
 const MatchCache = struct {
     const CacheClass = struct {
         words: std.ArrayList(*const Word),
-        nonnull_transitions: Expression.State.Set,
-        transitions: Expression.TransitionTable,
+        transitions: Expression.TransitionTable, // set char=1; only using StateSet[from_state][fuzz] -> to_state
         allocator: *std.mem.Allocator,
 
         fn init(expression: *const Expression, allocator: *std.mem.Allocator) !CacheClass {
             return CacheClass{
                 .words = std.ArrayList(*const Word).init(allocator),
-                .nonnull_transitions = Expression.State.Set.initEmpty(),
                 .transitions = try Expression.TransitionTable.init(1, expression.states.items.len, expression.fuzz + 1, allocator),
                 .allocator = allocator,
             };
@@ -33,7 +31,7 @@ const MatchCache = struct {
 
         fn deinit(self: CacheClass) void {
             self.words.deinit();
-            self.allocator.free(self.transitions.items);
+            self.transitions.free(self.allocator);
         }
 
         fn transitionsSlice(self: CacheClass, index: usize) []Expression.State.Set {
@@ -44,8 +42,6 @@ const MatchCache = struct {
     const ClassesHashMap = std.array_hash_map.ArrayHashMap(Expression.TransitionTable, CacheClass, Expression.TransitionTable.hash, Expression.TransitionTable.eql, false);
 
     classes: ClassesHashMap,
-    //classes: []CacheClass,
-    //num_classes: usize,
     word_classes: []usize,
     nonnull_words: []*const Word,
     expression: *Expression,
@@ -73,6 +69,9 @@ const MatchCache = struct {
             .wordlist = wordlist,
         };
         errdefer self.classes.deinit();
+
+        // Preallocate a bunch of space (but not too much)
+        try self.classes.ensureCapacity(wordlist.len / 4);
 
         // The first class is always the empty class
         var empty_class = try CacheClass.init(expression, allocator);
@@ -121,17 +120,9 @@ const MatchCache = struct {
                 std.mem.copy(Expression.State.Set, class.transitions.items, word_transitions.items);
                 result.entry.key = class.transitions;
 
-                for (expression.states.items) |state, i| {
-                    if (!class.transitionsSlice(i)[0].isEmpty()) {
-                        class.nonnull_transitions.set(i);
-                    }
-                }
-
                 const c = self.classes.count();
                 if (c < 20) {
-                    log.info("{}: nonnull: {a}: {s}", .{ c - 1, class.nonnull_transitions, word.text });
-                    //log.info("{a}", .{transition_table.charSlice(0)});
-                    //log.info("{a}", .{word_transitions});
+                    log.info("{}: {s}", .{ c - 1, word.text });
                 }
             }
             try result.entry.value.words.append(word);
@@ -146,8 +137,8 @@ const MatchCache = struct {
 
         const num_classes = self.classes.count();
         const dt = timer.read();
-        std.debug.print("prefixed={}, matched={}, total_len={} (saved {}/word on prefix and {}/word on early term)\n", .{ total_prefixed, total_matched, total_length, total_prefixed / wordlist.len, (total_length - total_matched) / wordlist.len });
-        std.debug.print("{} distinct classes with {} words in {}ms ({} ns/word)\n", .{ num_classes, self.nonnull_words.len, dt / 1_000_000, dt / wordlist.len });
+        std.debug.print("prefixed={}, matched={}, elided={} (saved {}%/word on prefix and {}%/word on early term)\n", .{ total_prefixed, total_matched - total_prefixed, total_length - total_matched, 100 * total_prefixed / wordlist.len, 100 * (total_length - total_matched) / wordlist.len });
+        std.debug.print("{} distinct classes with {}/{} ({}%) words in {}ms ({} ns/word)\n", .{ num_classes, self.nonnull_words.len, wordlist.len, 100 * self.nonnull_words.len / wordlist.len, dt / 1_000_000, dt / wordlist.len });
         //std.debug.print("{} input words; {} nonmatch\n", .{wordlist.words.items.len, self.classes[0].words.items.len});
 
         return self;
@@ -188,7 +179,7 @@ const MatchCache = struct {
 const Layer = struct {
     wi: usize,
     stem: *const Word,
-    states: Expression.TransitionTable,
+    states: Expression.TransitionTable, // set char=1; using "expression" for state: StateSet[expression][fuzz] -> possible_values
 };
 
 pub fn init(expressions: []*Expression, wordlist: Wordlist, words_max: usize, allocator: *std.mem.Allocator) !@This() {
@@ -335,6 +326,13 @@ pub fn match(self: *@This()) ?[]const u8 {
                 if (!any_end_match) {
                     all_end_match = false;
                 }
+
+                // Optimization: if we can get to state S within (f-1) fuzz, we don't need to also need to try from (f) fuzz
+                // (In practice, doing this at the fillTransitionTable step catches most of this)
+                //var f: usize = cache.expression.fuzz;
+                //while (f >= 1) : (f -= 1) {
+                //    end_ss[f].setDifference(end_ss[f-1]);
+                //}
             }
 
             if (no_match) {
