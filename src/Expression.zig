@@ -283,9 +283,10 @@ pub fn init(expression: []const u8, fuzz: usize, allocator: *std.mem.Allocator) 
     // Calculate epsilon transitions
     for (self.states.items) |*s, i| {
         var next_ss = s.epsilon_states;
-        for (s.branches) |b| {
-            if ((Char.epsilon.toBitset() & b.char_bitset) != 0) {
-                next_ss.set(b.next_state);
+        for (s.branches) |branch, bi| {
+            std.debug.assert(bi == 0 or branch.char_bitset == 0 or branch.char_bitset == Char.epsilon.toBitset());
+            if ((Char.epsilon.toBitset() & branch.char_bitset) != 0) {
+                next_ss.set(branch.next_state);
             }
         }
         while (true) {
@@ -541,6 +542,28 @@ fn compile_subexpression(self: *Self, subexpression: []const u8) CompileError!us
                     .char_bitset = Char.epsilon.toBitset(),
                 };
             },
+            '?' => {
+                if (previous_initial_state == null) {
+                    log.err("parse error: '{}' without preceeding group", .{c});
+                    return error.BareModifier;
+                }
+
+                var epsilon_s: *State = try self.insertState(previous_initial_state.?);
+
+                previous_initial_state.? += 1;
+                if (subexpression_final_state != null and previous_initial_state.? < subexpression_final_state.?) {
+                    subexpression_final_state.? += 1;
+                }
+
+                epsilon_s.branches[0] = .{
+                    .next_state = @intCast(State.Index, previous_initial_state.?),
+                    .char_bitset = Char.epsilon.toBitset(),
+                };
+                epsilon_s.branches[1] = .{
+                    .next_state = @intCast(State.Index, self.states.items.len),
+                    .char_bitset = Char.epsilon.toBitset(),
+                };
+            },
             // TODO: +, ?, |, {,
             else => {
                 log.err("Invalid character in noodle expression: '{c}'\n", .{c});
@@ -657,7 +680,9 @@ fn matchTransition(self: *Self, char_bitset: Char.Bitset, start_states: State.Se
 
             // TODO: We may be able to guarantee that only branches[0] is used?
             // (May need to refactor '_' handling)
-            for (state.branches) |b| {
+            //for (state.branches) |b| {
+            const b = state.branches[0];
+            {
                 if ((char_bitset & b.char_bitset) != 0) {
                     end_states.set(b.next_state);
 

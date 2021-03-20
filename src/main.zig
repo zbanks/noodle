@@ -21,7 +21,7 @@ pub fn main() !void {
     try n.printNfa();
     _ = n;
 
-    var n2 = try nx.Expression.init("express+[^i].*", 0, &gpa.allocator);
+    var n2 = try nx.Expression.init("ex?z?press+[^i].*", 0, &gpa.allocator);
     //var n2 = try nx.Expression.init("expressiontest", 0, &gpa.allocator);
     defer n2.deinit();
     try n2.printNfa();
