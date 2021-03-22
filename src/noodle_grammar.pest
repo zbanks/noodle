@@ -1,0 +1,39 @@
+WHITESPACE = _{ " " }
+COMMENT = _{ "$"+ }
+
+number = { ASCII_DIGIT+ }
+flag = { "!" ~ ("_" | "'" | number) }
+
+punctuation = _{ "'" }
+whitespace = _{ "_" }
+literal = { ASCII_ALPHA | punctuation | whitespace }
+
+dot = { "." }
+letter_range = { ASCII_ALPHA ~ "-" ~ ASCII_ALPHA }
+invert = { "^" }
+class = { "[" ~ invert? ~ (letter_range | literal)+ ~ "]" }
+
+sequence = { (repeat | term)+ }
+alternatives = { sequence ~ ("|" ~ sequence)+ }
+subexpression = _{ (alternatives | sequence) }
+group = _{ "(" ~ subexpression ~ ")" }
+term = _{ class | dot | group | literal }
+
+repeat = _{
+    repeat_optional |
+    repeat_any |
+    repeat_oneormore |
+    repeat_atmost |
+    repeat_exact |
+    repeat_atleast |
+    repeat_range
+}
+repeat_optional = { term ~ "?" }
+repeat_any = { term ~ "*" }
+repeat_oneormore = { term ~ "+" }
+repeat_atmost = { term ~ "{," ~ number ~ "}" }
+repeat_exact = { term ~ "{" ~ number ~ "}" }
+repeat_atleast = { term ~ "{" ~ number ~ ",}" }
+repeat_range = { term ~ "{" ~ number ~ "," ~ number ~ "}" }
+
+expression = { SOI ~ subexpression ~ (flag)* ~ EOI }
