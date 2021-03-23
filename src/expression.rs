@@ -350,6 +350,7 @@ impl Expression {
         end_states
     }
 }
+
 impl fmt::Debug for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Expression: \"{}\"", self.text)?;

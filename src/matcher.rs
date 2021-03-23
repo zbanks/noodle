@@ -2,7 +2,9 @@ use crate::bitset::Set;
 use crate::expression::{Expression, TransitionGroup};
 use crate::words::*;
 use indexmap::IndexMap;
+use std::cell::RefCell;
 use std::fmt;
+use std::rc::Rc;
 use std::time;
 
 #[derive(Debug)]
@@ -13,104 +15,148 @@ struct CacheClass {
 #[derive(Debug)]
 struct Cache<'expr, 'word> {
     expression: &'expr Expression,
-    nonnull_words: Vec<&'word Word>,
+    nonnull_words: Rc<RefCell<Vec<&'word Word>>>,
     classes: IndexMap<TransitionGroup, CacheClass>,
     word_classes: Vec<usize>,
+
+    word_len_max: usize,
+    index: usize,
+    wordlist: Rc<RefCell<Vec<&'word Word>>>,
+    transition_table: Vec<TransitionGroup>,
+    previous_chars: &'word [Char],
+
+    total_prefixed: usize,
+    total_matched: usize,
+    total_length: usize,
+}
+
+impl<'word> Iterator for Cache<'_, 'word> {
+    type Item = &'word Word;
+    fn next(&mut self) -> Option<&'word Word> {
+        self.next_match()
+    }
 }
 
 impl<'expr, 'word> Cache<'expr, 'word> {
-    fn new(expression: &'expr Expression, wordlist: &[&'word Word]) -> Self {
+    fn new(
+        expression: &'expr Expression,
+        wordlist: Rc<RefCell<Vec<&'word Word>>>,
+        word_len_max: usize,
+    ) -> Self {
         let start = time::Instant::now();
-        let mut nonnull_words = vec![];
-        // Preallocate a bunch of space (but not too much)
+        let nonnull_words = Rc::new(RefCell::new(vec![]));
         let mut classes = IndexMap::new();
-        let mut word_classes = vec![];
+        let word_classes = vec![];
 
         let transition_group_new =
             || TransitionGroup::new(expression.states_len(), expression.fuzz + 1);
 
         // The first class (0) is always the "empty" class
-        let rc = classes.insert_full(transition_group_new(), CacheClass { n_words: 0 });
-        //assert!(rc.1);
+        classes.insert_full(transition_group_new(), CacheClass { n_words: 0 });
 
-        let word_len_max = 1 + wordlist.iter().map(|w| w.chars.len()).max().unwrap_or(0);
-
-        let mut transition_table = vec![transition_group_new(); word_len_max];
-
-        let mut previous_chars: &[Char] = &[];
-        let mut total_prefixed: usize = 0;
-        let mut total_matched: usize = 0;
-        let mut total_length: usize = 0;
-
-        for &word in wordlist {
-            let word_len = word.chars.len();
-            let mut si: usize = 0;
-            while si < word_len && si < previous_chars.len() && word.chars[si] == previous_chars[si]
-            {
-                si += 1;
-            }
-
-            let prefixed_table = &mut transition_table[si..];
-            if si == 0 {
-                expression.init_transition_table(&mut prefixed_table[0]);
-            }
-            let valid_len =
-                expression.fill_transition_table(&word.chars[si..], prefixed_table) + si;
-
-            total_prefixed += si;
-            total_matched += valid_len;
-            total_length += word_len;
-
-            previous_chars = &word.chars[0..valid_len];
-            if valid_len < word_len {
-                continue;
-            }
-            assert!(valid_len == word_len);
-
-            let entry = classes
-                .entry(transition_table[word_len].clone())
-                .and_modify(|v| v.n_words += 1);
-            if entry.index() != 0 {
-                nonnull_words.push(word);
-                word_classes.push(entry.index());
-            }
-            entry.or_insert(CacheClass { n_words: 1 });
-        }
-
-        let duration = start.elapsed();
-        println!(
-            "prefixed={}, matched={}, elided={}",
-            total_prefixed,
-            total_matched - total_prefixed,
-            total_length - total_matched
-        );
-        println!(
-            "{} distinct classes with {}/{} words in {:?}",
-            classes.len(),
-            nonnull_words.len(),
-            wordlist.len(),
-            duration
-        );
+        let transition_table = vec![transition_group_new(); word_len_max];
 
         Self {
             expression,
             nonnull_words,
             classes,
             word_classes,
+
+            word_len_max,
+            index: 0,
+            wordlist: wordlist,
+            transition_table: transition_table,
+            previous_chars: &[],
+
+            total_prefixed: 0,
+            total_matched: 0,
+            total_length: 0,
         }
     }
 
+    fn next_match(&mut self) -> Option<&'word Word> {
+        let wordlist = self.wordlist.borrow();
+        let mut nonnull_words = self.nonnull_words.borrow_mut();
+        while self.index < wordlist.len() {
+            let word = &wordlist[self.index];
+            self.index += 1;
+
+            let word_len = word.chars.len();
+            let mut si: usize = 0;
+            while si < word_len
+                && si < self.previous_chars.len()
+                && word.chars[si] == self.previous_chars[si]
+            {
+                si += 1;
+            }
+
+            let prefixed_table = &mut self.transition_table[si..];
+            if si == 0 {
+                self.expression
+                    .init_transition_table(&mut prefixed_table[0]);
+            }
+            let valid_len = self
+                .expression
+                .fill_transition_table(&word.chars[si..], prefixed_table)
+                + si;
+
+            self.total_prefixed += si;
+            self.total_matched += valid_len;
+            self.total_length += word_len;
+
+            self.previous_chars = &word.chars[0..valid_len];
+            if valid_len < word_len {
+                continue;
+            }
+            assert!(valid_len == word_len);
+
+            let entry = self
+                .classes
+                .entry(self.transition_table[word_len].clone())
+                .and_modify(|v| v.n_words += 1);
+            if entry.index() != 0 {
+                nonnull_words.push(word);
+                self.word_classes.push(entry.index());
+            }
+            entry.or_insert(CacheClass { n_words: 1 });
+
+            for fuzz_states in self.transition_table[word_len].slice(0) {
+                if fuzz_states.contains(self.expression.states_len() - 1) {
+                    //println!("one word match: {}", word);
+                    return Some(word);
+                }
+            }
+        }
+
+        None
+    }
+
     fn reduce_wordlist(&mut self, new_wordlist: &[&'word Word]) {
+        let mut nonnull_words = self.nonnull_words.borrow_mut();
+
+        println!(
+            "prefixed={}, matched={}, elided={}",
+            self.total_prefixed,
+            self.total_matched - self.total_prefixed,
+            self.total_length - self.total_matched
+        );
+        println!(
+            "{} distinct classes with {}/{} words",
+            self.classes.len(),
+            nonnull_words.len(),
+            self.wordlist.borrow().len(),
+        );
+
         let mut new_word_classes = vec![];
         let mut i: usize = 0;
-        for (&word, &class) in self.nonnull_words.iter().zip(self.word_classes.iter()) {
+        for (&word, &class) in nonnull_words.iter().zip(self.word_classes.iter()) {
             if i < new_wordlist.len() && *word == *new_wordlist[i] {
                 new_word_classes.push(class);
                 i += 1;
             }
         }
         assert!(i == new_wordlist.len());
-        self.nonnull_words.clear();
+        nonnull_words.clear();
         self.word_classes = new_word_classes;
         assert!(self.word_classes.len() == new_wordlist.len());
     }
@@ -137,8 +183,9 @@ pub struct Matcher<'expr, 'word> {
     //expressions: Vec<&'a Expression>,
     caches: Vec<Cache<'expr, 'word>>,
     layers: Vec<Layer<'word>>,
-    wordlist: Vec<&'word Word>,
+    wordlist: Rc<RefCell<Vec<&'word Word>>>,
     word_order: Vec<usize>,
+    single_matches: Vec<&'word Word>,
 
     //fuzz_max: usize,
     words_max: usize,
@@ -150,27 +197,55 @@ pub struct Matcher<'expr, 'word> {
 impl<'expr, 'word> Matcher<'expr, 'word> {
     pub fn new(
         expressions: &'expr [Expression],
-        wordlist: &'word [&'word Word],
+        wordlist: Rc<RefCell<Vec<&'word Word>>>,
         words_max: usize,
     ) -> Self {
         assert!(!expressions.is_empty());
+
+        let word_len_max = 1 + wordlist
+            .borrow()
+            .iter()
+            .map(|w| w.chars.len())
+            .max()
+            .unwrap_or(0);
 
         let mut caches = vec![];
         for expr in expressions {
             let words = caches
                 .last()
-                .map(|c: &Cache| c.nonnull_words.as_slice())
-                .unwrap_or(wordlist);
-            let cache = Cache::new(expr, words);
+                .map(|c: &Cache| c.nonnull_words.clone())
+                .unwrap_or(wordlist.clone());
+            let cache = Cache::new(expr, words, word_len_max);
             caches.push(cache);
         }
+
+        // Check for single-word matches
+        // TODO: Emit these as matches as they're calculated
+        let mut single_matches = vec![];
+        let (first_cache, remaining_caches) = caches.split_at_mut(1);
+        for word in &mut first_cache[0] {
+            let mut all_match = true;
+            for cache in remaining_caches.iter_mut() {
+                let last_word = cache.last();
+                all_match = all_match && (last_word == Some(word));
+            }
+            if all_match {
+                single_matches.push(word);
+            }
+        }
+
+        // Process the remaining words (even though they can't be single-word matches)
+        remaining_caches.iter_mut().for_each(|c| {
+            c.count();
+        });
+
         let (fixup_caches, last_cache) = caches.split_at_mut(expressions.len() - 1);
         let nonnull_wordlist = last_cache[0].nonnull_words.clone();
         fixup_caches
             .iter_mut()
-            .for_each(|c| c.reduce_wordlist(&nonnull_wordlist));
+            .for_each(|c| c.reduce_wordlist(&nonnull_wordlist.borrow()));
 
-        let mut word_order: Vec<usize> = (0..nonnull_wordlist.len()).collect();
+        let mut word_order: Vec<usize> = (0..nonnull_wordlist.borrow().len()).collect();
         word_order.sort_by_key(|&wi| {
             caches
                 .iter()
@@ -198,11 +273,17 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
             layers,
             wordlist: nonnull_wordlist,
             word_order,
+            single_matches,
             //fuzz_max,
             words_max,
             index: 0,
             match_count: 0,
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.index = 0;
+        self.match_count = 0;
     }
 
     fn format_output(&self) -> String {
@@ -214,81 +295,89 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
     }
 
     pub fn next_match(&mut self) -> Option<String> {
+        if let Some(word) = self.single_matches.pop() {
+            return Some(word.text.clone());
+        }
+
         let mut result = None;
         loop {
-            let (lower_layers, upper_layers) = self.layers.split_at_mut(self.index + 1);
-            let this_layer = &mut lower_layers[self.index];
-            let next_layer = &mut upper_layers[0];
-
             let mut no_match = false;
-            let mut all_end_match = true;
-            let mut all_no_advance = true;
-            let wi = self.word_order[this_layer.wi];
-            let word = self.wordlist[wi];
-            for (c, cache) in self.caches.iter().enumerate() {
-                if cache.word_classes[wi] == 0 {
-                    no_match = true;
-                    break;
-                }
+            {
+                let wordlist = self.wordlist.borrow();
+                let (lower_layers, upper_layers) = self.layers.split_at_mut(self.index + 1);
+                let this_layer = &mut lower_layers[self.index];
+                let next_layer = &mut upper_layers[0];
 
-                let fuzz_limit = cache.expression.fuzz + 1;
-                let end_ss = &mut next_layer.states.slice_mut(c)[0..fuzz_limit];
-                let states = &this_layer.states.slice(c)[0..fuzz_limit];
+                let mut all_end_match = true;
+                let mut all_no_advance = true;
+                //let wi = self.word_order[this_layer.wi];
+                let wi = this_layer.wi;
+                let word = wordlist[wi];
+                for (c, cache) in self.caches.iter().enumerate() {
+                    if cache.word_classes[wi] == 0 {
+                        no_match = true;
+                        break;
+                    }
 
-                end_ss.iter_mut().for_each(|e| e.clear());
+                    let fuzz_limit = cache.expression.fuzz + 1;
+                    let end_ss = &mut next_layer.states.slice_mut(c)[0..fuzz_limit];
+                    let states = &this_layer.states.slice(c)[0..fuzz_limit];
 
-                let class = cache.classes.get_index(cache.word_classes[wi]).unwrap().0;
+                    end_ss.iter_mut().for_each(|e| e.clear());
 
-                for (f, fuzz_states) in states.iter().enumerate() {
-                    for si in fuzz_states.ones() {
-                        let mut fd = 0;
-                        while f + fd < fuzz_limit {
-                            end_ss[f + fd].union_with(&class.slice(si)[fd]);
-                            fd += 1;
+                    let class = cache.classes.get_index(cache.word_classes[wi]).unwrap().0;
+
+                    for (f, fuzz_states) in states.iter().enumerate() {
+                        for si in fuzz_states.ones() {
+                            let mut fd = 0;
+                            while f + fd < fuzz_limit {
+                                end_ss[f + fd].union_with(&class.slice(si)[fd]);
+                                fd += 1;
+                            }
                         }
                     }
-                }
 
-                let mut all_empty = true;
-                let mut all_subset = true;
-                let mut any_end_match = false;
-                let success_index = cache.expression.states_len() - 1;
-                for (i, es) in end_ss.iter().enumerate() {
-                    if es.contains(success_index) {
-                        any_end_match = true;
-                        all_empty = false;
-                        all_subset = false;
-                    } else if !es.is_empty() {
-                        if !es.is_subset(&states[i]) {
+                    let mut all_empty = true;
+                    let mut all_subset = true;
+                    let mut any_end_match = false;
+                    let success_index = cache.expression.states_len() - 1;
+                    for (i, es) in end_ss.iter().enumerate() {
+                        if es.contains(success_index) {
+                            any_end_match = true;
+                            all_empty = false;
                             all_subset = false;
+                        } else if !es.is_empty() {
+                            if !es.is_subset(&states[i]) {
+                                all_subset = false;
+                            }
+                            all_empty = false;
                         }
-                        all_empty = false;
+                    }
+
+                    if all_empty {
+                        assert!(!any_end_match);
+                        no_match = true;
+                        break;
+                    }
+                    if !all_subset {
+                        all_no_advance = false;
+                    }
+                    if !any_end_match {
+                        all_end_match = false;
                     }
                 }
 
-                if all_empty {
-                    assert!(!any_end_match);
+                // Unclear if this optimization is worth it (even though it does help prevent .* blowouts)
+                if all_no_advance {
                     no_match = true;
-                    break;
                 }
-                if !all_subset {
-                    all_no_advance = false;
-                }
-                if !any_end_match {
-                    all_end_match = false;
-                }
-            }
 
-            // Unclear if this optimization is worth it (even though it does help prevent .* blowouts)
-            if all_no_advance {
-                no_match = true;
-            }
-
-            if !no_match {
-                this_layer.stem = Some(word);
-                if all_end_match {
-                    result = Some(self.format_output());
-                    self.match_count += 1;
+                if !no_match {
+                    this_layer.stem = Some(word);
+                    if all_end_match && self.index >= 1 {
+                        result = Some(self.format_output());
+                        self.match_count += 1;
+                    }
                 }
             }
 
@@ -305,7 +394,7 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
         loop {
             if !pm {
                 self.layers[self.index].wi += 1;
-                if self.layers[self.index].wi >= self.wordlist.len() {
+                if self.layers[self.index].wi >= self.wordlist.borrow().len() {
                     if self.index == 0 {
                         println!(
                             "Matcher done with {} results (up to {} words)",
@@ -328,6 +417,14 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
             }
         }
         false
+    }
+}
+
+impl Iterator for Matcher<'_, '_> {
+    type Item = String;
+
+    fn next(&mut self) -> Option<String> {
+        self.next_match()
     }
 }
 
