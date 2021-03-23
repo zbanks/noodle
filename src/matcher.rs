@@ -1,15 +1,20 @@
 use crate::bitset::Set;
 use crate::expression::{Expression, TransitionGroup};
 use crate::words::*;
-use indexmap::IndexSet;
+use indexmap::IndexMap;
 use std::fmt;
 use std::time;
+
+#[derive(Debug)]
+struct CacheClass {
+    n_words: usize,
+}
 
 #[derive(Debug)]
 struct Cache<'expr, 'word> {
     expression: &'expr Expression,
     nonnull_words: Vec<&'word Word>,
-    classes: IndexSet<TransitionGroup>,
+    classes: IndexMap<TransitionGroup, CacheClass>,
     word_classes: Vec<usize>,
 }
 
@@ -18,15 +23,15 @@ impl<'expr, 'word> Cache<'expr, 'word> {
         let start = time::Instant::now();
         let mut nonnull_words = vec![];
         // Preallocate a bunch of space (but not too much)
-        let mut classes = IndexSet::new();
+        let mut classes = IndexMap::new();
         let mut word_classes = vec![];
 
         let transition_group_new =
             || TransitionGroup::new(expression.states_len(), expression.fuzz + 1);
 
         // The first class (0) is always the "empty" class
-        let rc = classes.insert_full(transition_group_new());
-        assert!(rc == (0, true));
+        let rc = classes.insert_full(transition_group_new(), CacheClass { n_words: 0 });
+        //assert!(rc.1);
 
         let word_len_max = 1 + wordlist.iter().map(|w| w.chars.len()).max().unwrap_or(0);
 
@@ -62,11 +67,14 @@ impl<'expr, 'word> Cache<'expr, 'word> {
             }
             assert!(valid_len == word_len);
 
-            let (index, new) = classes.insert_full(transition_table[word_len].clone());
-            if index != 0 {
+            let entry = classes
+                .entry(transition_table[word_len].clone())
+                .and_modify(|v| v.n_words += 1);
+            if entry.index() != 0 {
                 nonnull_words.push(word);
-                word_classes.push(index);
+                word_classes.push(entry.index());
             }
+            entry.or_insert(CacheClass { n_words: 1 });
         }
 
         let duration = start.elapsed();
@@ -130,6 +138,7 @@ pub struct Matcher<'expr, 'word> {
     caches: Vec<Cache<'expr, 'word>>,
     layers: Vec<Layer<'word>>,
     wordlist: Vec<&'word Word>,
+    word_order: Vec<usize>,
 
     //fuzz_max: usize,
     words_max: usize,
@@ -161,6 +170,20 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
             .iter_mut()
             .for_each(|c| c.reduce_wordlist(&nonnull_wordlist));
 
+        let mut word_order: Vec<usize> = (0..nonnull_wordlist.len()).collect();
+        word_order.sort_by_key(|&wi| {
+            caches
+                .iter()
+                .map(|expr| {
+                    expr.classes
+                        .get_index(expr.word_classes[wi])
+                        .unwrap()
+                        .1
+                        .n_words
+                })
+                .min()
+        });
+
         let fuzz_max = expressions.iter().map(|expr| expr.fuzz).max().unwrap_or(0);
         let mut layers: Vec<Layer<'word>> = (0..=words_max)
             .map(|_| Layer::new(expressions.len(), fuzz_max + 1))
@@ -174,6 +197,7 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
             caches,
             layers,
             wordlist: nonnull_wordlist,
+            word_order,
             //fuzz_max,
             words_max,
             index: 0,
@@ -198,9 +222,11 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
 
             let mut no_match = false;
             let mut all_end_match = true;
-            let word = self.wordlist[this_layer.wi];
+            let mut all_no_advance = true;
+            let wi = self.word_order[this_layer.wi];
+            let word = self.wordlist[wi];
             for (c, cache) in self.caches.iter().enumerate() {
-                if cache.word_classes[this_layer.wi] == 0 {
+                if cache.word_classes[wi] == 0 {
                     no_match = true;
                     break;
                 }
@@ -211,17 +237,10 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
 
                 end_ss.iter_mut().for_each(|e| e.clear());
 
-                let class = cache
-                    .classes
-                    .get_index(cache.word_classes[this_layer.wi])
-                    .unwrap();
+                let class = cache.classes.get_index(cache.word_classes[wi]).unwrap().0;
 
                 for (f, fuzz_states) in states.iter().enumerate() {
                     for si in fuzz_states.ones() {
-                        //for si in 0..16 {
-                        if !fuzz_states.contains(si) {
-                            continue;
-                        }
                         let mut fd = 0;
                         while f + fd < fuzz_limit {
                             end_ss[f + fd].union_with(&class.slice(si)[fd]);
@@ -231,13 +250,18 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
                 }
 
                 let mut all_empty = true;
+                let mut all_subset = true;
                 let mut any_end_match = false;
                 let success_index = cache.expression.states_len() - 1;
-                for es in end_ss {
+                for (i, es) in end_ss.iter().enumerate() {
                     if es.contains(success_index) {
                         any_end_match = true;
                         all_empty = false;
+                        all_subset = false;
                     } else if !es.is_empty() {
+                        if !es.is_subset(&states[i]) {
+                            all_subset = false;
+                        }
                         all_empty = false;
                     }
                 }
@@ -247,9 +271,17 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
                     no_match = true;
                     break;
                 }
+                if !all_subset {
+                    all_no_advance = false;
+                }
                 if !any_end_match {
                     all_end_match = false;
                 }
+            }
+
+            // Unclear if this optimization is worth it (even though it does help prevent .* blowouts)
+            if all_no_advance {
+                no_match = true;
             }
 
             if !no_match {

@@ -8,6 +8,8 @@ I wanted to collect my thoughts into a retrospective of sorts, even though the p
 This document is *not* meant to be a head-to-head comparison of C, Zig, and Rust.
 Each language absolutely has its pros & cons, and this one project is not representative of the wide variety of contexts programming can exist in.
 
+**Note:** This document is still a work-in-progress; and is not complete. 
+
 Goals & Assumptions
 -------------------
 

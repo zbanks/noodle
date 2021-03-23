@@ -21,7 +21,7 @@
 //pub type BitSet = FixedBitSet;
 
 // XXX: Using a u64 vs. FixedBitSet is about ~2x faster for the test I was running,
-// which had a bitset size of 16. 
+// which had a bitset size of 16.
 // A u64 is not suitable for general purposes, but it does show how much
 // overhead FixedBitSet has for small cardinalities.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -40,6 +40,7 @@ pub trait Set {
     fn insert(&mut self, index: usize);
     fn clear(&mut self);
     fn contains(&self, index: usize) -> bool;
+    fn is_subset(&self, other: &Self) -> bool;
     fn union_with(&mut self, other: &Self);
     fn difference_with(&mut self, other: &Self);
     fn ones(&self) -> BitSetIter;
@@ -63,6 +64,9 @@ impl Set for BitSet {
     }
     fn contains(&self, index: usize) -> bool {
         (self.b & (1 << index)) != 0
+    }
+    fn is_subset(&self, other: &Self) -> bool {
+        self.b | other.b == other.b
     }
     fn union_with(&mut self, other: &Self) {
         self.b |= other.b
