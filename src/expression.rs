@@ -1,10 +1,16 @@
-use crate::bitset::{BitSet, Set};
+use crate::bitset::{BitSet, FixedBitSet, HashBitSet, Set, SmallBitSet};
 use crate::parser;
 use crate::words::{Char, CharBitset};
 use std::fmt;
 
+const MAX_SET_SIZE: usize = 64;
+
+//pub type StateBitSet = BitSet; // 320ms (only 64 bits)
+//pub type StateBitSet = SmallBitSet; // [u64; 1]=495ms; [u32; 1]=520ms; [u64; 4]=495ms; [u64; 4]=510ms
+pub type StateBitSet = FixedBitSet; // 710ms
+                                    //pub type StateBitSet = HashBitSet; // 2300ms (!!!)
+
 pub type Result<T> = std::result::Result<T, ()>;
-pub type StateBitSet = BitSet;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct TransitionGroup {
@@ -13,8 +19,8 @@ pub struct TransitionGroup {
 }
 
 impl TransitionGroup {
-    pub fn new(outer_size: usize, inner_size: usize) -> Self {
-        let items = vec![StateBitSet::create(); outer_size * inner_size];
+    pub fn new(outer_size: usize, inner_size: usize, set_size: usize) -> Self {
+        let items = vec![StateBitSet::create(set_size); outer_size * inner_size];
         Self { items, inner_size }
     }
 
@@ -40,7 +46,7 @@ struct State {
 impl State {
     fn new() -> Self {
         Self {
-            epsilon_states: StateBitSet::create(),
+            epsilon_states: StateBitSet::create(MAX_SET_SIZE),
             char_bitset: CharBitset::EMPTY,
             next_state: 0,
         }
@@ -190,7 +196,7 @@ impl Expression {
         let initial_len = states.len();
         match ast {
             parser::Ast::Class(char_bitset) => states.push(State {
-                epsilon_states: StateBitSet::create(),
+                epsilon_states: StateBitSet::create(MAX_SET_SIZE),
                 char_bitset: *char_bitset,
                 next_state: initial_len + 1,
             }),
@@ -298,7 +304,7 @@ impl Expression {
 
                 // For a fuzzy match, expand `next_state_table[fi+1]` by adding all states
                 // reachable from `state_table[f]` *but* with a 1-character change to `chars`
-                let mut fuzz_superset = StateBitSet::create();
+                let mut fuzz_superset = StateBitSet::create(self.states.len());
                 for fuzz_index in 0..self.fuzz {
                     if state_transitions[fuzz_index].is_empty() {
                         continue;
@@ -330,7 +336,7 @@ impl Expression {
     }
 
     fn char_transitions(&self, char_bitset: CharBitset, start_states: &StateBitSet) -> StateBitSet {
-        let mut end_states = StateBitSet::create();
+        let mut end_states = StateBitSet::create(self.states.len());
 
         if start_states.is_empty() {
             return end_states;

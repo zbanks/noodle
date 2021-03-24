@@ -34,8 +34,13 @@ impl<'expr, 'word> CacheBuilder<'expr, 'word> {
         let mut classes = IndexMap::new();
         let word_classes = vec![];
 
-        let transition_group_new =
-            || TransitionGroup::new(expression.states_len(), expression.fuzz + 1);
+        let transition_group_new = || {
+            TransitionGroup::new(
+                expression.states_len(),
+                expression.fuzz + 1,
+                expression.states_len(),
+            )
+        };
 
         // The first class (0) is always the "empty" class
         classes.insert_full(transition_group_new(), CacheClass { n_words: 0 });
@@ -154,7 +159,6 @@ impl<'word> Iterator for CacheBuilder<'_, 'word> {
 
             for fuzz_states in self.transition_table[word_len].slice(0) {
                 if fuzz_states.contains(self.cache.expression.states_len() - 1) {
-                    //println!("one word match: {}", word);
                     return Some(word);
                 }
             }
@@ -180,11 +184,11 @@ struct Layer<'word> {
 }
 
 impl<'word> Layer<'word> {
-    fn new(caches_count: usize, fuzz_count: usize) -> Self {
+    fn new(caches_count: usize, fuzz_count: usize, states_count: usize) -> Self {
         Self {
             wi: 0,
             stem: None,
-            states: TransitionGroup::new(caches_count, fuzz_count),
+            states: TransitionGroup::new(caches_count, fuzz_count, states_count),
         }
     }
 }
@@ -297,8 +301,14 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
             .map(|expr| expr.fuzz)
             .max()
             .unwrap_or(0);
+        let states_max = self
+            .expressions
+            .iter()
+            .map(|expr| expr.states_len())
+            .max()
+            .unwrap_or(1);
         let mut layers: Vec<Layer<'word>> = (0..=self.words_max)
-            .map(|_| Layer::new(self.expressions.len(), fuzz_max + 1))
+            .map(|_| Layer::new(self.expressions.len(), fuzz_max + 1, states_max))
             .collect();
 
         for (i, expr) in self.expressions.iter().enumerate() {
@@ -321,6 +331,10 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
 
     fn next_phrase(&mut self) -> Option<String> {
         assert!(self.singles_done);
+        if self.wordlist.borrow().is_empty() {
+            return None;
+        }
+
         let mut result = None;
         loop {
             let mut no_match = false;
@@ -350,9 +364,11 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
 
                     for (f, fuzz_states) in states.iter().enumerate() {
                         for si in fuzz_states.ones() {
+                            //let si = *si as usize;
                             let mut fd = 0;
                             while f + fd < fuzz_limit {
-                                end_ss[f + fd].union_with(&class.slice(si)[fd]);
+                                //end_ss[f + fd].union_with(&class.slice(si)[fd]);
+                                Set::union_with(&mut end_ss[f + fd], &class.slice(si)[fd]);
                                 fd += 1;
                             }
                         }

@@ -12,6 +12,7 @@ fn main() {
     let wordlist = Rc::new(RefCell::new(wordlist));
 
     let raw_expressions = ["ex.res*iontest !2", "ex?z?press+[^i].*"];
+    //let raw_expressions = ["ex.res*iont(est)? !2", "ex?z?press+([^i].*)"];
     //let raw_expressions = ["h.*", ".e.*", "..l+.", ".*o"];
     //let raw_expressions = ["ex.*res*iontest !2", "ex?z?press+[^i].{,5}"];
     //let raw_expressions = ["expression.*expression"];
@@ -30,7 +31,7 @@ fn main() {
     //println!("Matcher: {:?}", matcher);
 
     for _w in matcher {
-        println!("> {}", _w);
+        //println!("> {}", _w);
     }
     let duration = start.elapsed();
     println!("Time: {:?}", duration);
