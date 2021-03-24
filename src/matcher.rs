@@ -5,21 +5,15 @@ use indexmap::IndexMap;
 use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
-use std::time;
 
 #[derive(Debug)]
 struct CacheClass {
     n_words: usize,
 }
 
-#[derive(Debug)]
-struct Cache<'expr, 'word> {
-    expression: &'expr Expression,
-    nonnull_words: Rc<RefCell<Vec<&'word Word>>>,
-    classes: IndexMap<TransitionGroup, CacheClass>,
-    word_classes: Vec<usize>,
+struct CacheBuilder<'expr, 'word> {
+    cache: Cache<'expr, 'word>,
 
-    word_len_max: usize,
     index: usize,
     wordlist: Rc<RefCell<Vec<&'word Word>>>,
     transition_table: Vec<TransitionGroup>,
@@ -30,20 +24,12 @@ struct Cache<'expr, 'word> {
     total_length: usize,
 }
 
-impl<'word> Iterator for Cache<'_, 'word> {
-    type Item = &'word Word;
-    fn next(&mut self) -> Option<&'word Word> {
-        self.next_match()
-    }
-}
-
-impl<'expr, 'word> Cache<'expr, 'word> {
+impl<'expr, 'word> CacheBuilder<'expr, 'word> {
     fn new(
         expression: &'expr Expression,
         wordlist: Rc<RefCell<Vec<&'word Word>>>,
         word_len_max: usize,
     ) -> Self {
-        let start = time::Instant::now();
         let nonnull_words = Rc::new(RefCell::new(vec![]));
         let mut classes = IndexMap::new();
         let word_classes = vec![];
@@ -57,15 +43,16 @@ impl<'expr, 'word> Cache<'expr, 'word> {
         let transition_table = vec![transition_group_new(); word_len_max];
 
         Self {
-            expression,
-            nonnull_words,
-            classes,
-            word_classes,
+            cache: Cache {
+                expression,
+                nonnull_words,
+                classes,
+                word_classes,
+            },
 
-            word_len_max,
             index: 0,
-            wordlist: wordlist,
-            transition_table: transition_table,
+            wordlist,
+            transition_table,
             previous_chars: &[],
 
             total_prefixed: 0,
@@ -74,9 +61,51 @@ impl<'expr, 'word> Cache<'expr, 'word> {
         }
     }
 
-    fn next_match(&mut self) -> Option<&'word Word> {
+    fn finalize(mut self, new_wordlist: Rc<RefCell<Vec<&'word Word>>>) -> Cache<'expr, 'word> {
+        // Drain iterator
+        (&mut self).count();
+
+        println!(
+            "prefixed={}, matched={}, elided={}",
+            self.total_prefixed,
+            self.total_matched - self.total_prefixed,
+            self.total_length - self.total_matched
+        );
+        println!(
+            "{} distinct classes with {}/{} words",
+            self.cache.classes.len(),
+            self.cache.nonnull_words.borrow().len(),
+            self.wordlist.borrow().len(),
+        );
+
+        if new_wordlist != self.cache.nonnull_words {
+            let new_wordlist = new_wordlist.clone();
+            let new_wordlist = new_wordlist.borrow();
+            let mut nonnull_words = self.cache.nonnull_words.borrow_mut();
+            let mut new_word_classes = vec![];
+            let mut i: usize = 0;
+            for (&word, &class) in nonnull_words.iter().zip(self.cache.word_classes.iter()) {
+                if i < new_wordlist.len() && *word == *new_wordlist[i] {
+                    new_word_classes.push(class);
+                    i += 1;
+                }
+            }
+            assert!(i == new_wordlist.len());
+            nonnull_words.clear();
+            self.cache.word_classes = new_word_classes;
+            assert!(self.cache.word_classes.len() == new_wordlist.len());
+        }
+
+        self.cache
+    }
+}
+
+impl<'word> Iterator for CacheBuilder<'_, 'word> {
+    type Item = &'word Word;
+
+    fn next(&mut self) -> Option<&'word Word> {
         let wordlist = self.wordlist.borrow();
-        let mut nonnull_words = self.nonnull_words.borrow_mut();
+        let mut nonnull_words = self.cache.nonnull_words.borrow_mut();
         while self.index < wordlist.len() {
             let word = &wordlist[self.index];
             self.index += 1;
@@ -92,10 +121,12 @@ impl<'expr, 'word> Cache<'expr, 'word> {
 
             let prefixed_table = &mut self.transition_table[si..];
             if si == 0 {
-                self.expression
+                self.cache
+                    .expression
                     .init_transition_table(&mut prefixed_table[0]);
             }
             let valid_len = self
+                .cache
                 .expression
                 .fill_transition_table(&word.chars[si..], prefixed_table)
                 + si;
@@ -111,17 +142,18 @@ impl<'expr, 'word> Cache<'expr, 'word> {
             assert!(valid_len == word_len);
 
             let entry = self
+                .cache
                 .classes
                 .entry(self.transition_table[word_len].clone())
                 .and_modify(|v| v.n_words += 1);
             if entry.index() != 0 {
                 nonnull_words.push(word);
-                self.word_classes.push(entry.index());
+                self.cache.word_classes.push(entry.index());
             }
             entry.or_insert(CacheClass { n_words: 1 });
 
             for fuzz_states in self.transition_table[word_len].slice(0) {
-                if fuzz_states.contains(self.expression.states_len() - 1) {
+                if fuzz_states.contains(self.cache.expression.states_len() - 1) {
                     //println!("one word match: {}", word);
                     return Some(word);
                 }
@@ -130,36 +162,14 @@ impl<'expr, 'word> Cache<'expr, 'word> {
 
         None
     }
+}
 
-    fn reduce_wordlist(&mut self, new_wordlist: &[&'word Word]) {
-        let mut nonnull_words = self.nonnull_words.borrow_mut();
-
-        println!(
-            "prefixed={}, matched={}, elided={}",
-            self.total_prefixed,
-            self.total_matched - self.total_prefixed,
-            self.total_length - self.total_matched
-        );
-        println!(
-            "{} distinct classes with {}/{} words",
-            self.classes.len(),
-            nonnull_words.len(),
-            self.wordlist.borrow().len(),
-        );
-
-        let mut new_word_classes = vec![];
-        let mut i: usize = 0;
-        for (&word, &class) in nonnull_words.iter().zip(self.word_classes.iter()) {
-            if i < new_wordlist.len() && *word == *new_wordlist[i] {
-                new_word_classes.push(class);
-                i += 1;
-            }
-        }
-        assert!(i == new_wordlist.len());
-        nonnull_words.clear();
-        self.word_classes = new_word_classes;
-        assert!(self.word_classes.len() == new_wordlist.len());
-    }
+#[derive(Debug)]
+struct Cache<'expr, 'word> {
+    expression: &'expr Expression,
+    nonnull_words: Rc<RefCell<Vec<&'word Word>>>,
+    classes: IndexMap<TransitionGroup, CacheClass>,
+    word_classes: Vec<usize>,
 }
 
 #[derive(Debug)]
@@ -180,14 +190,13 @@ impl<'word> Layer<'word> {
 }
 
 pub struct Matcher<'expr, 'word> {
-    //expressions: Vec<&'a Expression>,
+    expressions: Vec<&'expr Expression>,
+    cache_builders: Vec<CacheBuilder<'expr, 'word>>,
     caches: Vec<Cache<'expr, 'word>>,
     layers: Vec<Layer<'word>>,
     wordlist: Rc<RefCell<Vec<&'word Word>>>,
-    word_order: Vec<usize>,
-    single_matches: Vec<&'word Word>,
+    singles_done: bool,
 
-    //fuzz_max: usize,
     words_max: usize,
 
     index: usize,
@@ -209,20 +218,35 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
             .max()
             .unwrap_or(0);
 
-        let mut caches = vec![];
+        let mut cache_builders: Vec<CacheBuilder<'_, '_>> = vec![];
         for expr in expressions {
-            let words = caches
+            let words = cache_builders
                 .last()
-                .map(|c: &Cache| c.nonnull_words.clone())
-                .unwrap_or(wordlist.clone());
-            let cache = Cache::new(expr, words, word_len_max);
-            caches.push(cache);
+                .map(|c: &CacheBuilder| c.cache.nonnull_words.clone())
+                .unwrap_or_else(|| wordlist.clone());
+            let cache = CacheBuilder::new(expr, words, word_len_max);
+            cache_builders.push(cache);
         }
+
+        Matcher {
+            expressions: expressions.into_iter().collect(),
+            cache_builders,
+            caches: vec![],
+            singles_done: false,
+            layers: vec![],
+            wordlist: wordlist.clone(),
+            words_max,
+            index: 0,
+            match_count: 0,
+        }
+    }
+
+    fn next_single(&mut self) -> Option<String> {
+        assert!(!self.singles_done);
 
         // Check for single-word matches
         // TODO: Emit these as matches as they're calculated
-        let mut single_matches = vec![];
-        let (first_cache, remaining_caches) = caches.split_at_mut(1);
+        let (first_cache, remaining_caches) = self.cache_builders.split_at_mut(1);
         for word in &mut first_cache[0] {
             let mut all_match = true;
             for cache in remaining_caches.iter_mut() {
@@ -230,7 +254,7 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
                 all_match = all_match && (last_word == Some(word));
             }
             if all_match {
-                single_matches.push(word);
+                return Some(word.text.clone());
             }
         }
 
@@ -239,51 +263,52 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
             c.count();
         });
 
-        let (fixup_caches, last_cache) = caches.split_at_mut(expressions.len() - 1);
-        let nonnull_wordlist = last_cache[0].nonnull_words.clone();
-        fixup_caches
-            .iter_mut()
-            .for_each(|c| c.reduce_wordlist(&nonnull_wordlist.borrow()));
-
-        let mut word_order: Vec<usize> = (0..nonnull_wordlist.borrow().len()).collect();
-        word_order.sort_by_key(|&wi| {
-            caches
-                .iter()
-                .map(|expr| {
-                    expr.classes
-                        .get_index(expr.word_classes[wi])
-                        .unwrap()
-                        .1
-                        .n_words
-                })
-                .min()
-        });
-
-        let fuzz_max = expressions.iter().map(|expr| expr.fuzz).max().unwrap_or(0);
-        let mut layers: Vec<Layer<'word>> = (0..=words_max)
-            .map(|_| Layer::new(expressions.len(), fuzz_max + 1))
+        let nonnull_wordlist = self
+            .cache_builders
+            .iter()
+            .last()
+            .unwrap()
+            .cache
+            .nonnull_words
+            .clone();
+        self.caches = self
+            .cache_builders
+            .drain(..)
+            .map(|c| c.finalize(nonnull_wordlist.clone()))
             .collect();
 
-        for (i, expr) in expressions.iter().enumerate() {
+        //let mut word_order: Vec<usize> = (0..nonnull_wordlist.borrow().len()).collect();
+        //word_order.sort_by_key(|&wi| {
+        //    caches
+        //        .iter()
+        //        .map(|expr| {
+        //            expr.classes
+        //                .get_index(expr.word_classes[wi])
+        //                .unwrap()
+        //                .1
+        //                .n_words
+        //        })
+        //        .min()
+        //});
+
+        let fuzz_max = self
+            .expressions
+            .iter()
+            .map(|expr| expr.fuzz)
+            .max()
+            .unwrap_or(0);
+        let mut layers: Vec<Layer<'word>> = (0..=self.words_max)
+            .map(|_| Layer::new(self.expressions.len(), fuzz_max + 1))
+            .collect();
+
+        for (i, expr) in self.expressions.iter().enumerate() {
             expr.init_transitions_start(layers[0].states.slice_mut(i));
         }
 
-        Matcher {
-            caches,
-            layers,
-            wordlist: nonnull_wordlist,
-            word_order,
-            single_matches,
-            //fuzz_max,
-            words_max,
-            index: 0,
-            match_count: 0,
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.index = 0;
-        self.match_count = 0;
+        self.layers = layers;
+        self.wordlist = nonnull_wordlist;
+        self.singles_done = true;
+        None
     }
 
     fn format_output(&self) -> String {
@@ -294,11 +319,8 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
             .join(" ")
     }
 
-    pub fn next_match(&mut self) -> Option<String> {
-        if let Some(word) = self.single_matches.pop() {
-            return Some(word.text.clone());
-        }
-
+    fn next_phrase(&mut self) -> Option<String> {
+        assert!(self.singles_done);
         let mut result = None;
         loop {
             let mut no_match = false;
@@ -310,7 +332,6 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
 
                 let mut all_end_match = true;
                 let mut all_no_advance = true;
-                //let wi = self.word_order[this_layer.wi];
                 let wi = this_layer.wi;
                 let word = wordlist[wi];
                 for (c, cache) in self.caches.iter().enumerate() {
@@ -424,7 +445,11 @@ impl Iterator for Matcher<'_, '_> {
     type Item = String;
 
     fn next(&mut self) -> Option<String> {
-        self.next_match()
+        if !self.singles_done {
+            self.next_single().or_else(|| self.next_phrase())
+        } else {
+            self.next_phrase()
+        }
     }
 }
 

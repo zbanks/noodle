@@ -15,13 +15,14 @@ indexmap = "1.6.2"
 fixedbitset = "0.4.0"
 
 [profile.dev]
-opt-level = 2
+opt-level = 1
 debug = true
 debug-assertions = true
 overflow-checks = true
+panic = 'unwind'
 
 [profile.test]
-opt-level = 2
+opt-level = 1
 debug = true
 debug-assertions = true
 overflow-checks = true
@@ -29,5 +30,5 @@ overflow-checks = true
 [profile.release]
 opt-level = 3
 debug = 2
-#lto = true
-#panic = 'abort'
+lto = true
+panic = 'abort'
