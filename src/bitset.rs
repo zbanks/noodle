@@ -4,50 +4,57 @@ use std::fmt;
 // which is licensed under the MIT license.
 // https://github.com/petgraph/fixedbitset
 
-const BLOCK_BITS: usize = 64;
-type Block = u64;
-type Range = std::ops::Range<usize>;
+type Block = u32;
+const BLOCK_BITS: usize = 32;
 
 fn div_rem(x: usize, d: usize) -> (usize, usize) {
     (x / d, x % d)
 }
 
 pub trait Index: Copy {
+    type Range: std::slice::SliceIndex<[Block], Output = [Block]>;
+
     fn total_size(&self) -> usize;
     fn transpose(&self, x: usize) -> Self;
-    fn slice(&self, sub: Self) -> Range;
+    fn slice(&self, sub: Self) -> Self::Range;
 }
 
 impl Index for () {
+    type Range = std::ops::RangeFull;
+
     fn total_size(&self) -> usize {
         1
     }
     fn transpose(&self, _x: usize) -> Self {}
-    fn slice(&self, _sub: Self) -> Range {
-        0..1
+    fn slice(&self, _sub: Self) -> Self::Range {
+        ..
     }
 }
 
 impl Index for usize {
+    type Range = std::ops::Range<usize>;
+
     fn total_size(&self) -> usize {
         *self
     }
     fn transpose(&self, x: usize) -> Self {
         x
     }
-    fn slice(&self, sub: Self) -> Range {
+    fn slice(&self, sub: Self) -> Self::Range {
         *self * sub..*self * (sub + 1)
     }
 }
 
 impl Index for (usize, usize) {
+    type Range = std::ops::Range<usize>;
+
     fn total_size(&self) -> usize {
         self.0 * self.1
     }
     fn transpose(&self, x: usize) -> Self {
         (self.1, x)
     }
-    fn slice(&self, sub: Self) -> Range {
+    fn slice(&self, sub: Self) -> Self::Range {
         let start = self.1 * (self.0 * sub.0 + sub.1);
         start..start + self.1
     }
@@ -129,19 +136,13 @@ impl<Idx: Index> BitSet<Idx> {
     pub fn slice(&self, index: Idx) -> BitSetRef<'_, ()> {
         let range = self.size.slice(index);
         let blocks = unsafe { self.blocks.get_unchecked(range) };
-        BitSetRef {
-            blocks,
-            size: (),
-        }
+        BitSetRef { blocks, size: () }
     }
 
     pub fn slice_mut(&mut self, index: Idx) -> BitSetRefMut<'_, ()> {
         let range = self.size.slice(index);
-        let blocks = unsafe {self.blocks.get_unchecked_mut(range) };
-        BitSetRefMut {
-            blocks,
-            size: (),
-        }
+        let blocks = unsafe { self.blocks.get_unchecked_mut(range) };
+        BitSetRefMut { blocks, size: () }
     }
 
     pub fn borrow(&self) -> BitSetRef<'_, Idx> {
@@ -156,6 +157,19 @@ impl<Idx: Index> BitSet<Idx> {
             blocks: &mut self.blocks,
             size: self.size,
         }
+    }
+}
+
+impl BitSet<()> {
+    pub fn resize(&self, new_size: usize) -> Self {
+        assert!(self.borrow().ones().all(|x| x < new_size));
+
+        let mut new_bitset = Self::new((), new_size);
+        self.blocks
+            .iter()
+            .zip(new_bitset.blocks.iter_mut())
+            .for_each(|(old_b, new_b)| *new_b = *old_b);
+        new_bitset
     }
 }
 
@@ -203,7 +217,7 @@ impl<'a, Idx: Index> BitSetRef<'a, Idx> {
     }
 }
 
-impl<'a, Idx: Index> BitSetRefMut<'a, Idx> {
+impl<'a, Idx: Index + fmt::Debug> BitSetRefMut<'a, Idx> {
     pub fn reborrow(self) -> BitSetRef<'a, Idx> {
         BitSetRef {
             blocks: self.blocks,
@@ -242,19 +256,19 @@ impl<'a, Idx: Index> BitSetRefMut<'a, Idx> {
     pub fn union_with(&mut self, other: BitSetRef<'_, Idx>) {
         debug_assert_eq!(self.blocks.len(), other.blocks.len());
         for i in 0..self.blocks.len() {
-            unsafe {*self.blocks.get_unchecked_mut(i) |= *other.blocks.get_unchecked(i) };
+            unsafe { *self.blocks.get_unchecked_mut(i) |= *other.blocks.get_unchecked(i) };
         }
     }
     pub fn difference_with(&mut self, other: BitSetRef<'_, Idx>) {
         debug_assert_eq!(self.blocks.len(), other.blocks.len());
         for i in 0..self.blocks.len() {
-            unsafe {*self.blocks.get_unchecked_mut(i) &= !*other.blocks.get_unchecked(i) };
+            unsafe { *self.blocks.get_unchecked_mut(i) &= !*other.blocks.get_unchecked(i) };
         }
     }
     pub fn copy_from(&mut self, other: BitSetRef<'_, Idx>) {
         debug_assert_eq!(self.blocks.len(), other.blocks.len());
         for i in 0..self.blocks.len() {
-            unsafe {*self.blocks.get_unchecked_mut(i) = *other.blocks.get_unchecked(i) };
+            unsafe { *self.blocks.get_unchecked_mut(i) = *other.blocks.get_unchecked(i) };
         }
     }
 }
@@ -286,9 +300,36 @@ impl<'a> Iterator for Ones<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn bitset() {
-        let bs = BitSet3D((2, 3), 5);
-        let _ = bs.slice_mut(1, 2);
+    fn bitset_1d() {
+        let mut bitset_3 = BitSet1D::new((), 1000);
+        let mut slice_3 = bitset_3.slice_mut(());
+
+        let mut bitset_5 = BitSet1D::new((), 1000);
+        let mut slice_5 = bitset_5.slice_mut(());
+
+        for i in 0..1000 {
+            if i % 3 == 0 {
+                slice_3.insert(i);
+            }
+            if i % 5 == 0 {
+                slice_5.insert(i);
+            }
+        }
+
+        let mut bitset_3or5 = BitSet1D::new((), 1000);
+        let mut slice_3or5 = bitset_3or5.borrow_mut();
+
+        assert_eq!(bitset_3.slice(()).blocks.len(), 1024 / BLOCK_BITS);
+        assert_eq!(slice_3or5.blocks.len(), 1024 / BLOCK_BITS);
+
+        slice_3or5.union_with(bitset_3.slice(()));
+        slice_3or5.union_with(slice_5.reborrow());
+
+        for i in slice_3or5.ones() {
+            assert!(i % 3 == 0 || i % 5 == 0);
+        }
     }
 }

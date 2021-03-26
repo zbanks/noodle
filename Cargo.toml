@@ -23,7 +23,7 @@ overflow-checks = true
 panic = 'unwind'
 
 [profile.test]
-opt-level = 1
+opt-level = 2
 debug = true
 debug-assertions = true
 overflow-checks = true

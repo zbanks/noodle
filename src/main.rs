@@ -21,7 +21,6 @@ fn main() {
         .map(|e| Expression::new(e).unwrap())
         .collect();
 
-    //let expressions = vec![Expression::example(0), Expression::example(1)];
     for expr in &expressions {
         println!("Expression: {:?}", expr);
     }

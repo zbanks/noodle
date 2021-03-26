@@ -3,40 +3,9 @@ use crate::parser;
 use crate::words::{Char, CharBitset};
 use std::fmt;
 
-const MAX_SET_SIZE: usize = 64;
-
-//pub type StateBitSet = BitSet; // 320ms (only 64 bits)
-//pub type StateBitSet = FixedBitSet; // 710ms
-//pub type StateBitSet = SmallBitSet; // [u64; 1]=495ms; [u32; 1]=520ms; [u64; 4]=495ms; [u64; 4]=510ms
-//pub type StateBitSet = HashBitSet; // 2300ms (!!!)
+const MAX_SET_SIZE: usize = 2048;
 
 pub type Result<T> = std::result::Result<T, ()>;
-
-/*
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub struct TransitionGroup {
-    items: Box<[StateBitSet]>,
-    inner_size: usize,
-}
-
-impl TransitionGroup {
-    pub fn new(outer_size: usize, inner_size: usize, set_size: usize) -> Self {
-        let items = vec![StateBitSet::create(set_size); outer_size * inner_size].into_boxed_slice();
-        Self { items, inner_size }
-    }
-
-    pub fn slice(&self, index: usize) -> &[StateBitSet] {
-        let i = index * self.inner_size;
-        // This saves about ~5-8% total time over the checked method
-        unsafe { self.items.get_unchecked(i..i + self.inner_size) }
-    }
-
-    pub fn slice_mut(&mut self, index: usize) -> &mut [StateBitSet] {
-        let i = index * self.inner_size;
-        self.items.get_mut(i..i + self.inner_size).unwrap()
-    }
-}
-*/
 
 #[derive(Debug, Clone)]
 struct State {
@@ -114,6 +83,7 @@ impl Expression {
                 let mut ss: BitSet1D = states[i].epsilon_states.clone();
                 let mut bs = ss.borrow_mut();
 
+                bs.insert(i);
                 for (i2, state2) in states.iter().enumerate() {
                     if !bs.contains(i2) {
                         continue;
@@ -125,6 +95,10 @@ impl Expression {
                 }
                 states[i].epsilon_states = ss;
             }
+        }
+        let states_len = states.len();
+        for state in states.iter_mut() {
+            state.epsilon_states = state.epsilon_states.resize(states_len);
         }
     }
 
@@ -206,28 +180,6 @@ impl Expression {
         self.states[state_index].epsilon_states_bitset_mut()
     }
 
-    /*
-    // This takes a from_state=0 slice, of type [fuzz][to_states]
-    pub fn init_transitions_start(&self, transitions: &mut [StateBitSet]) {
-        transitions.iter_mut().for_each(|s| s.clear());
-
-        transitions[0].insert(0);
-        transitions[0].union_with(self.states[0].epsilon_states);
-    }
-
-    // This takes a whole group, of type [from_state][fuzz][to_states]
-    pub fn init_transition_table(&self, transition_table: &mut BitSetGroup) {
-        assert!(transition_table.items.len() == self.states_len() * transition_table.inner_size);
-        for (i, state) in self.states.iter().enumerate() {
-            let state_slice = transition_table.slice_mut(i);
-            state_slice.iter_mut().for_each(|s| s.clear());
-
-            state_slice[0].insert(i);
-            state_slice[0].union_with(state.epsilon_states);
-        }
-    }
-    */
-
     // transition_table: [char][from_state][fuzz][to_state]
     pub fn fill_transition_table(
         &self,
@@ -242,12 +194,6 @@ impl Expression {
 
             // Consume 1 character from the buffer and compute the set of possible resulting states
             for state_index in 0..self.states.len() {
-                //let state_transitions = lower_table[char_index].slice(state_index);
-                //assert!(state_transitions.len() == self.fuzz + 1);
-
-                //let next_state_transitions = upper_table[0].slice_mut(state_index);
-                //assert!(next_state_transitions.len() == self.fuzz + 1);
-
                 let mut all_fuzz_are_empty = true;
                 for fuzz_index in 0..=self.fuzz {
                     let state_transitions =
@@ -276,7 +222,6 @@ impl Expression {
                 for fuzz_index in 0..self.fuzz {
                     let state_transitions =
                         lower_table[char_index].slice((state_index, fuzz_index));
-                    //let next_state_transitions = upper_table[0].slice_mut((state_index, fuzz_index));
                     let mut fuzzed_next_state_transitions =
                         upper_table[0].slice_mut((state_index, fuzz_index + 1));
 
@@ -327,7 +272,6 @@ impl Expression {
                 }
 
                 if char_bitset.is_intersecting(state.char_bitset) {
-                    end_states.insert(state.next_state);
                     end_states.union_with(self.epsilon_states(state.next_state));
                 }
             }
