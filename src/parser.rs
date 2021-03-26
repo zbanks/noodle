@@ -56,7 +56,7 @@ pub enum Ast {
 }
 
 impl ExpressionAst {
-    pub fn from_str(input_str: &str) -> Result<Self> {
+    pub fn new_from_str(input_str: &str) -> Result<Self> {
         let pairs = NoodleParser::parse(Rule::expression, input_str)?
             .next()
             .unwrap()
@@ -86,7 +86,7 @@ impl fmt::Display for ExpressionAst {
 }
 
 impl QueryAst {
-    pub fn from_str(input_str: &str) -> Result<Self> {
+    pub fn new_from_str(input_str: &str) -> Result<Self> {
         let mut expressions = vec![];
         let mut macros: IndexMap<String, String> = IndexMap::new();
         let mut options = QueryOptions {
@@ -153,7 +153,7 @@ impl QueryAst {
         // TODO Rewrite self.expressions to be "simple" (expand anagrams)
         fn visit<F>(node: &mut Ast, action: &mut F)
         where
-            F: FnMut(&mut Ast) -> (),
+            F: FnMut(&mut Ast),
         {
             match node {
                 Ast::Class(_) => (),
@@ -215,7 +215,7 @@ impl QueryAst {
                 if nth < histogram.len() {
                     let (ch, count) = histogram.remove(nth);
                     let ch_ast = Ast::Class(ch.into());
-                    let mut fill_bitset = char_bitset.clone();
+                    let mut fill_bitset = char_bitset;
                     fill_bitset.difference_with(ch.into());
 
                     let fill_ast = Ast::Repetition {

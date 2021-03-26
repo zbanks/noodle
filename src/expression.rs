@@ -50,7 +50,7 @@ pub struct Expression {
 impl Expression {
     /// Compile an `Expression` from its string representation
     pub fn new(text: &str) -> Result<Self> {
-        let ast_root = parser::ExpressionAst::from_str(text).unwrap();
+        let ast_root = parser::ExpressionAst::new_from_str(text).unwrap();
         Self::from_ast(&ast_root)
     }
 
@@ -62,16 +62,21 @@ impl Expression {
         Self::build_states(&ast_root.root, &mut states)?;
         // Add a "success" end state (this may not be needed?)
         states.push(State::new());
-        Self::optimize_states(&mut states);
 
-        Ok(Expression {
+        let mut expr = Expression {
             states,
             text: format!("{}", ast_root),
 
             ignore_whitespace,
             ignore_punctuation,
             fuzz: ast_root.options.fuzz.unwrap_or(0),
-        })
+        };
+
+        println!("Before optimization: {:?}", expr);
+        Self::optimize_states(&mut expr.states);
+        println!("After optimization: {:?}", expr);
+
+        Ok(expr)
     }
 
     pub fn states_len(&self) -> usize {
@@ -163,21 +168,25 @@ impl Expression {
 
     /// Perform an optimization pass on the NFA, modifying `states` so
     /// that it produces an equivalent NFA that can be evaluated more efficiently
+    ///
+    /// `RUNTIME: O(states^4)`
     fn optimize_states(states: &mut Vec<State>) {
-        // TODO: This only performs _required_ optimizations; future versions
-        // could perform optional steps like pruning unneeded states
+        // TODO: This function could perform even more complex optimizations
 
         // `Matcher` requires that there is a transitive closure over `epsilon_states` and that
         // each state has itself included in that set
+        // RUNTIME: O(states^4)
         for i in 0..states.len() {
             // Add an epsilon transition from each state to itself
             states[i].epsilon_states.borrow_mut().insert(i);
 
             // Calculate transitive closure over `epsilon_states`
+            // RUNTIME: O(states^3)
             loop {
                 let mut ss: BitSet1D = states[i].epsilon_states.clone();
                 let mut bs = ss.borrow_mut();
 
+                // RUNTIME: O(states^2)
                 for (i2, state2) in states.iter().enumerate() {
                     if !bs.contains(i2) {
                         continue;
@@ -198,28 +207,74 @@ impl Expression {
             state.epsilon_states = state.epsilon_states.resize(states_len);
         }
 
-        // TODO: This identifies unneeded states (I think?), but doesn't prune them
+        // Identify redundant states, and prune them
+        // RUNTIME: O(states^3)
+        let mut state_map: Vec<_> = (0..states_len).collect();
+        let mut state_map_from: Vec<Option<usize>> = (0..states_len).map(Some).collect();
+        let mut deleted: Vec<usize> = vec![];
         for (i, state) in states.iter().enumerate() {
+            // Shift the state index down by the number of states before it that were deleted
+            state_map[i] -= deleted.iter().filter(|&d| *d < i).count();
+
+            // Don't attempt to collapse the first state
+            // Removing it would add a lot of complexity, with little benefit
+            if i == 0 {
+                continue;
+            }
+
+            // Only pure-epsilon states can be removed
+            if state.char_bitset != CharBitset::EMPTY {
+                continue;
+            }
+
+            // Look for any states that are equivalent to `state`,
+            // (except for containing the transition from itself)
+            // RUNTIME: O(states^2)
             let mut similar_states = state.epsilon_states.clone();
             similar_states.borrow_mut().remove(i);
-            for state2 in states.iter() {
-                if state2.next_state == i {
-                    similar_states.borrow_mut().clear();
+            for (i2, state2) in states.iter().enumerate() {
+                // We're doing a "triangle search", and only comparing `states[i] ~ states[i2]` where `i > i2`
+                if i2 <= i {
+                    continue;
+                }
+                if similar_states == state2.epsilon_states {
+                    deleted.push(i2);
+                    state_map[i2] = i;
+                    state_map_from[i2] = None;
+                    state_map_from.iter_mut().for_each(|s| {
+                        if *s == Some(i) {
+                            *s = Some(i2)
+                        }
+                    });
                     break;
                 }
-                if state2.epsilon_states_bitset().contains(i) {
-                    similar_states
-                        .borrow_mut()
-                        .intersect_with(state2.epsilon_states_bitset());
-                }
-            }
-            if !similar_states.borrow().is_empty() {
-                println!(
-                    "state {:?} is redundant to states {:?} (could be removed)",
-                    i, similar_states
-                );
             }
         }
+
+        // Re-create the state table, pruning the `deleted` states
+        // - `state_map_from[i] == None` iff `i` is in `deleted` (and the state is pruned)
+        // - Otherwise, replace the state at `i` with the state at index `state_map_from[i]`
+        // - Everywhere, change references to state `i` to `state_map[i]` (e.g. `next_state`, `epsilon_states`)
+        // RUNTIME: O(states^2)
+        let new_states_len = states_len - deleted.len();
+        state_map.iter().for_each(|&s| assert!(s < new_states_len));
+        *states = state_map_from
+            .iter()
+            .filter_map(|&from| {
+                from.map(|from_index| {
+                    let state = &states[from_index];
+                    let mut epsilon_states = BitSet1D::new((), new_states_len);
+                    for s in state.epsilon_states.borrow().ones() {
+                        epsilon_states.borrow_mut().insert(state_map[s])
+                    }
+                    State {
+                        char_bitset: state.char_bitset,
+                        next_state: state_map[state.next_state],
+                        epsilon_states,
+                    }
+                })
+            })
+            .collect();
     }
 
     /// Return the set of states reachable via epsilon transition(s) from the given state
@@ -240,11 +295,14 @@ impl Expression {
     /// the transition_table[char=0] should be initialized to only contain the starting state:
     /// The only bits that should be set are `[c][0][0][e]` where `e` is an epsilon transition
     /// from the starting state. (see `Expression::epsilon_states(0)`)
+    ///
+    /// `RUNTIME: O(chars * fuzz * states^3)`
     pub fn fill_transition_table(
         &self,
         chars: &[Char],
         transition_table: &mut [BitSet3D],
     ) -> usize {
+        // RUNTIME: O(chars * fuzz * states^3)
         for (char_index, chr) in chars.iter().enumerate() {
             let char_bitset = CharBitset::from(*chr);
             let mut all_states_are_empty = true;
@@ -252,14 +310,17 @@ impl Expression {
             let (lower_table, upper_table) = transition_table.split_at_mut(char_index + 1);
 
             // Consume 1 character from the buffer and compute the set of possible resulting states
+            // RUNTIME: O(fuzz * states^3)
             for state_index in 0..self.states.len() {
                 let mut all_fuzz_are_empty = true;
+                // RUNTIME: O(fuzz * states^2)
                 for fuzz_index in 0..=self.fuzz {
                     let state_transitions =
                         lower_table[char_index].slice((state_index, fuzz_index));
                     let mut next_state_transitions =
                         upper_table[0].slice_mut((state_index, fuzz_index));
 
+                    // RUNTIME: O(states^2)
                     if state_transitions.is_empty() {
                         next_state_transitions.clear();
                     } else {
@@ -277,6 +338,7 @@ impl Expression {
 
                 // For a fuzzy match, expand `next_state_table[fi+1]` by adding all states
                 // reachable from `state_table[f]` *but* with a 1-character change to `chars`
+                // RUNTIME: O(fuzz * states^2)
                 let mut fuzz_superset = BitSet1D::new((), self.states.len());
                 for fuzz_index in 0..self.fuzz {
                     let state_transitions =
@@ -318,6 +380,8 @@ impl Expression {
 
     /// Given a set of starting states `start_states`, calculate the set of states reachable by
     /// consuming exactly one character from `char_bitset` (followed by epsilon transition(s))
+    ///
+    /// `RUNTIME: O(states^2)`
     fn char_transitions<'a>(
         &'a self,
         char_bitset: CharBitset,
@@ -327,7 +391,9 @@ impl Expression {
         let mut end_states = result_bitset.slice_mut(());
 
         if !start_states.is_empty() {
+            // RUNTIME: O(states^2)
             for (si, state) in self.states.iter().enumerate() {
+                // RUNTIME: O(states)
                 if !start_states.contains(si) {
                     continue;
                 }
@@ -356,7 +422,7 @@ impl fmt::Debug for Expression {
             if !epsilon_states.borrow().is_empty() {
                 write!(f, "* -> {}; ", epsilon_states)?;
             }
-            write!(f, "\n")?;
+            writeln!(f)?;
         }
         Ok(())
     }

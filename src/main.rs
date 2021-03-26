@@ -22,7 +22,7 @@ fn main() {
     "#;
 
     let start = time::Instant::now();
-    let query = parser::QueryAst::from_str(query_str);
+    let query = parser::QueryAst::new_from_str(query_str);
     let mut query = query.unwrap();
     query.expand_expressions();
 

@@ -65,7 +65,9 @@ impl<'expr, 'word> CacheBuilder<'expr, 'word> {
         }
     }
 
+    /// `RUNTIME: O(words * chars * fuzz * states^3)`
     fn next_single_word(&mut self) -> Option<&'word Word> {
+        // RUNTIME: O(words * chars * fuzz * states^3)
         let fuzz_range = 0..self.cache.expression.fuzz + 1;
         let wordlist = self.wordlist.borrow();
         let mut nonnull_words = self.cache.nonnull_words.borrow_mut();
@@ -73,6 +75,7 @@ impl<'expr, 'word> CacheBuilder<'expr, 'word> {
             let word = &wordlist[self.index];
             self.index += 1;
 
+            // RUNTIME: O(chars)
             let word_len = word.chars.len();
             let mut si: usize = 0;
             while si < word_len
@@ -82,6 +85,7 @@ impl<'expr, 'word> CacheBuilder<'expr, 'word> {
                 si += 1;
             }
 
+            // RUNTIME: O(fuzz * states^2)
             let prefixed_table = &mut self.transition_table[si..];
             if si == 0 {
                 // Clear table
@@ -92,6 +96,8 @@ impl<'expr, 'word> CacheBuilder<'expr, 'word> {
                         .union_with(self.cache.expression.epsilon_states(i));
                 }
             }
+
+            // RUNTIME: O(chars * fuzz * states^3)
             let valid_len = self
                 .cache
                 .expression
@@ -108,6 +114,7 @@ impl<'expr, 'word> CacheBuilder<'expr, 'word> {
             }
             assert!(valid_len == word_len);
 
+            // RUNTIME: O(fuzz * states^2)
             let entry = self
                 .cache
                 .classes
@@ -119,6 +126,7 @@ impl<'expr, 'word> CacheBuilder<'expr, 'word> {
             }
             entry.or_insert(CacheClass { n_words: 1 });
 
+            // RUNTIME: O(fuzz)
             for f in fuzz_range.clone() {
                 let start_transitions = self.transition_table[word_len].slice((0, f));
                 if start_transitions.contains(self.cache.expression.states_len() - 1) {
@@ -130,6 +138,7 @@ impl<'expr, 'word> CacheBuilder<'expr, 'word> {
         None
     }
 
+    /// `RUNTIME: O(words)`
     fn finalize(mut self, new_wordlist: Rc<RefCell<Vec<&'word Word>>>) -> Cache<'expr, 'word> {
         // Drain iterator
         (&mut self).count();
@@ -153,6 +162,8 @@ impl<'expr, 'word> CacheBuilder<'expr, 'word> {
             let mut nonnull_words = self.cache.nonnull_words.borrow_mut();
             let mut new_word_classes = vec![];
             let mut i: usize = 0;
+
+            // RUNTIME: O(words)
             for (&word, &class) in nonnull_words.iter().zip(self.cache.word_classes.iter()) {
                 if i < new_wordlist.len() && *word == *new_wordlist[i] {
                     new_word_classes.push(class);
@@ -254,6 +265,7 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
         }
     }
 
+    /// `RUNTIME: O(expressions * (words + fuzz * states))`
     fn next_single(&mut self) -> Option<String> {
         assert!(!self.singles_done);
 
@@ -275,6 +287,7 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
             c.count();
         });
 
+        // RUNTIME: O(expressions * words)
         let nonnull_wordlist = self
             .cache_builders
             .iter()
@@ -289,6 +302,7 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
             .map(|c| c.finalize(nonnull_wordlist.clone()))
             .collect();
 
+        // RUNTIME: O(expressions * fuzz * states)
         let fuzz_max = self
             .expressions
             .iter()
@@ -326,12 +340,14 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
             .join(" ")
     }
 
+    /// `RUNTIME: O(words^words_max * expressions * fuzz^2 * states^2)`
     fn next_phrase(&mut self) -> Option<String> {
         assert!(self.singles_done);
         if self.wordlist.borrow().is_empty() {
             return None;
         }
 
+        // RUNTIME: O(words^words_max * expressions * fuzz^2 * states^2)
         let mut result = None;
         loop {
             let mut no_match = false;
@@ -341,6 +357,7 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
                 let this_layer = &mut lower_layers[self.index];
                 let next_layer = &mut upper_layers[0];
 
+                // RUNTIME: O(expressions * fuzz^2 * states^2)
                 let mut all_end_match = true;
                 let mut all_no_advance = true;
                 let wi = this_layer.wi;
@@ -354,11 +371,15 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
                     let class = cache.classes.get_index(cache.word_classes[wi]).unwrap().0;
                     next_layer.states.slice2d_mut(c).clear();
 
+                    // RUNTIME: O(fuzz^2 * states^2)
                     let fuzz_limit = cache.expression.fuzz + 1;
                     for f in 0..fuzz_limit {
+                        // RUNTIME: O(fuzz * states^2)
                         for si in this_layer.states.slice((c, f)).ones() {
+                            // RUNTIME: O(fuzz * states)
                             let mut fd = 0;
                             while f + fd < fuzz_limit {
+                                // RUNTIME: O(states)
                                 next_layer
                                     .states
                                     .slice_mut((c, f + fd))
@@ -368,6 +389,7 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
                         }
                     }
 
+                    // RUNTIME: O(fuzz * states)
                     let mut all_empty = true;
                     let mut all_subset = true;
                     let mut any_end_match = false;
@@ -400,6 +422,7 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
                     }
 
                     // NB: This heuristic doesn't actually help that much
+                    // RUNTIME: O(fuzz * states)
                     next_layer.states.compact_distance_set(c);
                 }
 
@@ -425,6 +448,7 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
         result
     }
 
+    /// `RUNTIME: O(max_words)`
     fn advance(&mut self, partial_match: bool) -> bool {
         let mut pm = partial_match;
         loop {
