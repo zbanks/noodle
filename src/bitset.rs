@@ -4,6 +4,17 @@ use std::fmt;
 // which is licensed under the MIT license.
 // https://github.com/petgraph/fixedbitset
 
+pub type BitSet1D = BitSet<()>;
+pub type BitSet3D = BitSet<(usize, usize)>;
+
+pub type BitSetRef1D<'a> = BitSetRef<'a, ()>;
+#[allow(dead_code)]
+pub type BitSetRef3D<'a> = BitSetRef<'a, (usize, usize)>;
+
+pub type BitSetRefMut1D<'a> = BitSetRefMut<'a, ()>;
+#[allow(dead_code)]
+pub type BitSetRefMut3D<'a> = BitSetRefMut<'a, (usize, usize)>;
+
 type Block = u32;
 const BLOCK_BITS: usize = 32;
 
@@ -60,64 +71,9 @@ impl Index for (usize, usize) {
     }
 }
 
-pub type BitSet1D = BitSet<()>;
-pub type BitSet3D = BitSet<(usize, usize)>;
-
-pub type BitSetRef1D<'a> = BitSetRef<'a, ()>;
-#[allow(dead_code)]
-pub type BitSetRef3D<'a> = BitSetRef<'a, (usize, usize)>;
-
-pub type BitSetRefMut1D<'a> = BitSetRefMut<'a, ()>;
-#[allow(dead_code)]
-pub type BitSetRefMut3D<'a> = BitSetRefMut<'a, (usize, usize)>;
-
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct BitSet<Idx: Index> {
     blocks: Box<[Block]>,
-    size: Idx,
-}
-
-impl fmt::Debug for BitSet<()> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let implied_size = self.blocks.len();
-        f.debug_struct("BitSet1D")
-            .field("size", &implied_size)
-            .field("sets", &self.borrow().ones().collect::<Vec<_>>())
-            .finish()
-    }
-}
-
-impl fmt::Debug for BitSet<(usize, usize)> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let implied_size = (
-            self.blocks.len() / self.size.total_size(),
-            self.size.0,
-            self.size.1,
-        );
-        let mut values = vec![];
-        for x in 0..implied_size.0 {
-            let mut row = vec![];
-            for y in 0..implied_size.1 {
-                row.push(self.slice((x, y)).ones().collect::<Vec<_>>());
-            }
-            values.push(row);
-        }
-        f.debug_struct("BitSet3D")
-            .field("size", &implied_size)
-            .field("sets", &values)
-            .finish()
-    }
-}
-
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub struct BitSetRef<'a, Idx: Index> {
-    blocks: &'a [Block],
-    size: Idx,
-}
-
-#[derive(Debug, Hash, PartialEq, Eq)]
-pub struct BitSetRefMut<'a, Idx: Index> {
-    blocks: &'a mut [Block],
     size: Idx,
 }
 
@@ -173,6 +129,16 @@ impl BitSet<()> {
     }
 }
 
+impl fmt::Debug for BitSet<()> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let implied_size = self.blocks.len();
+        f.debug_struct("BitSet1D")
+            .field("size", &implied_size)
+            .field("sets", &self.borrow().ones().collect::<Vec<_>>())
+            .finish()
+    }
+}
+
 impl BitSet<(usize, usize)> {
     pub fn slice2d(&self, index: usize) -> BitSetRef<'_, usize> {
         let range = self.size.total_size() * index..self.size.total_size() * (index + 1);
@@ -190,6 +156,34 @@ impl BitSet<(usize, usize)> {
             size: self.size.1,
         }
     }
+}
+
+impl fmt::Debug for BitSet<(usize, usize)> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let implied_size = (
+            self.blocks.len() / self.size.total_size(),
+            self.size.0,
+            self.size.1,
+        );
+        let mut values = vec![];
+        for x in 0..implied_size.0 {
+            let mut row = vec![];
+            for y in 0..implied_size.1 {
+                row.push(self.slice((x, y)).ones().collect::<Vec<_>>());
+            }
+            values.push(row);
+        }
+        f.debug_struct("BitSet3D")
+            .field("size", &implied_size)
+            .field("sets", &values)
+            .finish()
+    }
+}
+
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub struct BitSetRef<'a, Idx: Index> {
+    blocks: &'a [Block],
+    size: Idx,
 }
 
 impl<'a, Idx: Index> BitSetRef<'a, Idx> {
@@ -217,7 +211,13 @@ impl<'a, Idx: Index> BitSetRef<'a, Idx> {
     }
 }
 
-impl<'a, Idx: Index + fmt::Debug> BitSetRefMut<'a, Idx> {
+#[derive(Debug, Hash, PartialEq, Eq)]
+pub struct BitSetRefMut<'a, Idx: Index> {
+    blocks: &'a mut [Block],
+    size: Idx,
+}
+
+impl<'a, Idx: Index> BitSetRefMut<'a, Idx> {
     pub fn reborrow(self) -> BitSetRef<'a, Idx> {
         BitSetRef {
             blocks: self.blocks,
@@ -233,7 +233,7 @@ impl<'a, Idx: Index + fmt::Debug> BitSetRefMut<'a, Idx> {
         let b = unsafe { self.blocks.get_unchecked(block) };
         b & (1 << bit) != 0
     }
-    pub fn ones(self) -> Ones<'a> {
+    pub fn ones(&'a self) -> Ones<'a> {
         Ones {
             block: self.blocks[0],
             offset: 0,
@@ -305,31 +305,36 @@ mod tests {
     #[test]
     fn bitset_1d() {
         let mut bitset_3 = BitSet1D::new((), 1000);
-        let mut slice_3 = bitset_3.slice_mut(());
-
         let mut bitset_5 = BitSet1D::new((), 1000);
-        let mut slice_5 = bitset_5.slice_mut(());
 
-        for i in 0..1000 {
-            if i % 3 == 0 {
-                slice_3.insert(i);
-            }
-            if i % 5 == 0 {
-                slice_5.insert(i);
+        {
+            let mut slice_3 = bitset_3.slice_mut(());
+            let mut slice_5 = bitset_5.slice_mut(());
+
+            for i in 0..1000 {
+                if i % 3 == 0 {
+                    slice_3.insert(i);
+                }
+                if i % 5 == 0 {
+                    slice_5.insert(i);
+                }
             }
         }
 
         let mut bitset_3or5 = BitSet1D::new((), 1000);
         let mut slice_3or5 = bitset_3or5.borrow_mut();
 
-        assert_eq!(bitset_3.slice(()).blocks.len(), 1024 / BLOCK_BITS);
-        assert_eq!(slice_3or5.blocks.len(), 1024 / BLOCK_BITS);
-
-        slice_3or5.union_with(bitset_3.slice(()));
-        slice_3or5.union_with(slice_5.reborrow());
+        slice_3or5.union_with(bitset_3.borrow());
+        slice_3or5.union_with(bitset_5.borrow());
 
         for i in slice_3or5.ones() {
             assert!(i % 3 == 0 || i % 5 == 0);
+        }
+
+        for i in 0..1000 {
+            assert_eq!(bitset_3.borrow().contains(i), i % 3 == 0);
+            assert_eq!(bitset_5.borrow().contains(i), i % 5 == 0);
+            assert_eq!(slice_3or5.contains(i), i % 3 == 0 || i % 5 == 0);
         }
     }
 }

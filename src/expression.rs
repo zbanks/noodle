@@ -39,7 +39,7 @@ impl State {
 
 pub struct Expression {
     states: Vec<State>,
-    pub text: String,
+    text: String,
 
     pub ignore_whitespace: bool,
     pub ignore_punctuation: bool,
