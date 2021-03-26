@@ -1,230 +1,294 @@
-pub use fixedbitset::FixedBitSet;
-use std::hash::{Hash, Hasher};
+use std::fmt;
 
-pub trait Set<'a> {
-    type Iter;
+// This borrows some implementation from the fixedbitset crate, v0.4.0,
+// which is licensed under the MIT license.
+// https://github.com/petgraph/fixedbitset
 
-    fn create(size: usize) -> Self;
-    fn is_empty(&self) -> bool;
-    fn remove(&mut self, index: usize);
-    fn insert(&mut self, index: usize);
-    fn clear(&mut self);
-    fn contains(&self, index: usize) -> bool;
-    fn is_subset(&self, other: &Self) -> bool;
-    fn union_with(&mut self, other: &Self);
-    fn difference_with(&mut self, other: &Self);
-    fn ones(&'a self) -> Self::Iter;
+const BLOCK_BITS: usize = 64;
+type Block = u64;
+type Range = std::ops::Range<usize>;
+
+fn div_rem(x: usize, d: usize) -> (usize, usize) {
+    (x / d, x % d)
 }
 
-impl<'a> Set<'a> for FixedBitSet {
-    type Iter = fixedbitset::Ones<'a>;
+pub trait Index: Copy {
+    fn total_size(&self) -> usize;
+    fn transpose(&self, x: usize) -> Self;
+    fn slice(&self, sub: Self) -> Range;
+}
 
-    fn create(size: usize) -> Self {
-        //FixedBitSet::with_capacity(size)
-        let size = (size + 31) & !31usize;
-        FixedBitSet::with_capacity(size)
+impl Index for () {
+    fn total_size(&self) -> usize {
+        1
     }
-    fn is_empty(&self) -> bool {
-        self.as_slice().iter().all(|&x| x == 0)
-        //self.count_ones(..) == 0
+    fn transpose(&self, _x: usize) -> Self {}
+    fn slice(&self, _sub: Self) -> Range {
+        0..1
     }
-    fn remove(&mut self, index: usize) {
-        self.set(index, false);
+}
+
+impl Index for usize {
+    fn total_size(&self) -> usize {
+        *self
     }
-    fn insert(&mut self, index: usize) {
-        self.set(index, true);
+    fn transpose(&self, x: usize) -> Self {
+        x
     }
-    fn clear(&mut self) {
-        self.clear();
+    fn slice(&self, sub: Self) -> Range {
+        *self * sub..*self * (sub + 1)
     }
-    fn contains(&self, index: usize) -> bool {
-        self.contains(index)
+}
+
+impl Index for (usize, usize) {
+    fn total_size(&self) -> usize {
+        self.0 * self.1
     }
-    fn is_subset(&self, other: &Self) -> bool {
-        self.is_subset(other)
+    fn transpose(&self, x: usize) -> Self {
+        (self.1, x)
     }
-    fn union_with(&mut self, other: &Self) {
-        if other.len() > self.len() {
-            self.grow(other.len());
+    fn slice(&self, sub: Self) -> Range {
+        let start = self.1 * (self.0 * sub.0 + sub.1);
+        start..start + self.1
+    }
+}
+
+pub type BitSet1D = BitSet<()>;
+pub type BitSet3D = BitSet<(usize, usize)>;
+
+pub type BitSetRef1D<'a> = BitSetRef<'a, ()>;
+#[allow(dead_code)]
+pub type BitSetRef3D<'a> = BitSetRef<'a, (usize, usize)>;
+
+pub type BitSetRefMut1D<'a> = BitSetRefMut<'a, ()>;
+#[allow(dead_code)]
+pub type BitSetRefMut3D<'a> = BitSetRefMut<'a, (usize, usize)>;
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub struct BitSet<Idx: Index> {
+    blocks: Box<[Block]>,
+    size: Idx,
+}
+
+impl fmt::Debug for BitSet<()> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let implied_size = self.blocks.len();
+        f.debug_struct("BitSet1D")
+            .field("size", &implied_size)
+            .field("sets", &self.borrow().ones().collect::<Vec<_>>())
+            .finish()
+    }
+}
+
+impl fmt::Debug for BitSet<(usize, usize)> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let implied_size = (
+            self.blocks.len() / self.size.total_size(),
+            self.size.0,
+            self.size.1,
+        );
+        let mut values = vec![];
+        for x in 0..implied_size.0 {
+            let mut row = vec![];
+            for y in 0..implied_size.1 {
+                row.push(self.slice((x, y)).ones().collect::<Vec<_>>());
+            }
+            values.push(row);
         }
-        for (x, y) in self.as_mut_slice().iter_mut().zip(other.as_slice().iter()) {
-            *x |= *y;
+        f.debug_struct("BitSet3D")
+            .field("size", &implied_size)
+            .field("sets", &values)
+            .finish()
+    }
+}
+
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub struct BitSetRef<'a, Idx: Index> {
+    blocks: &'a [Block],
+    size: Idx,
+}
+
+#[derive(Debug, Hash, PartialEq, Eq)]
+pub struct BitSetRefMut<'a, Idx: Index> {
+    blocks: &'a mut [Block],
+    size: Idx,
+}
+
+impl<Idx: Index> BitSet<Idx> {
+    pub fn new(outer_size: Idx, inner_size: usize) -> Self {
+        let (mut block_size, rem) = div_rem(inner_size, BLOCK_BITS);
+        block_size += (rem > 0) as usize;
+
+        let blocks_count = outer_size.total_size();
+        Self {
+            blocks: vec![0; blocks_count * block_size].into_boxed_slice(),
+            size: outer_size.transpose(block_size),
         }
     }
-    fn difference_with(&mut self, other: &Self) {
-        self.difference_with(other)
+
+    pub fn slice(&self, index: Idx) -> BitSetRef<'_, ()> {
+        let range = self.size.slice(index);
+        let blocks = unsafe { self.blocks.get_unchecked(range) };
+        BitSetRef {
+            blocks,
+            size: (),
+        }
     }
-    fn ones(&'a self) -> Self::Iter {
-        self.ones()
+
+    pub fn slice_mut(&mut self, index: Idx) -> BitSetRefMut<'_, ()> {
+        let range = self.size.slice(index);
+        let blocks = unsafe {self.blocks.get_unchecked_mut(range) };
+        BitSetRefMut {
+            blocks,
+            size: (),
+        }
+    }
+
+    pub fn borrow(&self) -> BitSetRef<'_, Idx> {
+        BitSetRef {
+            blocks: &self.blocks,
+            size: self.size,
+        }
+    }
+
+    pub fn borrow_mut(&mut self) -> BitSetRefMut<'_, Idx> {
+        BitSetRefMut {
+            blocks: &mut self.blocks,
+            size: self.size,
+        }
     }
 }
 
-// XXX: Using a u64 vs. FixedBitSet is about ~2x faster for the test I was running,
-// which had a bitset size of 16.
-// A u64 is not suitable for general purposes, but it does show how much
-// overhead FixedBitSet has for small cardinalities.
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct BitSet {
-    b: u64,
-}
-
-pub struct BitSetIter {
-    b: u64,
-}
-
-impl<'a> Set<'a> for BitSet {
-    type Iter = BitSetIter;
-
-    fn create(size: usize) -> Self {
-        assert!(size <= 64);
-        Self { b: 0 }
+impl BitSet<(usize, usize)> {
+    pub fn slice2d(&self, index: usize) -> BitSetRef<'_, usize> {
+        let range = self.size.total_size() * index..self.size.total_size() * (index + 1);
+        let blocks = unsafe { self.blocks.get_unchecked(range) };
+        BitSetRef {
+            blocks,
+            size: self.size.1,
+        }
     }
-    fn is_empty(&self) -> bool {
-        self.b == 0
-    }
-    fn remove(&mut self, index: usize) {
-        self.b &= !(1 << index);
-    }
-    fn insert(&mut self, index: usize) {
-        self.b |= 1 << index;
-    }
-    fn clear(&mut self) {
-        self.b = 0
-    }
-    fn contains(&self, index: usize) -> bool {
-        (self.b & (1 << index)) != 0
-    }
-    fn is_subset(&self, other: &Self) -> bool {
-        self.b | other.b == other.b
-    }
-    fn union_with(&mut self, other: &Self) {
-        self.b |= other.b
-    }
-    fn difference_with(&mut self, other: &Self) {
-        self.b &= !other.b
-    }
-    fn ones(&self) -> Self::Iter {
-        BitSetIter { b: self.b }
+    pub fn slice2d_mut(&mut self, index: usize) -> BitSetRefMut<'_, usize> {
+        let range = self.size.total_size() * index..self.size.total_size() * (index + 1);
+        let blocks = unsafe { self.blocks.get_unchecked_mut(range) };
+        BitSetRefMut {
+            blocks,
+            size: self.size.1,
+        }
     }
 }
 
-impl Iterator for BitSetIter {
-    type Item = usize;
+impl<'a, Idx: Index> BitSetRef<'a, Idx> {
+    pub fn is_empty(&self) -> bool {
+        self.blocks.iter().all(|&x| x == 0)
+    }
+    pub fn contains(&self, index: usize) -> bool {
+        let (block, bit) = div_rem(index, BLOCK_BITS);
+        let b = unsafe { self.blocks.get_unchecked(block) };
+        b & (1 << bit) != 0
+    }
+    pub fn is_subset(&self, other: &Self) -> bool {
+        debug_assert_eq!(self.blocks.len(), other.blocks.len());
+        self.blocks
+            .iter()
+            .zip(other.blocks)
+            .all(|(&x, &y)| (x | y) == y)
+    }
+    pub fn ones(&'a self) -> Ones<'a> {
+        Ones {
+            block: self.blocks[0],
+            offset: 0,
+            remaining_blocks: &self.blocks[1..],
+        }
+    }
+}
+
+impl<'a, Idx: Index> BitSetRefMut<'a, Idx> {
+    pub fn reborrow(self) -> BitSetRef<'a, Idx> {
+        BitSetRef {
+            blocks: self.blocks,
+            size: self.size,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.blocks.iter().all(|&x| x == 0)
+    }
+    pub fn contains(&self, index: usize) -> bool {
+        let (block, bit) = div_rem(index, BLOCK_BITS);
+        let b = unsafe { self.blocks.get_unchecked(block) };
+        b & (1 << bit) != 0
+    }
+    pub fn ones(self) -> Ones<'a> {
+        Ones {
+            block: self.blocks[0],
+            offset: 0,
+            remaining_blocks: &self.blocks[1..],
+        }
+    }
+    pub fn remove(&mut self, index: usize) {
+        let (block, bit) = div_rem(index, BLOCK_BITS);
+        let b = unsafe { self.blocks.get_unchecked_mut(block) };
+        *b &= !(1 << bit);
+    }
+    pub fn insert(&mut self, index: usize) {
+        let (block, bit) = div_rem(index, BLOCK_BITS);
+        let b = unsafe { self.blocks.get_unchecked_mut(block) };
+        *b |= 1 << bit;
+    }
+    pub fn clear(&mut self) {
+        self.blocks.iter_mut().for_each(|x| *x = 0);
+    }
+    pub fn union_with(&mut self, other: BitSetRef<'_, Idx>) {
+        debug_assert_eq!(self.blocks.len(), other.blocks.len());
+        for i in 0..self.blocks.len() {
+            unsafe {*self.blocks.get_unchecked_mut(i) |= *other.blocks.get_unchecked(i) };
+        }
+    }
+    pub fn difference_with(&mut self, other: BitSetRef<'_, Idx>) {
+        debug_assert_eq!(self.blocks.len(), other.blocks.len());
+        for i in 0..self.blocks.len() {
+            unsafe {*self.blocks.get_unchecked_mut(i) &= !*other.blocks.get_unchecked(i) };
+        }
+    }
+    pub fn copy_from(&mut self, other: BitSetRef<'_, Idx>) {
+        debug_assert_eq!(self.blocks.len(), other.blocks.len());
+        for i in 0..self.blocks.len() {
+            unsafe {*self.blocks.get_unchecked_mut(i) = *other.blocks.get_unchecked(i) };
+        }
+    }
+}
+
+pub struct Ones<'a> {
+    block: Block,
+    offset: usize,
+    remaining_blocks: &'a [Block],
+}
+
+impl<'a> Iterator for Ones<'a> {
+    type Item = usize; // the bit position of the '1'
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.b == 0 {
-            return None;
-        }
-        // from the current block, isolate the
-        // LSB and subtract 1, producing k:
-        // a block with a number of set bits
-        // equal to the index of the LSB
-        let k = (self.b & (!self.b + 1)) - 1;
-        // update block, removing the LSB
-        self.b = self.b & (self.b - 1);
-        // return offset + (index of LSB)
-        Some(k.count_ones() as usize)
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct SmallBitSet {
-    b: smallvec::SmallVec<[u64; 2]>,
-}
-
-impl<'a> Set<'a> for SmallBitSet {
-    // TODO: Operate over all bits, not just first 64
-    type Iter = BitSetIter;
-
-    fn create(size: usize) -> Self {
-        assert!(size <= 64);
-        Self {
-            b: smallvec::SmallVec::from_slice(&[0]),
-        }
-    }
-    fn is_empty(&self) -> bool {
-        self.b[0] == 0
-    }
-    fn remove(&mut self, index: usize) {
-        self.b[0] &= !(1 << index);
-    }
-    fn insert(&mut self, index: usize) {
-        self.b[0] |= 1 << index;
-    }
-    fn clear(&mut self) {
-        self.b[0] = 0
-    }
-    fn contains(&self, index: usize) -> bool {
-        (self.b[0] & (1 << index)) != 0
-    }
-    fn is_subset(&self, other: &Self) -> bool {
-        self.b[0] | other.b[0] == other.b[0]
-    }
-    fn union_with(&mut self, other: &Self) {
-        self.b[0] |= other.b[0]
-    }
-    fn difference_with(&mut self, other: &Self) {
-        self.b[0] &= !other.b[0]
-    }
-    fn ones(&self) -> Self::Iter {
-        BitSetIter {
-            b: self.b[0] as u64,
-        }
-    }
-}
-
-type Item = u16;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HashBitSet(std::collections::HashSet<Item>);
-
-impl<'a> Set<'a> for HashBitSet {
-    // TODO: This implementation is atrocious, but so is the perf so *shrug*
-    type Iter = std::collections::hash_set::Iter<'a, Item>;
-
-    fn create(size: usize) -> Self {
-        assert!(size <= 64);
-        Self(std::collections::HashSet::new())
-    }
-
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-    fn remove(&mut self, index: usize) {
-        self.0.remove(&(index as Item));
-    }
-    fn insert(&mut self, index: usize) {
-        self.0.insert(index as Item);
-    }
-    fn clear(&mut self) {
-        self.0.clear();
-    }
-    fn contains(&self, index: usize) -> bool {
-        self.0.contains(&(index as Item))
-    }
-    fn is_subset(&self, other: &Self) -> bool {
-        self.0.is_subset(&other.0)
-    }
-    fn union_with(&mut self, other: &Self) {
-        other.0.iter().for_each(|&x| {
-            self.0.insert(x);
-        })
-    }
-    fn difference_with(&mut self, other: &Self) {
-        other.0.iter().for_each(|x| {
-            self.0.remove(x);
-        })
-    }
-    fn ones(&'a self) -> Self::Iter {
-        self.0.iter()
-    }
-}
-
-impl Hash for HashBitSet {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        (0..64).for_each(|i| {
-            if self.0.contains(&(i as Item)) {
-                i.hash(state)
+        while self.block == 0 {
+            if self.remaining_blocks.is_empty() {
+                return None;
             }
-        })
+            self.block = self.remaining_blocks[0];
+            self.remaining_blocks = &self.remaining_blocks[1..];
+            self.offset += BLOCK_BITS;
+        }
+        let t = self.block & (0 as Block).wrapping_sub(self.block);
+        let r = self.block.trailing_zeros() as usize;
+        self.block ^= t;
+        Some(self.offset + r)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn bitset() {
+        let bs = BitSet3D((2, 3), 5);
+        let _ = bs.slice_mut(1, 2);
     }
 }

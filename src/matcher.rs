@@ -1,5 +1,5 @@
-use crate::bitset::Set;
-use crate::expression::{Expression, TransitionGroup};
+use crate::bitset::BitSet3D;
+use crate::expression::Expression;
 use crate::words::*;
 use indexmap::IndexMap;
 use std::cell::RefCell;
@@ -16,7 +16,7 @@ struct CacheBuilder<'expr, 'word> {
 
     index: usize,
     wordlist: Rc<RefCell<Vec<&'word Word>>>,
-    transition_table: Vec<TransitionGroup>,
+    transition_table: Vec<BitSet3D>,
     previous_chars: &'word [Char],
 
     total_prefixed: usize,
@@ -35,9 +35,8 @@ impl<'expr, 'word> CacheBuilder<'expr, 'word> {
         let word_classes = vec![];
 
         let transition_group_new = || {
-            TransitionGroup::new(
-                expression.states_len(),
-                expression.fuzz + 1,
+            BitSet3D::new(
+                (expression.states_len(), expression.fuzz + 1),
                 expression.states_len(),
             )
         };
@@ -109,6 +108,7 @@ impl<'word> Iterator for CacheBuilder<'_, 'word> {
     type Item = &'word Word;
 
     fn next(&mut self) -> Option<&'word Word> {
+        let fuzz_range = 0..self.cache.expression.fuzz + 1;
         let wordlist = self.wordlist.borrow();
         let mut nonnull_words = self.cache.nonnull_words.borrow_mut();
         while self.index < wordlist.len() {
@@ -126,9 +126,19 @@ impl<'word> Iterator for CacheBuilder<'_, 'word> {
 
             let prefixed_table = &mut self.transition_table[si..];
             if si == 0 {
-                self.cache
-                    .expression
-                    .init_transition_table(&mut prefixed_table[0]);
+                // Clear table
+                prefixed_table[0].borrow_mut().clear();
+                for i in 0..self.cache.expression.states_len() {
+                    prefixed_table[0].slice_mut((i, 0)).insert(i);
+                    prefixed_table[0].slice_mut((i, 0)).union_with(self.cache.expression.epsilon_states(i));
+                }
+                //prefixed_table[0].slice_mut((0, 0)).insert(0);
+                //prefixed_table[0]
+                //    .slice_mut((0, 0))
+                //    .union_with(self.cache.expression.epsilon_states(0));
+                ////self.cache
+                ////    .expression
+                ////    .init_transition_table(&mut prefixed_table[0]);
             }
             let valid_len = self
                 .cache
@@ -157,8 +167,9 @@ impl<'word> Iterator for CacheBuilder<'_, 'word> {
             }
             entry.or_insert(CacheClass { n_words: 1 });
 
-            for fuzz_states in self.transition_table[word_len].slice(0) {
-                if fuzz_states.contains(self.cache.expression.states_len() - 1) {
+            for f in fuzz_range.clone() {
+                let start_transitions = self.transition_table[word_len].slice((0, f));
+                if start_transitions.contains(self.cache.expression.states_len() - 1) {
                     return Some(word);
                 }
             }
@@ -172,7 +183,7 @@ impl<'word> Iterator for CacheBuilder<'_, 'word> {
 struct Cache<'expr, 'word> {
     expression: &'expr Expression,
     nonnull_words: Rc<RefCell<Vec<&'word Word>>>,
-    classes: IndexMap<TransitionGroup, CacheClass>,
+    classes: IndexMap<BitSet3D, CacheClass>,
     word_classes: Vec<usize>,
 }
 
@@ -180,7 +191,7 @@ struct Cache<'expr, 'word> {
 struct Layer<'word> {
     wi: usize,
     stem: Option<&'word Word>,
-    states: TransitionGroup,
+    states: BitSet3D,
 }
 
 impl<'word> Layer<'word> {
@@ -188,7 +199,7 @@ impl<'word> Layer<'word> {
         Self {
             wi: 0,
             stem: None,
-            states: TransitionGroup::new(caches_count, fuzz_count, states_count),
+            states: BitSet3D::new((caches_count, fuzz_count), states_count),
         }
     }
 }
@@ -233,7 +244,7 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
         }
 
         Matcher {
-            expressions: expressions.into_iter().collect(),
+            expressions: expressions.iter().collect(),
             cache_builders,
             caches: vec![],
             singles_done: false,
@@ -312,7 +323,12 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
             .collect();
 
         for (i, expr) in self.expressions.iter().enumerate() {
-            expr.init_transitions_start(layers[0].states.slice_mut(i));
+            //expr.init_transitions_start(layers[0].states.slice_mut(i));
+            layers[0].states.slice2d_mut(i).clear();
+
+            let mut starting_states = layers[0].states.slice_mut((i, 0));
+            starting_states.insert(0);
+            starting_states.union_with(expr.epsilon_states(0));
         }
 
         self.layers = layers;
@@ -345,7 +361,7 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
                 let next_layer = &mut upper_layers[0];
 
                 let mut all_end_match = true;
-                let mut all_no_advance = true;
+                //let mut all_no_advance = true;
                 let wi = this_layer.wi;
                 let word = wordlist[wi];
                 for (c, cache) in self.caches.iter().enumerate() {
@@ -354,39 +370,54 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
                         break;
                     }
 
-                    let fuzz_limit = cache.expression.fuzz + 1;
-                    let end_ss = &mut next_layer.states.slice_mut(c)[0..fuzz_limit];
-                    let states = &this_layer.states.slice(c)[0..fuzz_limit];
-
-                    end_ss.iter_mut().for_each(|e| e.clear());
-
                     let class = cache.classes.get_index(cache.word_classes[wi]).unwrap().0;
+                    next_layer.states.slice2d_mut(c).clear();
 
-                    for (f, fuzz_states) in states.iter().enumerate() {
-                        for si in fuzz_states.ones() {
-                            //let si = *si as usize;
+                    let fuzz_limit = cache.expression.fuzz + 1;
+                    for f in 0..fuzz_limit {
+                        for si in this_layer.states.slice((c, f)).ones() {
                             let mut fd = 0;
                             while f + fd < fuzz_limit {
-                                //end_ss[f + fd].union_with(&class.slice(si)[fd]);
-                                Set::union_with(&mut end_ss[f + fd], &class.slice(si)[fd]);
+                                next_layer
+                                    .states
+                                    .slice_mut((c, f + fd))
+                                    .union_with(class.slice((si, fd)));
                                 fd += 1;
                             }
                         }
+
+                        //let end_ss = &mut next_layer.states.slice_mut(c)[0..fuzz_limit];
+                        //let states = &this_layer.states.slice(c)[0..fuzz_limit];
+
+                        //end_ss.iter_mut().for_each(|e| e.clear());
+
+                        //let class = cache.classes.get_index(cache.word_classes[wi]).unwrap().0;
+
+                        //for (f, fuzz_states) in states.iter().enumerate() {
+                        //for si in fuzz_states.ones() {
+                        //    //let si = *si as usize;
+                        //    let mut fd = 0;
+                        //    while f + fd < fuzz_limit {
+                        //        end_ss[f + fd].union_with(class.slice(si)[fd]);
+                        //        fd += 1;
+                        //    }
+                        //}
                     }
 
                     let mut all_empty = true;
-                    let mut all_subset = true;
+                    //let mut all_subset = true;
                     let mut any_end_match = false;
                     let success_index = cache.expression.states_len() - 1;
-                    for (i, es) in end_ss.iter().enumerate() {
+                    for f in 0..fuzz_limit {
+                        let es = next_layer.states.slice((c, f));
                         if es.contains(success_index) {
                             any_end_match = true;
                             all_empty = false;
-                            all_subset = false;
+                        //all_subset = false;
                         } else if !es.is_empty() {
-                            if !es.is_subset(&states[i]) {
-                                all_subset = false;
-                            }
+                            //if !es.is_subset(&states[i]) {
+                            //    all_subset = false;
+                            //}
                             all_empty = false;
                         }
                     }
@@ -396,18 +427,18 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
                         no_match = true;
                         break;
                     }
-                    if !all_subset {
-                        all_no_advance = false;
-                    }
+                    //if !all_subset {
+                    //    all_no_advance = false;
+                    //}
                     if !any_end_match {
                         all_end_match = false;
                     }
                 }
 
                 // Unclear if this optimization is worth it (even though it does help prevent .* blowouts)
-                if all_no_advance {
-                    no_match = true;
-                }
+                //if all_no_advance {
+                //    no_match = true;
+                //}
 
                 if !no_match {
                     this_layer.stem = Some(word);

@@ -1,4 +1,4 @@
-use crate::bitset::{BitSet, FixedBitSet, HashBitSet, Set, SmallBitSet};
+use crate::bitset::{BitSet1D, BitSet3D, BitSetRef1D, BitSetRefMut1D};
 use crate::parser;
 use crate::words::{Char, CharBitset};
 use std::fmt;
@@ -6,27 +6,29 @@ use std::fmt;
 const MAX_SET_SIZE: usize = 64;
 
 //pub type StateBitSet = BitSet; // 320ms (only 64 bits)
+//pub type StateBitSet = FixedBitSet; // 710ms
 //pub type StateBitSet = SmallBitSet; // [u64; 1]=495ms; [u32; 1]=520ms; [u64; 4]=495ms; [u64; 4]=510ms
-pub type StateBitSet = FixedBitSet; // 710ms
-                                    //pub type StateBitSet = HashBitSet; // 2300ms (!!!)
+//pub type StateBitSet = HashBitSet; // 2300ms (!!!)
 
 pub type Result<T> = std::result::Result<T, ()>;
 
+/*
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct TransitionGroup {
-    items: Vec<StateBitSet>,
+    items: Box<[StateBitSet]>,
     inner_size: usize,
 }
 
 impl TransitionGroup {
     pub fn new(outer_size: usize, inner_size: usize, set_size: usize) -> Self {
-        let items = vec![StateBitSet::create(set_size); outer_size * inner_size];
+        let items = vec![StateBitSet::create(set_size); outer_size * inner_size].into_boxed_slice();
         Self { items, inner_size }
     }
 
     pub fn slice(&self, index: usize) -> &[StateBitSet] {
         let i = index * self.inner_size;
-        self.items.get(i..i + self.inner_size).unwrap()
+        // This saves about ~5-8% total time over the checked method
+        unsafe { self.items.get_unchecked(i..i + self.inner_size) }
     }
 
     pub fn slice_mut(&mut self, index: usize) -> &mut [StateBitSet] {
@@ -34,10 +36,11 @@ impl TransitionGroup {
         self.items.get_mut(i..i + self.inner_size).unwrap()
     }
 }
+*/
 
 #[derive(Debug, Clone)]
 struct State {
-    epsilon_states: StateBitSet,
+    epsilon_states: BitSet1D,
 
     char_bitset: CharBitset,
     next_state: usize,
@@ -45,17 +48,29 @@ struct State {
 
 impl State {
     fn new() -> Self {
+        Self::new_transition(CharBitset::EMPTY, 0)
+    }
+
+    fn new_transition(char_bitset: CharBitset, next_state: usize) -> Self {
         Self {
-            epsilon_states: StateBitSet::create(MAX_SET_SIZE),
-            char_bitset: CharBitset::EMPTY,
-            next_state: 0,
+            epsilon_states: BitSet1D::new((), MAX_SET_SIZE),
+            char_bitset,
+            next_state,
         }
+    }
+
+    fn epsilon_states_bitset(&self) -> BitSetRef1D<'_> {
+        self.epsilon_states.slice(())
+    }
+
+    fn epsilon_states_bitset_mut(&mut self) -> BitSetRefMut1D<'_> {
+        self.epsilon_states.slice_mut(())
     }
 }
 
 pub struct Expression {
     states: Vec<State>,
-    text: String,
+    pub text: String,
 
     pub ignore_whitespace: bool,
     pub ignore_punctuation: bool,
@@ -63,84 +78,6 @@ pub struct Expression {
 }
 
 impl Expression {
-    /// Hard-coded NFAs for head-to-head comparison of matching engine
-    /// performance against C/Zig implementations
-    pub fn example(x: usize) -> Self {
-        let states = match x {
-            0 => {
-                let mut states: Vec<_> = (0..16)
-                    .map(|i| {
-                        let mut s = State::new();
-                        s.next_state = i + 1;
-                        s
-                    })
-                    .collect();
-                states[0].char_bitset = Char::from('e').into();
-                states[1].char_bitset = Char::from('x').into();
-                states[2].char_bitset = CharBitset::LETTERS;
-                states[3].char_bitset = Char::from('r').into();
-                states[4].char_bitset = Char::from('e').into();
-                states[5].epsilon_states.insert(6);
-                states[5].epsilon_states.insert(8);
-                states[6].char_bitset = Char::from('s').into();
-                states[7].epsilon_states.insert(6);
-                states[7].epsilon_states.insert(8);
-                states[8].char_bitset = Char::from('i').into();
-                states[9].char_bitset = Char::from('o').into();
-                states[10].char_bitset = Char::from('n').into();
-                states[11].char_bitset = Char::from('t').into();
-                states[12].char_bitset = Char::from('e').into();
-                states[13].char_bitset = Char::from('s').into();
-                states[14].char_bitset = Char::from('t').into();
-                states
-            }
-            1 => {
-                let mut states: Vec<_> = (0..16)
-                    .map(|i| {
-                        let mut s = State::new();
-                        s.next_state = i + 1;
-                        s
-                    })
-                    .collect();
-                states[0].char_bitset = Char::from('e').into();
-                states[1].epsilon_states.insert(2);
-                states[1].epsilon_states.insert(3);
-                states[1].epsilon_states.insert(4);
-                states[1].epsilon_states.insert(5);
-                states[2].char_bitset = Char::from('x').into();
-                states[3].epsilon_states.insert(4);
-                states[3].epsilon_states.insert(5);
-                states[4].char_bitset = Char::from('z').into();
-                states[5].char_bitset = Char::from('p').into();
-                states[6].char_bitset = Char::from('r').into();
-                states[7].char_bitset = Char::from('e').into();
-                states[8].char_bitset = Char::from('s').into();
-                states[9].char_bitset = Char::from('s').into();
-                states[10].epsilon_states.insert(9);
-                states[10].epsilon_states.insert(11);
-                states[11].char_bitset = CharBitset::LETTERS_BUT_I;
-                states[12].epsilon_states.insert(13);
-                states[12].epsilon_states.insert(15);
-                states[13].char_bitset = CharBitset::LETTERS;
-                states[14].epsilon_states.insert(13);
-                states[14].epsilon_states.insert(15);
-                states
-            }
-            _ => unreachable!(),
-        };
-        Self {
-            states,
-            text: "example".to_string(),
-            ignore_whitespace: true,
-            ignore_punctuation: true,
-            fuzz: match x {
-                0 => 2,
-                1 => 0,
-                _ => 0,
-            },
-        }
-    }
-
     /// Compile an `Expression` from its string representation
     pub fn new(text: &str) -> Result<Self> {
         let ast_root = parser::parse(text).unwrap();
@@ -174,14 +111,16 @@ impl Expression {
         // `epsilon_states`; future versions could prune unneeded states, etc.
         for i in 0..states.len() {
             loop {
-                let mut ss: StateBitSet = states[i].epsilon_states.clone();
+                let mut ss: BitSet1D = states[i].epsilon_states.clone();
+                let mut bs = ss.borrow_mut();
+
                 for (i2, state2) in states.iter().enumerate() {
-                    if !ss.contains(i2) {
+                    if !bs.contains(i2) {
                         continue;
                     }
-                    ss.union_with(&state2.epsilon_states);
+                    bs.union_with(state2.epsilon_states_bitset());
                 }
-                if ss == states[i].epsilon_states {
+                if states[i].epsilon_states_bitset() == bs.reborrow() {
                     break;
                 }
                 states[i].epsilon_states = ss;
@@ -195,26 +134,27 @@ impl Expression {
     fn build_states(ast: &parser::Ast, states: &mut Vec<State>) -> Result<()> {
         let initial_len = states.len();
         match ast {
-            parser::Ast::Class(char_bitset) => states.push(State {
-                epsilon_states: StateBitSet::create(MAX_SET_SIZE),
-                char_bitset: *char_bitset,
-                next_state: initial_len + 1,
-            }),
+            parser::Ast::Class(char_bitset) => {
+                states.push(State::new_transition(*char_bitset, initial_len + 1))
+            }
             parser::Ast::Alternatives(alts) => {
                 states.push(State::new());
                 let mut end_indexes = vec![];
                 for alt in alts {
                     let next_index = states.len();
-                    states[initial_len].epsilon_states.insert(next_index);
+                    states[initial_len]
+                        .epsilon_states_bitset_mut()
+                        .insert(next_index);
                     Self::build_states(alt, states)?;
                     end_indexes.push(states.len() - 1);
                 }
                 let next_index = states.len();
                 for end_index in end_indexes {
                     // Repoint the terminal states to the true success state
-                    if states[end_index].epsilon_states.contains(end_index + 1) {
-                        states[end_index].epsilon_states.remove(end_index + 1);
-                        states[end_index].epsilon_states.insert(next_index);
+                    let mut epsilon_states = states[end_index].epsilon_states_bitset_mut();
+                    if epsilon_states.contains(end_index + 1) {
+                        epsilon_states.remove(end_index + 1);
+                        epsilon_states.insert(next_index);
                     }
                     states[end_index].next_state = next_index;
                 }
@@ -231,47 +171,68 @@ impl Expression {
                 for i in 0..repeats {
                     if i <= max.unwrap_or(*min) - *min {
                         let next_index = states.len();
-                        states[initial_len].epsilon_states.insert(next_index);
+                        states[initial_len]
+                            .epsilon_states_bitset_mut()
+                            .insert(next_index);
                     }
                     final_term_index = states.len();
                     Self::build_states(term, states)?;
                 }
                 let final_index = states.len();
                 states.push(State::new());
-                states[final_index].epsilon_states.insert(final_index + 1);
+                states[final_index]
+                    .epsilon_states_bitset_mut()
+                    .insert(final_index + 1);
                 if *min == 0 {
-                    states[initial_len].epsilon_states.insert(final_index);
+                    states[initial_len]
+                        .epsilon_states_bitset_mut()
+                        .insert(final_index);
                 }
                 if *max == None {
-                    states[final_index].epsilon_states.insert(final_term_index);
+                    states[final_index]
+                        .epsilon_states_bitset_mut()
+                        .insert(final_term_index);
                 }
             }
         }
         Ok(())
     }
 
+    pub fn epsilon_states(&self, state_index: usize) -> BitSetRef1D<'_> {
+        self.states[state_index].epsilon_states_bitset()
+    }
+
+    pub fn epsilon_states_mut(&mut self, state_index: usize) -> BitSetRefMut1D<'_> {
+        self.states[state_index].epsilon_states_bitset_mut()
+    }
+
+    /*
+    // This takes a from_state=0 slice, of type [fuzz][to_states]
     pub fn init_transitions_start(&self, transitions: &mut [StateBitSet]) {
         transitions.iter_mut().for_each(|s| s.clear());
 
         transitions[0].insert(0);
-        transitions[0].union_with(&self.states[0].epsilon_states);
+        transitions[0].union_with(self.states[0].epsilon_states);
     }
 
-    pub fn init_transition_table(&self, transition_table: &mut TransitionGroup) {
+    // This takes a whole group, of type [from_state][fuzz][to_states]
+    pub fn init_transition_table(&self, transition_table: &mut BitSetGroup) {
         assert!(transition_table.items.len() == self.states_len() * transition_table.inner_size);
         for (i, state) in self.states.iter().enumerate() {
             let state_slice = transition_table.slice_mut(i);
             state_slice.iter_mut().for_each(|s| s.clear());
 
             state_slice[0].insert(i);
-            state_slice[0].union_with(&state.epsilon_states);
+            state_slice[0].union_with(state.epsilon_states);
         }
     }
+    */
 
+    // transition_table: [char][from_state][fuzz][to_state]
     pub fn fill_transition_table(
         &self,
         chars: &[Char],
-        transition_table: &mut [TransitionGroup],
+        transition_table: &mut [BitSet3D],
     ) -> usize {
         for (char_index, chr) in chars.iter().enumerate() {
             let char_bitset = CharBitset::from(*chr);
@@ -281,19 +242,26 @@ impl Expression {
 
             // Consume 1 character from the buffer and compute the set of possible resulting states
             for state_index in 0..self.states.len() {
-                let state_transitions = lower_table[char_index].slice(state_index);
-                assert!(state_transitions.len() == self.fuzz + 1);
+                //let state_transitions = lower_table[char_index].slice(state_index);
+                //assert!(state_transitions.len() == self.fuzz + 1);
 
-                let next_state_transitions = upper_table[0].slice_mut(state_index);
-                assert!(next_state_transitions.len() == self.fuzz + 1);
+                //let next_state_transitions = upper_table[0].slice_mut(state_index);
+                //assert!(next_state_transitions.len() == self.fuzz + 1);
 
                 let mut all_fuzz_are_empty = true;
                 for fuzz_index in 0..=self.fuzz {
-                    if state_transitions[fuzz_index].is_empty() {
-                        next_state_transitions[fuzz_index].clear();
+                    let state_transitions =
+                        lower_table[char_index].slice((state_index, fuzz_index));
+                    let mut next_state_transitions =
+                        upper_table[0].slice_mut((state_index, fuzz_index));
+
+                    if state_transitions.is_empty() {
+                        next_state_transitions.clear();
                     } else {
-                        next_state_transitions[fuzz_index] =
-                            self.char_transitions(char_bitset, &state_transitions[fuzz_index]);
+                        next_state_transitions.copy_from(
+                            self.char_transitions(char_bitset, state_transitions)
+                                .slice(()),
+                        );
                         all_fuzz_are_empty = false;
                     }
                 }
@@ -304,28 +272,37 @@ impl Expression {
 
                 // For a fuzzy match, expand `next_state_table[fi+1]` by adding all states
                 // reachable from `state_table[f]` *but* with a 1-character change to `chars`
-                let mut fuzz_superset = StateBitSet::create(self.states.len());
+                let mut fuzz_superset = BitSet1D::new((), self.states.len());
                 for fuzz_index in 0..self.fuzz {
-                    if state_transitions[fuzz_index].is_empty() {
+                    let state_transitions =
+                        lower_table[char_index].slice((state_index, fuzz_index));
+                    //let next_state_transitions = upper_table[0].slice_mut((state_index, fuzz_index));
+                    let mut fuzzed_next_state_transitions =
+                        upper_table[0].slice_mut((state_index, fuzz_index + 1));
+
+                    if state_transitions.is_empty() {
                         continue;
                     }
 
                     // Deletion
-                    next_state_transitions[fuzz_index + 1]
-                        .union_with(&state_transitions[fuzz_index]);
+                    fuzzed_next_state_transitions.union_with(state_transitions);
 
                     // Change
-                    let change_set =
-                        self.char_transitions(CharBitset::LETTERS, &state_transitions[fuzz_index]);
-                    next_state_transitions[fuzz_index + 1].union_with(&change_set);
+                    let change_set_group =
+                        self.char_transitions(CharBitset::LETTERS, state_transitions);
+                    let change_set = change_set_group.slice(());
+                    fuzzed_next_state_transitions.union_with(change_set);
 
                     // Insertion
-                    let insertion_set = self.char_transitions(char_bitset, &change_set);
-                    next_state_transitions[fuzz_index + 1].union_with(&insertion_set);
+                    let insertion_set_group = self.char_transitions(char_bitset, change_set);
+                    let insertion_set = insertion_set_group.slice(());
+                    fuzzed_next_state_transitions.union_with(insertion_set);
 
                     // Optimization: discard the states we can get to with less fuzz
-                    next_state_transitions[fuzz_index + 1].difference_with(&fuzz_superset);
-                    fuzz_superset.union_with(&next_state_transitions[fuzz_index + 1]);
+                    fuzzed_next_state_transitions.difference_with(fuzz_superset.borrow());
+                    fuzz_superset
+                        .borrow_mut()
+                        .union_with(fuzzed_next_state_transitions.reborrow());
                 }
             }
             if all_states_are_empty {
@@ -335,25 +312,28 @@ impl Expression {
         chars.len()
     }
 
-    fn char_transitions(&self, char_bitset: CharBitset, start_states: &StateBitSet) -> StateBitSet {
-        let mut end_states = StateBitSet::create(self.states.len());
+    fn char_transitions<'a>(
+        &'a self,
+        char_bitset: CharBitset,
+        start_states: BitSetRef1D<'a>,
+    ) -> BitSet1D {
+        let mut result_bitset = BitSet1D::new((), self.states.len());
+        let mut end_states = result_bitset.slice_mut(());
 
-        if start_states.is_empty() {
-            return end_states;
+        if !start_states.is_empty() {
+            for (si, state) in self.states.iter().enumerate() {
+                if !start_states.contains(si) {
+                    continue;
+                }
+
+                if char_bitset.is_intersecting(state.char_bitset) {
+                    end_states.insert(state.next_state);
+                    end_states.union_with(self.epsilon_states(state.next_state));
+                }
+            }
         }
 
-        for (si, state) in self.states.iter().enumerate() {
-            if !start_states.contains(si) {
-                continue;
-            }
-
-            if char_bitset.is_intersecting(state.char_bitset) {
-                end_states.insert(state.next_state);
-                end_states.union_with(&self.states[state.next_state].epsilon_states);
-            }
-        }
-
-        end_states
+        result_bitset
     }
 }
 
