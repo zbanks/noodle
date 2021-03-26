@@ -9,13 +9,25 @@ pub struct Char(u8);
 impl Char {
     pub const PUNCTUATION: Self = Char(26);
     pub const WHITESPACE: Self = Char(27);
+    pub const _MAX: usize = 28;
 
     pub fn into_char(self) -> char {
+        assert!((self.0 as usize) < Self::_MAX);
         match self {
             Char::PUNCTUATION => '\'',
             Char::WHITESPACE => '_',
-            _ => std::char::from_u32('A' as u32 + self.0 as u32).unwrap(),
+            _ => std::char::from_u32('a' as u32 + self.0 as u32).unwrap(),
         }
+    }
+
+    pub fn as_index(self) -> usize {
+        assert!((self.0 as usize) < Self::_MAX);
+        self.0 as usize
+    }
+
+    pub fn from_index(i: usize) -> Char {
+        assert!((i as usize) < Self::_MAX);
+        Char(i as u8)
     }
 }
 
@@ -68,6 +80,10 @@ impl CharBitset {
         self.0 |= other.0;
     }
 
+    pub fn difference_with(&mut self, other: Self) {
+        self.0 &= !other.0;
+    }
+
     pub fn is_intersecting(&self, other: Self) -> bool {
         (self.0 & other.0) != 0
     }
@@ -75,6 +91,12 @@ impl CharBitset {
 
 impl From<Char> for CharBitset {
     fn from(c: Char) -> Self {
+        Self(1 << c.0)
+    }
+}
+
+impl From<&Char> for CharBitset {
+    fn from(c: &Char) -> Self {
         Self(1 << c.0)
     }
 }
@@ -133,6 +155,7 @@ impl fmt::Display for Word {
     }
 }
 
+#[allow(clippy::result_unit_err)]
 pub fn load_wordlist<P>(filename: P) -> Result<Vec<Word>, ()>
 where
     P: AsRef<std::path::Path>,

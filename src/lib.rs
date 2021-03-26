@@ -3,8 +3,12 @@ extern crate pest;
 extern crate pest_derive;
 
 mod bitset;
-mod parser;
+pub mod parser;
 
 pub mod expression;
 pub mod matcher;
 pub mod words;
+
+pub use expression::Expression;
+pub use matcher::Matcher;
+pub use words::{load_wordlist, Word};

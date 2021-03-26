@@ -258,7 +258,6 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
         assert!(!self.singles_done);
 
         // Check for single-word matches
-        // TODO: Emit these as matches as they're calculated
         let (first_cache, remaining_caches) = self.cache_builders.split_at_mut(1);
         for word in &mut first_cache[0] {
             let mut all_match = true;
@@ -392,12 +391,16 @@ impl<'expr, 'word> Matcher<'expr, 'word> {
                         no_match = true;
                         break;
                     }
+
                     if !all_subset {
                         all_no_advance = false;
                     }
                     if !any_end_match {
                         all_end_match = false;
                     }
+
+                    // NB: This heuristic doesn't actually help that much
+                    next_layer.states.compact_distance_set(c);
                 }
 
                 // Unclear if this optimization is worth it (even though it does help prevent .* blowouts)

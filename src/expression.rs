@@ -37,6 +37,7 @@ impl State {
     }
 }
 
+/// Representation of a low-level Noodle Expression
 pub struct Expression {
     states: Vec<State>,
     text: String,
@@ -49,57 +50,32 @@ pub struct Expression {
 impl Expression {
     /// Compile an `Expression` from its string representation
     pub fn new(text: &str) -> Result<Self> {
-        let ast_root = parser::parse(text).unwrap();
-        let ignore_whitespace = ast_root.flag_whitespace.unwrap_or(true);
-        let ignore_punctuation = ast_root.flag_punctuation.unwrap_or(true);
+        let ast_root = parser::ExpressionAst::from_str(text).unwrap();
+        Self::from_ast(&ast_root)
+    }
+
+    pub fn from_ast(ast_root: &parser::ExpressionAst) -> Result<Self> {
+        let ignore_whitespace = ast_root.options.whitespace.unwrap_or(true);
+        let ignore_punctuation = ast_root.options.punctuation.unwrap_or(true);
 
         let mut states = vec![];
-        Self::build_states(&ast_root.expression, &mut states)?;
+        Self::build_states(&ast_root.root, &mut states)?;
         // Add a "success" end state (this may not be needed?)
         states.push(State::new());
         Self::optimize_states(&mut states);
 
         Ok(Expression {
             states,
-            text: text.to_owned(),
+            text: format!("{}", ast_root),
 
             ignore_whitespace,
             ignore_punctuation,
-            fuzz: ast_root.flag_fuzz.unwrap_or(0),
+            fuzz: ast_root.options.fuzz.unwrap_or(0),
         })
     }
 
     pub fn states_len(&self) -> usize {
         self.states.len()
-    }
-
-    /// Perform an optimization pass on the NFA, modifying `states` so
-    /// that it produces an equivalent NFA that can be evaluated more efficiently
-    fn optimize_states(states: &mut Vec<State>) {
-        // TODO: This currently only calculates a transitive closure over
-        // `epsilon_states`; future versions could prune unneeded states, etc.
-        for i in 0..states.len() {
-            loop {
-                let mut ss: BitSet1D = states[i].epsilon_states.clone();
-                let mut bs = ss.borrow_mut();
-
-                bs.insert(i);
-                for (i2, state2) in states.iter().enumerate() {
-                    if !bs.contains(i2) {
-                        continue;
-                    }
-                    bs.union_with(state2.epsilon_states_bitset());
-                }
-                if states[i].epsilon_states_bitset() == bs.reborrow() {
-                    break;
-                }
-                states[i].epsilon_states = ss;
-            }
-        }
-        let states_len = states.len();
-        for state in states.iter_mut() {
-            state.epsilon_states = state.epsilon_states.resize(states_len);
-        }
     }
 
     /// Extend `states` with the NFA representation of the `ast`
@@ -138,6 +114,18 @@ impl Expression {
                     Self::build_states(term, states)?;
                 }
             }
+            parser::Ast::Repetition {
+                term: _,
+                min: 0,
+                max: Some(0),
+            } => {}
+            parser::Ast::Repetition {
+                term,
+                min: 1,
+                max: Some(1),
+            } => {
+                Self::build_states(term, states)?;
+            }
             parser::Ast::Repetition { term, min, max } => {
                 states.push(State::new());
                 let repeats = std::cmp::max(1, std::cmp::max(*min, max.unwrap_or(*min)));
@@ -168,19 +156,90 @@ impl Expression {
                         .insert(final_term_index);
                 }
             }
+            parser::Ast::Anagram(_) => unreachable!(),
         }
         Ok(())
     }
 
+    /// Perform an optimization pass on the NFA, modifying `states` so
+    /// that it produces an equivalent NFA that can be evaluated more efficiently
+    fn optimize_states(states: &mut Vec<State>) {
+        // TODO: This only performs _required_ optimizations; future versions
+        // could perform optional steps like pruning unneeded states
+
+        // `Matcher` requires that there is a transitive closure over `epsilon_states` and that
+        // each state has itself included in that set
+        for i in 0..states.len() {
+            // Add an epsilon transition from each state to itself
+            states[i].epsilon_states.borrow_mut().insert(i);
+
+            // Calculate transitive closure over `epsilon_states`
+            loop {
+                let mut ss: BitSet1D = states[i].epsilon_states.clone();
+                let mut bs = ss.borrow_mut();
+
+                for (i2, state2) in states.iter().enumerate() {
+                    if !bs.contains(i2) {
+                        continue;
+                    }
+                    bs.union_with(state2.epsilon_states_bitset());
+                }
+                if states[i].epsilon_states_bitset() == bs.reborrow() {
+                    break;
+                }
+                states[i].epsilon_states = ss;
+            }
+        }
+
+        // Shrink the `epsilon_states` set to exactly fit the total number of states, so that it
+        // can be easily manipulated by `Matcher`'s `BitSet`s
+        let states_len = states.len();
+        for state in states.iter_mut() {
+            state.epsilon_states = state.epsilon_states.resize(states_len);
+        }
+
+        // TODO: This identifies unneeded states (I think?), but doesn't prune them
+        for (i, state) in states.iter().enumerate() {
+            let mut similar_states = state.epsilon_states.clone();
+            similar_states.borrow_mut().remove(i);
+            for state2 in states.iter() {
+                if state2.next_state == i {
+                    similar_states.borrow_mut().clear();
+                    break;
+                }
+                if state2.epsilon_states_bitset().contains(i) {
+                    similar_states
+                        .borrow_mut()
+                        .intersect_with(state2.epsilon_states_bitset());
+                }
+            }
+            if !similar_states.borrow().is_empty() {
+                println!(
+                    "state {:?} is redundant to states {:?} (could be removed)",
+                    i, similar_states
+                );
+            }
+        }
+    }
+
+    /// Return the set of states reachable via epsilon transition(s) from the given state
     pub fn epsilon_states(&self, state_index: usize) -> BitSetRef1D<'_> {
         self.states[state_index].epsilon_states_bitset()
     }
 
-    pub fn epsilon_states_mut(&mut self, state_index: usize) -> BitSetRefMut1D<'_> {
-        self.states[state_index].epsilon_states_bitset_mut()
-    }
-
-    // transition_table: [char][from_state][fuzz][to_state]
+    /// Populate a state transition table for a given word
+    ///
+    /// The transition table has dimensions: `[char][from_state][fuzz][to_state]`,
+    /// with the given bit set if the slice `word[..char]` can transition starting
+    /// from `from_state` to `to_state` with at most `fuzz` fuzz
+    ///
+    /// If `[c][from][fuzz][to]` is set, `[c][from][fuzz+1][to]` is *always unset*,
+    /// to optimize future searches.
+    ///
+    /// This function does not initialize the transition table. When starting a word,
+    /// the transition_table[char=0] should be initialized to only contain the starting state:
+    /// The only bits that should be set are `[c][0][0][e]` where `e` is an epsilon transition
+    /// from the starting state. (see `Expression::epsilon_states(0)`)
     pub fn fill_transition_table(
         &self,
         chars: &[Char],
@@ -257,6 +316,8 @@ impl Expression {
         chars.len()
     }
 
+    /// Given a set of starting states `start_states`, calculate the set of states reachable by
+    /// consuming exactly one character from `char_bitset` (followed by epsilon transition(s))
     fn char_transitions<'a>(
         &'a self,
         char_bitset: CharBitset,
@@ -285,11 +346,17 @@ impl fmt::Debug for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Expression: \"{}\"", self.text)?;
         for (i, state) in self.states.iter().enumerate() {
-            writeln!(
-                f,
-                "    {}: {:?} -> {}; epsilon -> {:?}",
-                i, state.char_bitset, state.next_state, state.epsilon_states
-            )?;
+            // Omit self-state
+            let mut epsilon_states = state.epsilon_states.clone();
+            epsilon_states.borrow_mut().remove(i);
+            write!(f, "    {}: ", i)?;
+            if state.char_bitset != CharBitset::EMPTY {
+                write!(f, "{:?} -> [{}]; ", state.char_bitset, state.next_state)?;
+            }
+            if !epsilon_states.borrow().is_empty() {
+                write!(f, "* -> {}; ", epsilon_states)?;
+            }
+            write!(f, "\n")?;
         }
         Ok(())
     }

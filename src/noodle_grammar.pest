@@ -1,5 +1,8 @@
 WHITESPACE = _{ " " }
-COMMENT = _{ "$"+ }
+COMMENT = _{ 
+    ((";" | "//" | "--") ~ ANY+) |
+    ("/*" ~ ANY+ ~ "*/")
+}
 
 number = { ASCII_DIGIT+ }
 flag = { "!" ~ ("_" | "'" | number) }
@@ -12,12 +15,14 @@ dot = { "." }
 letter_range = { ASCII_ALPHA ~ "-" ~ ASCII_ALPHA }
 invert = { "^" }
 class = { "[" ~ invert? ~ (letter_range | literal)+ ~ "]" }
+anagram_body = { ASCII_ALPHA+ }
 
 sequence = { (repeat | term)+ }
 alternatives = { sequence ~ ("|" ~ sequence)+ }
 subexpression = _{ (alternatives | sequence) }
 group = _{ "(" ~ subexpression ~ ")" }
-term = _{ class | dot | group | literal }
+anagram = _{ "<" ~ anagram_body ~ ">" }
+term = _{ class | dot | group | anagram | literal }
 
 repeat = _{
     repeat_optional |
@@ -37,3 +42,13 @@ repeat_atleast = { term ~ "{" ~ number ~ ",}" }
 repeat_range = { term ~ "{" ~ number ~ "," ~ number ~ "}" }
 
 expression = { SOI ~ subexpression ~ (flag)* ~ EOI }
+
+macro_name = { ASCII_ALPHA_UPPER ~ (ASCII_ALPHA_UPPER | ASCII_DIGIT | "_")+ }
+macro_value = { (' '..'~')* } // Nearly any ASCII character
+macro_define = { SOI ~ macro_name ~ "=" ~ macro_value ~ EOI }
+
+pragma_words = { ^"#pragma" ~ ^"words" ~ number }
+pragma_dict = { ^"#pragma" ~ (^"dict" | ^"dictionary") ~ literal+ }
+pragma = _{ SOI ~ (pragma_words | pragma_dict) ~ EOI }
+
+query = { (pragma | macro_define | expression)? }

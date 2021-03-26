@@ -129,6 +129,12 @@ impl BitSet<()> {
     }
 }
 
+impl fmt::Display for BitSet<()> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", &self.borrow().ones().collect::<Vec<_>>())
+    }
+}
+
 impl fmt::Debug for BitSet<()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let implied_size = self.blocks.len();
@@ -154,6 +160,23 @@ impl BitSet<(usize, usize)> {
         BitSetRefMut {
             blocks,
             size: self.size.1,
+        }
+    }
+
+    /// Special function for Matcher::next_phrase that is hard to implement there due to aliasing.
+    /// `self` represents a 3D bitset: [x][y][z].
+    /// Removes all [index][y+1][z] where [index][y][z] exists
+    pub fn compact_distance_set(&mut self, index: usize) {
+        let blocks = &mut self.blocks[self.size.0 * index..self.size.0 * (index + 1)];
+        let stride = blocks.len() / self.size.1;
+        debug_assert_eq!(stride * self.size.1, blocks.len());
+        for i in 0..stride {
+            let mut mask: Block = 0;
+            for j in 0..self.size.1 {
+                let b = &mut blocks[j * stride + i];
+                *b &= !mask;
+                mask |= *b;
+            }
         }
     }
 }
@@ -265,6 +288,12 @@ impl<'a, Idx: Index> BitSetRefMut<'a, Idx> {
             unsafe { *self.blocks.get_unchecked_mut(i) &= !*other.blocks.get_unchecked(i) };
         }
     }
+    pub fn intersect_with(&mut self, other: BitSetRef<'_, Idx>) {
+        debug_assert_eq!(self.blocks.len(), other.blocks.len());
+        for i in 0..self.blocks.len() {
+            unsafe { *self.blocks.get_unchecked_mut(i) &= *other.blocks.get_unchecked(i) };
+        }
+    }
     pub fn copy_from(&mut self, other: BitSetRef<'_, Idx>) {
         debug_assert_eq!(self.blocks.len(), other.blocks.len());
         for i in 0..self.blocks.len() {
@@ -291,6 +320,7 @@ impl<'a> Iterator for Ones<'a> {
             self.remaining_blocks = &self.remaining_blocks[1..];
             self.offset += BLOCK_BITS;
         }
+        #[allow(clippy::unnecessary_cast)]
         let t = self.block & (0 as Block).wrapping_sub(self.block);
         let r = self.block.trailing_zeros() as usize;
         self.block ^= t;
@@ -304,6 +334,52 @@ mod tests {
 
     #[test]
     fn bitset_1d() {
+        let mut bitset = BitSet1D::new((), 100);
+        bitset.borrow_mut().insert(2);
+        bitset.slice_mut(()).insert(53);
+        assert_eq!(bitset.borrow().ones().collect::<Vec<_>>(), vec![2, 53]);
+    }
+
+    #[test]
+    fn bitset_3d() {
+        let mut bitset = BitSet3D::new((2, 3), 100);
+        for i in 0..2 {
+            for j in 0..3 {
+                bitset.slice_mut((i, j)).insert(i * j);
+                bitset.slice_mut((i, j)).insert(i + j);
+                bitset.slice_mut((i, j)).insert(40 + i);
+                bitset.slice_mut((i, j)).insert(80 + j);
+            }
+        }
+
+        assert_eq!(
+            bitset.slice((0, 0)).ones().collect::<Vec<_>>(),
+            vec![0, 40, 80]
+        );
+        assert_eq!(
+            bitset.slice((0, 1)).ones().collect::<Vec<_>>(),
+            vec![0, 1, 40, 81]
+        );
+        assert_eq!(
+            bitset.slice((0, 2)).ones().collect::<Vec<_>>(),
+            vec![0, 2, 40, 82]
+        );
+        assert_eq!(
+            bitset.slice((1, 0)).ones().collect::<Vec<_>>(),
+            vec![0, 1, 41, 80]
+        );
+        assert_eq!(
+            bitset.slice((1, 1)).ones().collect::<Vec<_>>(),
+            vec![1, 2, 41, 81]
+        );
+        assert_eq!(
+            bitset.slice((1, 2)).ones().collect::<Vec<_>>(),
+            vec![2, 3, 41, 82]
+        );
+    }
+
+    #[test]
+    fn bitset_1d_union() {
         let mut bitset_3 = BitSet1D::new((), 1000);
         let mut bitset_5 = BitSet1D::new((), 1000);
 
