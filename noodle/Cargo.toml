@@ -1,0 +1,10 @@
+[package]
+name = "noodle"
+version = "0.1.0"
+authors = ["Zach Banks <zjbanks@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+indexmap = "1.6.2"
+pest = "2.1.0"
+pest_derive = "2.1.0"

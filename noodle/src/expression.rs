@@ -71,10 +71,7 @@ impl Expression {
             ignore_punctuation,
             fuzz: ast_root.options.fuzz.unwrap_or(0),
         };
-
-        println!("Before optimization: {:?}", expr);
         Self::optimize_states(&mut expr.states);
-        println!("After optimization: {:?}", expr);
 
         Ok(expr)
     }
