@@ -22,6 +22,8 @@ pub struct ExpressionOptions {
 pub struct QueryOptions {
     pub max_words: Option<usize>,
     pub dictionary: Option<String>,
+    pub results_limit: Option<usize>,
+    pub quiet: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,9 +94,11 @@ impl QueryAst {
         let mut options = QueryOptions {
             max_words: None,
             dictionary: None,
+            results_limit: None,
+            quiet: None,
         };
 
-        for line in input_str.lines() {
+        for line in input_str.split(&['\n', ';'][..]) {
             let mut line = line.to_owned();
 
             for (macro_name, macro_value) in macros.iter() {
@@ -122,6 +126,14 @@ impl QueryAst {
                     Rule::pragma_dict => {
                         let inner = pair.into_inner();
                         options.dictionary = Some(inner.map(|p| p.as_str()).collect());
+                    }
+                    Rule::pragma_limit => {
+                        let inner = pair.into_inner();
+                        let numbers = parse_numbers(inner);
+                        options.results_limit = numbers.get(0).cloned();
+                    }
+                    Rule::pragma_quiet => {
+                        options.quiet = Some(true);
                     }
                     Rule::macro_define => {
                         let inner = pair.into_inner();
@@ -267,6 +279,7 @@ impl QueryAst {
 impl fmt::Display for Ast {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Ast::Class(CharBitset::LETTERS) => write!(f, ".")?,
             Ast::Class(char_bitset) => write!(f, "{:?}", char_bitset)?,
             Ast::Alternatives(nodes) => {
                 if let Some(first) = nodes.get(0) {

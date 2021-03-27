@@ -1,6 +1,6 @@
 WHITESPACE = _{ " " }
 COMMENT = _{ 
-    ((";" | "//" | "--") ~ ANY+) |
+    (("//" | "--") ~ ANY+) |
     ("/*" ~ ANY+ ~ "*/")
 }
 
@@ -47,8 +47,10 @@ macro_name = { ASCII_ALPHA_UPPER ~ (ASCII_ALPHA_UPPER | ASCII_DIGIT | "_")+ }
 macro_value = { (' '..'~')* } // Nearly any ASCII character
 macro_define = { SOI ~ macro_name ~ "=" ~ macro_value ~ EOI }
 
-pragma_words = { ^"#pragma" ~ ^"words" ~ number }
-pragma_dict = { ^"#pragma" ~ (^"dict" | ^"dictionary") ~ literal+ }
-pragma = _{ SOI ~ (pragma_words | pragma_dict) ~ EOI }
+pragma_words = { ^"#words" ~ number }
+pragma_dict = { (^"#dict" | ^"#dictionary") ~ literal+ }
+pragma_limit = {^"#limit" ~ number }
+pragma_quiet = {^"#quiet"}
+pragma = _{ SOI ~ (pragma_words | pragma_dict | pragma_limit | pragma_quiet) ~ EOI }
 
 query = { (pragma | macro_define | expression)? }
