@@ -1,4 +1,4 @@
-use noodle::{load_wordlist, parser, Expression, Matcher, Word};
+use noodle::{load_wordlist, parser, Matcher, Word};
 use std::time;
 
 fn main() {
@@ -17,25 +17,12 @@ fn main() {
     "#;
     //let query_str = "ex.res*iontest !2; ex?z?press+[^i].*";
 
-    let start = time::Instant::now();
-    let query = parser::QueryAst::new_from_str(query_str);
-    let mut query = query.unwrap();
-    query.expand_expressions();
-
-    let expressions: Vec<_> = query
-        .expressions
-        .iter()
-        .map(|expr| Expression::from_ast(expr).unwrap())
-        .collect();
-
+    let mut query_ast = parser::QueryAst::new_from_str(query_str).unwrap();
+    query_ast.expand_expressions();
+    let matcher = Matcher::from_ast(&query_ast, &wordlist);
     println!(" === Time to parse query: {:?} ===", start.elapsed());
-    for expr in expressions.iter() {
-        println!("{:?}", expr);
-    }
 
     let start = time::Instant::now();
-    let matcher = Matcher::new(&expressions, &wordlist, 3);
-
     for _w in matcher {
         println!("> {}", _w);
     }
@@ -49,12 +36,10 @@ fn expected_count() {
     let mut wordlist: Vec<&Word> = words.iter().collect();
     wordlist.sort_by_key(|w| &w.chars);
 
-    let raw_expressions = ["ex.res*iontest !2", "ex?z?press+[^i].*"];
-    let expressions: Vec<_> = raw_expressions
-        .iter()
-        .map(|e| Expression::new(e).unwrap())
-        .collect();
+    let raw_query = "ex.res*iontest !2; ex?z?press+[^i].*; #words 3";
+    let mut query_ast = parser::QueryAst::new_from_str(query_str).unwrap();
+    query_ast.expand_expressions();
+    let matcher = Matcher::from_ast(&query_ast, &wordlist);
 
-    let matcher = Matcher::new(&expressions, wordlist.clone(), 3);
     assert_eq!(matcher.count(), 1395);
 }

@@ -517,6 +517,7 @@ dependencies = [
  "futures",
  "http",
  "hyper",
+ "lazy_static",
  "noodle",
  "tokio",
  "warp",
