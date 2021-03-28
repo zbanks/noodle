@@ -14,6 +14,7 @@ fn main() {
     #words 3
     MACRO=<ttes
     MACROi><gn>
+    .+_.+ !_
     "#;
 
     let query_ast = parser::QueryAst::new_from_str(query_str).unwrap();

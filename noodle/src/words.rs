@@ -8,14 +8,14 @@ pub struct Char(u8);
 
 impl Char {
     pub const PUNCTUATION: Self = Char(26);
-    pub const WHITESPACE: Self = Char(27);
+    pub const WORD_END: Self = Char(27);
     pub const _MAX: usize = 28;
 
     pub fn into_char(self) -> char {
         assert!((self.0 as usize) < Self::_MAX);
         match self {
             Char::PUNCTUATION => '\'',
-            Char::WHITESPACE => '_',
+            Char::WORD_END => '_',
             _ => std::char::from_u32('a' as u32 + self.0 as u32).unwrap(),
         }
     }
@@ -36,7 +36,7 @@ impl From<char> for Char {
         match c {
             'A'..='Z' => Char((c as u32 - 'A' as u32).try_into().unwrap()),
             'a'..='z' => Char((c as u32 - 'a' as u32).try_into().unwrap()),
-            ' ' | '_' => Char::WHITESPACE,
+            ' ' | '_' => Char::WORD_END,
             _ => Char::PUNCTUATION,
         }
     }
@@ -117,7 +117,7 @@ impl fmt::Debug for CharBitset {
         if ones > 1 {
             write!(f, "[")?;
         }
-        for i in 0..=Char::WHITESPACE.0 {
+        for i in 0..=Char::WORD_END.0 {
             if (1 << i) & self.0 != 0 {
                 write!(f, "{:?}", Char(i))?;
             }
@@ -139,7 +139,11 @@ impl Word {
     pub fn new(text: &str) -> Self {
         Word {
             text: text.into(),
-            chars: text.chars().map(|c| c.into()).collect(),
+            chars: text
+                .chars()
+                .map(|c| c.into())
+                .chain(std::iter::once(Char::WORD_END))
+                .collect(),
         }
     }
 }

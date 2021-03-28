@@ -42,7 +42,7 @@ pub struct Expression {
     states: Vec<State>,
     text: String,
 
-    pub ignore_whitespace: bool,
+    pub ignore_word_boundaries: bool,
     pub ignore_punctuation: bool,
     pub fuzz: usize,
 }
@@ -55,29 +55,29 @@ impl Expression {
     }
 
     pub fn from_ast(ast_root: &parser::ExpressionAst) -> Result<Self> {
-        // TODO: Use `options.ignore_whitespace`
+        // TODO: Use `options.ignore_word_boundaries`
         // TODO: Use `options.ignore_punctuation`
-        let ignore_whitespace = ast_root.options.whitespace.unwrap_or(true);
-        let ignore_punctuation = ast_root.options.punctuation.unwrap_or(true);
+        let ignore_word_boundaries = !ast_root.options.explicit_word_boundaries.unwrap_or(false);
+        let ignore_punctuation = !ast_root.options.explicit_punctuation.unwrap_or(false);
 
         //println!("Ast: {:#?}", ast_root);
 
         let mut states = vec![];
         Self::build_states(&ast_root.root, &mut states)?;
-        // Add a "success" end state (this may not be needed?)
-        states.push(State::new());
+        // Add a "success" end state (this may not be needed?) that absorbs word boundaries
+        states.push(State::new_transition(Char::WORD_END.into(), states.len()));
 
         let mut expr = Expression {
             states,
             text: format!("{}", ast_root),
 
-            ignore_whitespace,
+            ignore_word_boundaries,
             ignore_punctuation,
             fuzz: ast_root.options.fuzz.unwrap_or(0),
         };
         //println!("Pre-opt: {:?}", expr);
         Self::optimize_states(&mut expr.states);
-        //println!("Post-opt: {:?}", expr);
+        println!("Post-opt: {:?}", expr);
 
         Ok(expr)
     }
@@ -164,7 +164,7 @@ impl Expression {
                         .insert(final_term_index);
                 }
             }
-            parser::Ast::Anagram(_) => unreachable!(),
+            parser::Ast::Anagram { kind: _, bank: _ } => unreachable!(),
         }
         Ok(())
     }
@@ -175,6 +175,12 @@ impl Expression {
     /// `RUNTIME: O(states^4)`
     fn optimize_states(states: &mut Vec<State>) {
         // TODO: This function could perform even more complex optimizations
+        // TODO: "Epsilon pushing":
+        //      If state S is only reachable via epsilon transition from state(s) E,
+        //      then apply `S.epsilon_states.union_with(E.epsilon_states)`
+        // TODO: Eliding start state
+        //      If state[0].epsilon_states = {1 | state[1].epsilon_states}, and char_bitset = 0
+        //      then it can be elided & state[1] can be the new start state
 
         // `Matcher` requires that there is a transitive closure over `epsilon_states` and that
         // each state has itself included in that set
@@ -305,12 +311,23 @@ impl Expression {
         chars: &[Char],
         transition_table: &mut [BitSet3D],
     ) -> usize {
+        debug_assert!(transition_table.len() > chars.len());
+
         // RUNTIME: O(chars * fuzz * states^3)
-        for (char_index, chr) in chars.iter().enumerate() {
-            let char_bitset = CharBitset::from(*chr);
+        for (char_index, &chr) in chars.iter().enumerate() {
+            let char_bitset = CharBitset::from(chr);
             let mut all_states_are_empty = true;
 
             let (lower_table, upper_table) = transition_table.split_at_mut(char_index + 1);
+
+            if (self.ignore_word_boundaries && chr == Char::WORD_END)
+                || (self.ignore_punctuation && chr == Char::PUNCTUATION)
+            {
+                upper_table[0]
+                    .borrow_mut()
+                    .copy_from(lower_table[char_index].borrow());
+                continue;
+            }
 
             // Consume 1 character from the buffer and compute the set of possible resulting states
             // RUNTIME: O(fuzz * states^3)
@@ -413,7 +430,11 @@ impl Expression {
 
 impl fmt::Debug for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Expression: \"{}\"", self.text)?;
+        writeln!(
+            f,
+            "Expression: \"{}\" wh={}",
+            self.text, self.ignore_word_boundaries
+        )?;
         for (i, state) in self.states.iter().enumerate() {
             // Omit self-state
             let mut epsilon_states = state.epsilon_states.clone();

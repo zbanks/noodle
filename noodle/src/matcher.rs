@@ -499,8 +499,7 @@ impl Iterator for Matcher<'_> {
     type Item = String;
 
     fn next(&mut self) -> Option<String> {
-        self.results_count += 1;
-        if self
+        let r = if self
             .results_limit
             .map(|lim| lim < self.results_count)
             .unwrap_or(false)
@@ -510,7 +509,11 @@ impl Iterator for Matcher<'_> {
             self.next_single().or_else(|| self.next_phrase())
         } else {
             self.next_phrase()
+        };
+        if r.is_some() {
+            self.results_count += 1;
         }
+        r
     }
 }
 

@@ -13,8 +13,8 @@ struct NoodleParser;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExpressionOptions {
-    pub whitespace: Option<bool>,
-    pub punctuation: Option<bool>,
+    pub explicit_word_boundaries: Option<bool>,
+    pub explicit_punctuation: Option<bool>,
     pub fuzz: Option<usize>,
 }
 
@@ -41,6 +41,15 @@ pub struct QueryAst {
     pub options: QueryOptions,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnagramKind {
+    Standard,
+    Super,
+    Sub,
+    TransAdd(usize),
+    TransDelete(usize),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ast {
     // Base operations, available in "simple expressions"
@@ -54,7 +63,10 @@ pub enum Ast {
     },
 
     // Advance query operations, not available in raw expressions
-    Anagram(Vec<Char>),
+    Anagram {
+        kind: AnagramKind,
+        bank: Vec<Char>,
+    },
 }
 
 impl ExpressionAst {
@@ -74,10 +86,10 @@ impl ExpressionAst {
 impl fmt::Display for ExpressionAst {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.root)?;
-        if self.options.whitespace == Some(true) {
+        if self.options.explicit_word_boundaries == Some(true) {
             write!(f, " !_")?;
         }
-        if self.options.punctuation == Some(true) {
+        if self.options.explicit_punctuation == Some(true) {
             write!(f, " !'")?;
         }
         if let Some(fuzz) = self.options.fuzz {
@@ -191,7 +203,7 @@ impl QueryAst {
                     min: _,
                     max: _,
                 } => (),
-                Ast::Anagram(_) => action(node),
+                Ast::Anagram { kind: _, bank: _ } => action(node),
             }
         }
 
@@ -201,8 +213,8 @@ impl QueryAst {
 
             let mut anagrams = vec![];
             visit(&mut expression.root, &mut |node: &mut Ast| {
-                if let Ast::Anagram(chars) = node {
-                    anagrams.push(chars.clone());
+                if let Ast::Anagram { kind: _, bank } = node {
+                    anagrams.push(bank.clone());
                 }
             });
 
@@ -348,9 +360,9 @@ impl fmt::Display for Ast {
                 min,
                 max: Some(max),
             } => write!(f, "{}{{{}, {}}}", term, min, max)?,
-            Ast::Anagram(chars) => {
+            Ast::Anagram { kind: _, bank } => {
                 write!(f, "<")?;
-                chars.iter().try_for_each(|c| write!(f, "{:?}", c))?;
+                bank.iter().try_for_each(|c| write!(f, "{:?}", c))?;
                 write!(f, ">")?;
             }
         }
@@ -401,12 +413,10 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
             Some(Ast::Class(bitset))
         }
         Rule::partial_group => Some(Ast::Sequence(
-            // TODO: Support arbitrary terms inside the partial_group
-            // e.g. "((hello)(world):?)"
-            pair.as_str()
-                .chars()
+            pair.into_inner()
+                .filter_map(parse_subexpression)
                 .map(|c| Ast::Repetition {
-                    term: Box::new(Ast::Class(CharBitset::from(c))),
+                    term: Box::new(c),
                     min: 0,
                     max: Some(1),
                 })
@@ -421,7 +431,7 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
         Rule::number => {
             let dot = Ast::Class(CharBitset::LETTERS);
             let n: usize = pair.as_str().parse().unwrap();
-            // TODO: Add whitespace; set whitespace flag
+            // TODO: Add explicit_word_boundaries; set explicit_word_boundaries flag
             Some(Ast::Repetition {
                 term: Box::new(dot),
                 min: n,
@@ -451,9 +461,10 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
             };
             Some(Ast::Repetition { term, min, max })
         }
-        Rule::anagram_body => Some(Ast::Anagram(
-            pair.as_str().chars().map(|c| c.into()).collect(),
-        )),
+        Rule::anagram_body => Some(Ast::Anagram {
+            kind: AnagramKind::Standard,
+            bank: pair.as_str().chars().map(|c| c.into()).collect(),
+        }),
         Rule::alternatives => Some(Ast::Alternatives(
             pair.into_inner().filter_map(parse_subexpression).collect(),
         )),
@@ -463,8 +474,8 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
 }
 
 fn parse_flags(pairs: Pairs<'_, Rule>) -> ExpressionOptions {
-    let mut whitespace = None;
-    let mut punctuation = None;
+    let mut explicit_word_boundaries = None;
+    let mut explicit_punctuation = None;
     let mut fuzz = None;
 
     for pair in pairs {
@@ -472,8 +483,8 @@ fn parse_flags(pairs: Pairs<'_, Rule>) -> ExpressionOptions {
             Rule::flag => {
                 let flag = pair.as_str().get(1..).unwrap();
                 match flag {
-                    "_" => whitespace = Some(true),
-                    "'" | "-" => punctuation = Some(true),
+                    "_" => explicit_word_boundaries = Some(true),
+                    "'" | "-" => explicit_punctuation = Some(true),
                     _ => fuzz = Some(parse_numbers(pair.into_inner())[0]),
                 }
             }
@@ -483,8 +494,8 @@ fn parse_flags(pairs: Pairs<'_, Rule>) -> ExpressionOptions {
     }
 
     ExpressionOptions {
-        whitespace,
-        punctuation,
+        explicit_word_boundaries,
+        explicit_punctuation,
         fuzz,
     }
 }

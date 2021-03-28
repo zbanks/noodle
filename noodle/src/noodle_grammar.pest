@@ -22,10 +22,26 @@ anagram_body = { ASCII_ALPHA+ }
 sequence = { (repeat | term)+ }
 alternatives = { sequence ~ ("|" ~ sequence)+ }
 subexpression = _{ (alternatives | sequence) }
-partial_group = { "(" ~ anagram_body ~ ":?)" }
 group = _{ "(" ~ subexpression ~ ")" }
 anagram = _{ "<" ~ anagram_body ~ ">" }
-term = _{ class | dot | partial_group | group | anagram | number | character }
+superanagram = _{ "<" ~ anagram_body ~ "+>" }
+subanagram = _{ "<" ~ anagram_body ~ "->" }
+transadd = _{ "<" ~ anagram_body ~ "+" ~ number ~ ">" }
+transdelete = _{ "<" ~ anagram_body ~ "-" ~ number ~ ">" }
+partial_group = { "(" ~ term+ ~ ":?)" }
+term = _{
+      class
+    | dot
+    | group
+    | anagram
+    // | superanagram
+    // | subanagram
+    // | transadd
+    // | transdelete
+    | partial_group
+    | number
+    | character
+}
 
 repeat = _{
     repeat_optional |
