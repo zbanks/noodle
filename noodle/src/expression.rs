@@ -175,6 +175,10 @@ impl Expression {
     /// `RUNTIME: O(states^4)`
     fn optimize_states(states: &mut Vec<State>) {
         // TODO: This function could perform even more complex optimizations
+        //      In general, the optimizations that *are* implemented are the low-hanging fruit
+        //      for the NFAs that `build_states` spits out, rather than being "general-purpose".
+        //      This keeps the `build_states` code simpler, and allows the optimizations to be
+        //      maybe be applied more broadly.
         // TODO: "Epsilon pushing":
         //      If state S is only reachable via epsilon transition from state(s) E,
         //      then apply `S.epsilon_states.union_with(E.epsilon_states)`
@@ -185,7 +189,8 @@ impl Expression {
         // `Matcher` requires that there is a transitive closure over `epsilon_states` and that
         // each state has itself included in that set
         // RUNTIME: O(states^4)
-        for i in 0..states.len() {
+        let states_len = states.len();
+        for i in 0..states_len {
             // Add an epsilon transition from each state to itself
             states[i].epsilon_states.borrow_mut().insert(i);
 
@@ -207,13 +212,6 @@ impl Expression {
                 }
                 states[i].epsilon_states = ss;
             }
-        }
-
-        // Shrink the `epsilon_states` set to exactly fit the total number of states, so that it
-        // can be easily manipulated by `Matcher`'s `BitSet`s
-        let states_len = states.len();
-        for state in states.iter_mut() {
-            state.epsilon_states = state.epsilon_states.borrow().resize(states_len);
         }
 
         // Identify redundant states, and prune them
@@ -284,6 +282,12 @@ impl Expression {
                 })
             })
             .collect();
+
+        // Shrink the `epsilon_states` set to exactly fit the total number of states, so that it
+        // can be easily manipulated by `Matcher`'s `BitSet`s
+        for state in states.iter_mut() {
+            state.epsilon_states = state.epsilon_states.borrow().resize(states_len);
+        }
     }
 
     /// Return the set of states reachable via epsilon transition(s) from the given state
