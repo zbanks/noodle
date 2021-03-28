@@ -1,11 +1,11 @@
 use crate::words::*;
 use indexmap::IndexMap;
+use pest::error::{Error as PestError, LineColLocation};
 use pest::iterators::{Pair, Pairs};
 use pest::Parser;
 use std::fmt;
 
-pub use pest::error::Error;
-pub type Result<T> = std::result::Result<T, Error<Rule>>;
+pub type Result<T> = std::result::Result<T, PestError<Rule>>;
 
 #[derive(Parser)]
 #[grammar = "noodle_grammar.pest"]
@@ -87,6 +87,17 @@ impl fmt::Display for ExpressionAst {
     }
 }
 
+fn error_set_line(mut err: PestError<Rule>, line: usize) -> PestError<Rule> {
+    match &mut err.line_col {
+        LineColLocation::Pos((l, _)) => *l = line,
+        LineColLocation::Span((l1, _), (l2, _)) => {
+            *l2 = line + *l2 - *l1;
+            *l1 = line;
+        }
+    };
+    err
+}
+
 impl QueryAst {
     pub fn new_from_str(input_str: &str) -> Result<Self> {
         let mut expressions = vec![];
@@ -98,14 +109,15 @@ impl QueryAst {
             quiet: None,
         };
 
-        for line in input_str.split(&['\n', ';'][..]) {
+        for (i, line) in input_str.split(&['\n', ';'][..]).enumerate() {
             let mut line = line.to_owned();
 
             for (macro_name, macro_value) in macros.iter() {
                 line = line.replace(macro_name, macro_value);
             }
 
-            let mut pair = NoodleParser::parse(Rule::query, &line)?
+            let mut pair = NoodleParser::parse(Rule::query, &line)
+                .map_err(|e| error_set_line(e, i + 1))?
                 .next()
                 .unwrap()
                 .into_inner();
