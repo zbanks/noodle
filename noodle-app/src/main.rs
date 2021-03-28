@@ -28,17 +28,26 @@ fn run_query_sync(query_str: &str) -> http::Result<http::Response<hyper::Body>> 
     // This makes it hard to predict when the client will actually recieve the separate chunks,
     // which makes this technique mostly insuitable for a noodle frontend
     let start = time::Instant::now();
-    let mut query_ast = parser::QueryAst::new_from_str(query_str).unwrap();
-    query_ast.expand_expressions();
-    let matcher = Matcher::from_ast(&query_ast, &WORDLIST);
-    println!(" === Time to parse query: {:?} ===", start.elapsed());
+    let query_ast = parser::QueryAst::new_from_str(query_str);
+    let body = match query_ast {
+        Ok(query_ast) => {
+            let matcher = Matcher::from_ast(&query_ast, &WORDLIST);
+            println!(" === Time to parse query: {:?} ===", start.elapsed());
 
-    // TODO: The string building code here is pretty bad
-    let result_stream = stream::iter(matcher)
-        .ready_chunks(4)
-        .map(|ms| http::Result::Ok(format!("{}\n", ms.join("\n"))));
+            let response = std::iter::once("#0 Running query...\n#1 ".to_string())
+                .chain(matcher)
+                .chain(std::iter::once("#0 Done".to_string()));
 
-    let body = hyper::Body::wrap_stream(result_stream);
+            // TODO: The string building code here is pretty bad
+            let result_stream = stream::iter(response)
+                .ready_chunks(1) // TODO
+                .map(|ms| Result::<_, String>::Ok(format!("{}\n", ms.join("\n"))));
+
+            hyper::Body::wrap_stream(result_stream)
+        }
+        Err(error) => error.to_string().into(),
+    };
+
     http::Response::builder()
         .status(http::StatusCode::OK)
         .body(body)
@@ -47,6 +56,10 @@ fn run_query_sync(query_str: &str) -> http::Result<http::Response<hyper::Body>> 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     //pretty_env_logger::init();
+
+    let index = warp::fs::file("index.html")
+        .or(warp::fs::file("static/index.html"))
+        .or(warp::fs::file("noodle-app/static/index.html"));
 
     let get_query = warp::get()
         .and(warp::path("query"))
@@ -59,6 +72,6 @@ async fn main() {
         .and(warp::body::bytes())
         .map(|query_str: bytes::Bytes| run_query_sync(std::str::from_utf8(&query_str).unwrap()));
 
-    let routes = get_query.or(post_query);
+    let routes = get_query.or(post_query).or(index);
     warp::serve(routes).run(([127, 0, 0, 1], 8081)).await;
 }

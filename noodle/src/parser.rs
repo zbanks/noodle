@@ -64,7 +64,7 @@ impl ExpressionAst {
             .unwrap()
             .into_inner();
 
-        let mut expr = parse_expression(pairs)?;
+        let mut expr = parse_expression(pairs);
         expr.original_text = Some(input_str.to_owned());
 
         Ok(expr)
@@ -113,7 +113,7 @@ impl QueryAst {
             if let Some(pair) = pair.next() {
                 match pair.as_rule() {
                     Rule::expression => {
-                        let mut expr = parse_expression(pair.into_inner())?;
+                        let mut expr = parse_expression(pair.into_inner());
                         expr.original_text = Some(line);
 
                         expressions.push(expr);
@@ -152,17 +152,19 @@ impl QueryAst {
             }
         }
 
-        Ok(QueryAst {
+        let mut ast = QueryAst {
             original_text: input_str.to_owned(),
             macros,
 
             expressions,
             options,
-        })
+        };
+        ast.expand_expressions();
+
+        Ok(ast)
     }
 
-    pub fn expand_expressions(&mut self) {
-        // TODO Rewrite self.expressions to be "simple" (expand anagrams)
+    fn expand_expressions(&mut self) {
         fn visit<F>(node: &mut Ast, action: &mut F)
         where
             F: FnMut(&mut Ast),
@@ -451,7 +453,7 @@ fn parse_flags(pairs: Pairs<'_, Rule>) -> ExpressionOptions {
     }
 }
 
-pub fn parse_expression(mut pairs: Pairs<'_, Rule>) -> Result<ExpressionAst> {
+pub fn parse_expression(mut pairs: Pairs<'_, Rule>) -> ExpressionAst {
     let subexpression = pairs.next().unwrap();
     assert!(
         subexpression.as_rule() == Rule::sequence || subexpression.as_rule() == Rule::alternatives
@@ -460,9 +462,9 @@ pub fn parse_expression(mut pairs: Pairs<'_, Rule>) -> Result<ExpressionAst> {
     let expression = parse_subexpression(subexpression).unwrap();
     let options = parse_flags(pairs);
 
-    Ok(ExpressionAst {
+    ExpressionAst {
         original_text: None,
         root: expression,
         options,
-    })
+    }
 }

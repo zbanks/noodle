@@ -3,7 +3,6 @@ members = [
     "noodle",
     "noodle-app",
 ]
-default-run = "noodle"
 
 [profile.dev]
 opt-level = 0

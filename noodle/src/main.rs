@@ -15,10 +15,8 @@ fn main() {
     MACRO=<ttes
     MACROi><gn>
     "#;
-    //let query_str = "ex.res*iontest !2; ex?z?press+[^i].*";
 
-    let mut query_ast = parser::QueryAst::new_from_str(query_str).unwrap();
-    query_ast.expand_expressions();
+    let query_ast = parser::QueryAst::new_from_str(query_str).unwrap();
     let matcher = Matcher::from_ast(&query_ast, &wordlist);
     println!(" === Time to parse query: {:?} ===", start.elapsed());
 
@@ -37,7 +35,7 @@ fn expected_count() {
     wordlist.sort_by_key(|w| &w.chars);
 
     let raw_query = "ex.res*iontest !2; ex?z?press+[^i].*; #words 3";
-    let mut query_ast = parser::QueryAst::new_from_str(query_str).unwrap();
+    let query_ast = parser::QueryAst::new_from_str(query_str).unwrap();
     query_ast.expand_expressions();
     let matcher = Matcher::from_ast(&query_ast, &wordlist);
 

@@ -53,4 +53,6 @@ pragma_limit = {^"#limit" ~ number }
 pragma_quiet = {^"#quiet"}
 pragma = _{ SOI ~ (pragma_words | pragma_dict | pragma_limit | pragma_quiet) ~ EOI }
 
-query = { (pragma | macro_define | expression)? }
+empty_line = _{ SOI ~ EOI }
+
+query = { (pragma | macro_define | expression | empty_line) }

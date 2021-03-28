@@ -148,7 +148,7 @@ impl<'word> CacheBuilder<'word> {
     }
 
     /// `RUNTIME: O(words)`
-    fn finalize(mut self, new_wordlist: &Vec<&'word Word>) -> Cache {
+    fn finalize(mut self, new_wordlist: &[&'word Word]) -> Cache {
         assert!(self.single_fully_drained);
         println!(
             "prefixed={}, matched={}, elided={}",
@@ -226,16 +226,16 @@ pub struct Matcher<'word> {
     wordlist: Vec<&'word Word>,
     singles_done: bool,
 
-    words_max: usize,
+    max_words: usize,
+    results_limit: Option<usize>,
 
     index: usize,
-    match_count: usize,
+    results_count: usize,
 }
 
 impl<'word> Matcher<'word> {
     pub fn from_ast(query_ast: &parser::QueryAst, wordlist: &[&'word Word]) -> Self {
         // TODO: Use `options.dictionary`
-        // TODO: Use `options.results_limit`
         // TODO: Use `options.quiet`
         let max_words = query_ast.options.max_words.unwrap_or(2);
         let expressions: Vec<_> = query_ast
@@ -243,10 +243,14 @@ impl<'word> Matcher<'word> {
             .iter()
             .map(|expr| Expression::from_ast(expr).unwrap())
             .collect();
-        Self::new(expressions, wordlist, max_words)
+
+        let mut matcher = Self::new(expressions, wordlist, max_words);
+        matcher.results_limit = query_ast.options.results_limit.or(Some(100));
+
+        matcher
     }
 
-    pub fn new(expressions: Vec<Expression>, wordlist: &[&'word Word], words_max: usize) -> Self {
+    pub fn new(expressions: Vec<Expression>, wordlist: &[&'word Word], max_words: usize) -> Self {
         assert!(!expressions.is_empty());
 
         let word_len_max = 1 + wordlist.iter().map(|w| w.chars.len()).max().unwrap_or(0);
@@ -259,17 +263,17 @@ impl<'word> Matcher<'word> {
             .map(|expr| CacheBuilder::new(expr, word_len_max))
             .collect();
 
-        let matcher = Matcher {
+        Matcher {
             cache_builders,
             caches: vec![],
             singles_done: false,
             layers: vec![],
             wordlist,
-            words_max,
+            max_words,
+            results_limit: None,
             index: 0,
-            match_count: 0,
-        };
-        matcher
+            results_count: 0,
+        }
     }
 
     /// `RUNTIME: O(expressions * (words + fuzz * states))`
@@ -278,7 +282,6 @@ impl<'word> Matcher<'word> {
 
         // Check for single-word matches
         let (first_cache, remaining_caches) = self.cache_builders.split_at_mut(1);
-        //for word in first_cache[0].iter(&self.wordlist) {
         while let Some(word) = first_cache[0].next_single_word(&self.wordlist) {
             let mut wordlist = &first_cache[0].nonnull_wordlist;
             let mut all_match = true;
@@ -326,7 +329,7 @@ impl<'word> Matcher<'word> {
             .map(|cache| cache.expression.states_len())
             .max()
             .unwrap_or(1);
-        let mut layers: Vec<Layer<'word>> = (0..=self.words_max)
+        let mut layers: Vec<Layer<'word>> = (0..=self.max_words)
             .map(|_| Layer::new(self.caches.len(), fuzz_max + 1, states_max))
             .collect();
 
@@ -353,14 +356,14 @@ impl<'word> Matcher<'word> {
             .join(" ")
     }
 
-    /// `RUNTIME: O(words^words_max * expressions * fuzz^2 * states^2)`
+    /// `RUNTIME: O(words^max_words * expressions * fuzz^2 * states^2)`
     fn next_phrase(&mut self) -> Option<String> {
         assert!(self.singles_done);
         if self.wordlist.is_empty() {
             return None;
         }
 
-        // RUNTIME: O(words^words_max * expressions * fuzz^2 * states^2)
+        // RUNTIME: O(words^max_words * expressions * fuzz^2 * states^2)
         let mut result = None;
         loop {
             let mut no_match = false;
@@ -447,7 +450,6 @@ impl<'word> Matcher<'word> {
                     this_layer.stem = Some(word);
                     if all_end_match && self.index >= 1 {
                         result = Some(self.format_output());
-                        self.match_count += 1;
                     }
                 }
             }
@@ -470,7 +472,7 @@ impl<'word> Matcher<'word> {
                     if self.index == 0 {
                         println!(
                             "Matcher done with {} results (up to {} words)",
-                            self.match_count, self.words_max
+                            self.results_count, self.max_words
                         );
                         return true;
                     }
@@ -479,7 +481,7 @@ impl<'word> Matcher<'word> {
                 }
                 break;
             } else {
-                if self.index + 1 >= self.words_max {
+                if self.index + 1 >= self.max_words {
                     pm = false;
                     continue;
                 }
@@ -496,7 +498,14 @@ impl Iterator for Matcher<'_> {
     type Item = String;
 
     fn next(&mut self) -> Option<String> {
-        if !self.singles_done {
+        self.results_count += 1;
+        if self
+            .results_limit
+            .map(|lim| lim < self.results_count)
+            .unwrap_or(false)
+        {
+            None
+        } else if !self.singles_done {
             self.next_single().or_else(|| self.next_phrase())
         } else {
             self.next_phrase()
