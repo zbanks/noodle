@@ -472,7 +472,7 @@ impl<'word> Matcher<'word> {
                 if self.layers[self.index].wi >= self.wordlist.len() {
                     if self.index == 0 {
                         println!(
-                            "Matcher done with {} results (up to {} words)",
+                            "Matcher done with {} result(s) (up to {} word phrases)",
                             self.results_count, self.max_words
                         );
                         return true;

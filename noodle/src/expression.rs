@@ -92,7 +92,7 @@ impl Expression {
     fn build_states(ast: &parser::Ast, states: &mut Vec<State>) -> Result<()> {
         let initial_len = states.len();
         match ast {
-            parser::Ast::Class(char_bitset) => {
+            parser::Ast::CharClass(char_bitset) => {
                 states.push(State::new_transition(*char_bitset, initial_len + 1))
             }
             parser::Ast::Alternatives(alts) => {
@@ -430,11 +430,7 @@ impl Expression {
 
 impl fmt::Debug for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(
-            f,
-            "Expression: \"{}\" wh={}",
-            self.text, self.ignore_word_boundaries
-        )?;
+        writeln!(f, "Expression: \"{}\"", self.text)?;
         for (i, state) in self.states.iter().enumerate() {
             // Omit self-state
             let mut epsilon_states = state.epsilon_states.clone();

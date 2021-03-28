@@ -87,6 +87,10 @@ impl CharBitset {
     pub fn is_intersecting(&self, other: Self) -> bool {
         (self.0 & other.0) != 0
     }
+
+    pub fn contains(&self, chr: Char) -> bool {
+        self.is_intersecting(chr.into())
+    }
 }
 
 impl From<Char> for CharBitset {
@@ -110,6 +114,9 @@ impl From<char> for CharBitset {
 
 impl fmt::Debug for CharBitset {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if *self == Self::LETTERS {
+            return write!(f, ".");
+        }
         let ones = self.0.count_ones();
         if ones == 0 {
             return write!(f, "0");

@@ -53,7 +53,7 @@ pub enum AnagramKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ast {
     // Base operations, available in "simple expressions"
-    Class(CharBitset),
+    CharClass(CharBitset),
     Alternatives(Vec<Self>),
     Sequence(Vec<Self>),
     Repetition {
@@ -194,7 +194,7 @@ impl QueryAst {
             F: FnMut(&mut Ast),
         {
             match node {
-                Ast::Class(_) => (),
+                Ast::CharClass(_) => (),
                 Ast::Alternatives(nodes) | Ast::Sequence(nodes) => {
                     nodes.iter_mut().for_each(|n| visit(n, action))
                 }
@@ -252,12 +252,12 @@ impl QueryAst {
 
                 if nth < histogram.len() {
                     let (ch, count) = histogram.remove(nth);
-                    let ch_ast = Ast::Class(ch.into());
+                    let ch_ast = Ast::CharClass(ch.into());
                     let mut fill_bitset = char_bitset;
                     fill_bitset.difference_with(ch.into());
 
                     let fill_ast = Ast::Repetition {
-                        term: Box::new(Ast::Class(fill_bitset)),
+                        term: Box::new(Ast::CharClass(fill_bitset)),
                         min: 0,
                         max: None,
                     };
@@ -271,7 +271,7 @@ impl QueryAst {
                     Ast::Sequence(seq)
                 } else {
                     Ast::Repetition {
-                        term: Box::new(Ast::Class(char_bitset)),
+                        term: Box::new(Ast::CharClass(char_bitset)),
                         min: total_length,
                         max: Some(total_length),
                     }
@@ -305,8 +305,8 @@ impl QueryAst {
 impl fmt::Display for Ast {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Ast::Class(CharBitset::LETTERS) => write!(f, ".")?,
-            Ast::Class(char_bitset) => write!(f, "{:?}", char_bitset)?,
+            Ast::CharClass(CharBitset::LETTERS) => write!(f, ".")?,
+            Ast::CharClass(char_bitset) => write!(f, "{:?}", char_bitset)?,
             Ast::Alternatives(nodes) => {
                 if let Some(first) = nodes.get(0) {
                     write!(f, "({}", first)?;
@@ -384,10 +384,10 @@ fn parse_numbers(pairs: Pairs<'_, Rule>) -> Vec<usize> {
 
 fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
     match pair.as_rule() {
-        Rule::character => Some(Ast::Class(CharBitset::from(
+        Rule::character => Some(Ast::CharClass(CharBitset::from(
             pair.as_str().chars().next().unwrap(),
         ))),
-        Rule::dot => Some(Ast::Class(CharBitset::LETTERS)),
+        Rule::dot => Some(Ast::CharClass(CharBitset::LETTERS)),
         Rule::class => {
             let mut inner = pair.into_inner();
             let mut invert = false;
@@ -410,7 +410,7 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
             if invert {
                 bitset.invert();
             }
-            Some(Ast::Class(bitset))
+            Some(Ast::CharClass(bitset))
         }
         Rule::partial_group => Some(Ast::Sequence(
             pair.into_inner()
@@ -429,14 +429,16 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
             pair.into_inner().filter_map(parse_subexpression).collect(),
         )),
         Rule::number => {
-            let dot = Ast::Class(CharBitset::LETTERS);
+            let dot = Ast::CharClass(CharBitset::LETTERS);
             let n: usize = pair.as_str().parse().unwrap();
-            // TODO: Add explicit_word_boundaries; set explicit_word_boundaries flag
-            Some(Ast::Repetition {
-                term: Box::new(dot),
-                min: n,
-                max: Some(n),
-            })
+            Some(Ast::Sequence(vec![
+                Ast::Repetition {
+                    term: Box::new(dot),
+                    min: n,
+                    max: Some(n),
+                },
+                Ast::CharClass(Char::WORD_END.into()),
+            ]))
         }
         Rule::repeat_optional
         | Rule::repeat_any
@@ -473,7 +475,7 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
     }
 }
 
-fn parse_flags(pairs: Pairs<'_, Rule>) -> ExpressionOptions {
+fn parse_options(pairs: Pairs<'_, Rule>) -> ExpressionOptions {
     let mut explicit_word_boundaries = None;
     let mut explicit_punctuation = None;
     let mut fuzz = None;
@@ -500,6 +502,34 @@ fn parse_flags(pairs: Pairs<'_, Rule>) -> ExpressionOptions {
     }
 }
 
+fn detect_options(ast: &Ast, options: &mut ExpressionOptions) {
+    match ast {
+        Ast::CharClass(char_bitset) => {
+            if char_bitset.contains(Char::WORD_END) {
+                options.explicit_word_boundaries = Some(true);
+            }
+            if char_bitset.contains(Char::PUNCTUATION) {
+                options.explicit_punctuation = Some(true);
+            }
+        }
+        Ast::Alternatives(nodes) => nodes.iter().for_each(|n| detect_options(n, options)),
+        Ast::Sequence(nodes) => nodes.iter().for_each(|n| detect_options(n, options)),
+        Ast::Repetition {
+            term,
+            min: _,
+            max: _,
+        } => detect_options(term, options),
+        Ast::Anagram { kind: _, bank } => {
+            if bank.contains(&Char::WORD_END) {
+                options.explicit_word_boundaries = Some(true);
+            }
+            if bank.contains(&Char::PUNCTUATION) {
+                options.explicit_punctuation = Some(true);
+            }
+        }
+    }
+}
+
 pub fn parse_expression(mut pairs: Pairs<'_, Rule>) -> ExpressionAst {
     let subexpression = pairs.next().unwrap();
     assert!(
@@ -507,7 +537,8 @@ pub fn parse_expression(mut pairs: Pairs<'_, Rule>) -> ExpressionAst {
     );
 
     let expression = parse_subexpression(subexpression).unwrap();
-    let options = parse_flags(pairs);
+    let mut options = parse_options(pairs);
+    detect_options(&expression, &mut options);
 
     ExpressionAst {
         original_text: None,
