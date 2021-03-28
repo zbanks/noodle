@@ -336,6 +336,7 @@ impl<'word> Matcher<'word> {
         for (i, cache) in self.caches.iter().enumerate() {
             layers[0].states.slice2d_mut(i).clear();
 
+            // TODO: Expand epsilon_states(0) out to states_max
             let mut starting_states = layers[0].states.slice_mut((i, 0));
             starting_states.union_with(cache.expression.epsilon_states(0));
         }
@@ -438,7 +439,7 @@ impl<'word> Matcher<'word> {
 
                     // NB: This heuristic doesn't actually help that much
                     // RUNTIME: O(fuzz * states)
-                    next_layer.states.compact_distance_set(c);
+                    //next_layer.states.compact_distance_set(c);
                 }
 
                 // Unclear if this optimization is worth it (even though it does help prevent .* blowouts)

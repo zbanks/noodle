@@ -60,6 +60,8 @@ impl Expression {
         let ignore_whitespace = ast_root.options.whitespace.unwrap_or(true);
         let ignore_punctuation = ast_root.options.punctuation.unwrap_or(true);
 
+        //println!("Ast: {:#?}", ast_root);
+
         let mut states = vec![];
         Self::build_states(&ast_root.root, &mut states)?;
         // Add a "success" end state (this may not be needed?)
@@ -73,7 +75,9 @@ impl Expression {
             ignore_punctuation,
             fuzz: ast_root.options.fuzz.unwrap_or(0),
         };
+        //println!("Pre-opt: {:?}", expr);
         Self::optimize_states(&mut expr.states);
+        //println!("Post-opt: {:?}", expr);
 
         Ok(expr)
     }
@@ -203,7 +207,7 @@ impl Expression {
         // can be easily manipulated by `Matcher`'s `BitSet`s
         let states_len = states.len();
         for state in states.iter_mut() {
-            state.epsilon_states = state.epsilon_states.resize(states_len);
+            state.epsilon_states = state.epsilon_states.borrow().resize(states_len);
         }
 
         // Identify redundant states, and prune them

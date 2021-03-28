@@ -4,25 +4,28 @@ COMMENT = _{
     ("/*" ~ ANY+ ~ "*/")
 }
 
-number = { ASCII_DIGIT+ }
+// Note: Keep field names human-readable, they end up in error messages
+
+number = @{ ASCII_DIGIT+ }
 flag = { "!" ~ ("_" | "'" | number) }
 
 punctuation = _{ "'" }
 whitespace = _{ "_" }
-literal = { ASCII_ALPHA | punctuation | whitespace }
+character = { ASCII_ALPHA | punctuation | whitespace }
 
 dot = { "." }
 letter_range = { ASCII_ALPHA ~ "-" ~ ASCII_ALPHA }
 invert = { "^" }
-class = { "[" ~ invert? ~ (letter_range | literal)+ ~ "]" }
+class = { "[" ~ invert? ~ (letter_range | character)+ ~ "]" }
 anagram_body = { ASCII_ALPHA+ }
 
 sequence = { (repeat | term)+ }
 alternatives = { sequence ~ ("|" ~ sequence)+ }
 subexpression = _{ (alternatives | sequence) }
+partial_group = { "(" ~ anagram_body ~ ":?)" }
 group = _{ "(" ~ subexpression ~ ")" }
 anagram = _{ "<" ~ anagram_body ~ ">" }
-term = _{ class | dot | group | anagram | literal }
+term = _{ class | dot | partial_group | group | anagram | number | character }
 
 repeat = _{
     repeat_optional |
@@ -48,7 +51,7 @@ macro_value = { (' '..'~')* } // Nearly any ASCII character
 macro_define = { SOI ~ macro_name ~ "=" ~ macro_value ~ EOI }
 
 pragma_words = { ^"#words" ~ number }
-pragma_dict = { (^"#dict" | ^"#dictionary") ~ literal+ }
+pragma_dict = { (^"#dict" | ^"#dictionary") ~ character+ }
 pragma_limit = {^"#limit" ~ number }
 pragma_quiet = {^"#quiet"}
 pragma = _{ SOI ~ (pragma_words | pragma_dict | pragma_limit | pragma_quiet) ~ EOI }

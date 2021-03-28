@@ -116,11 +116,11 @@ impl<Idx: Index> BitSet<Idx> {
     }
 }
 
-impl BitSet<()> {
-    pub fn resize(&self, new_size: usize) -> Self {
-        assert!(self.borrow().ones().all(|x| x < new_size));
+impl BitSetRef<'_, ()> {
+    pub fn resize(self, new_size: usize) -> BitSet<()> {
+        assert!(self.ones().all(|x| x < new_size));
 
-        let mut new_bitset = Self::new((), new_size);
+        let mut new_bitset = BitSet::new((), new_size);
         self.blocks
             .iter()
             .zip(new_bitset.blocks.iter_mut())
@@ -277,20 +277,20 @@ impl<'a, Idx: Index> BitSetRefMut<'a, Idx> {
         self.blocks.iter_mut().for_each(|x| *x = 0);
     }
     pub fn union_with(&mut self, other: BitSetRef<'_, Idx>) {
-        debug_assert_eq!(self.blocks.len(), other.blocks.len());
-        for i in 0..self.blocks.len() {
+        debug_assert!(self.blocks.len() >= other.blocks.len());
+        for i in 0..other.blocks.len() {
             unsafe { *self.blocks.get_unchecked_mut(i) |= *other.blocks.get_unchecked(i) };
         }
     }
     pub fn difference_with(&mut self, other: BitSetRef<'_, Idx>) {
-        debug_assert_eq!(self.blocks.len(), other.blocks.len());
-        for i in 0..self.blocks.len() {
+        debug_assert!(self.blocks.len() >= other.blocks.len());
+        for i in 0..other.blocks.len() {
             unsafe { *self.blocks.get_unchecked_mut(i) &= !*other.blocks.get_unchecked(i) };
         }
     }
     pub fn intersect_with(&mut self, other: BitSetRef<'_, Idx>) {
-        debug_assert_eq!(self.blocks.len(), other.blocks.len());
-        for i in 0..self.blocks.len() {
+        debug_assert!(self.blocks.len() >= other.blocks.len());
+        for i in 0..other.blocks.len() {
             unsafe { *self.blocks.get_unchecked_mut(i) &= *other.blocks.get_unchecked(i) };
         }
     }

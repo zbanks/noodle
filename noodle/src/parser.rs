@@ -372,7 +372,7 @@ fn parse_numbers(pairs: Pairs<'_, Rule>) -> Vec<usize> {
 
 fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
     match pair.as_rule() {
-        Rule::literal => Some(Ast::Class(CharBitset::from(
+        Rule::character => Some(Ast::Class(CharBitset::from(
             pair.as_str().chars().next().unwrap(),
         ))),
         Rule::dot => Some(Ast::Class(CharBitset::LETTERS)),
@@ -390,7 +390,9 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
                     let cs = p.as_str().chars().collect::<Vec<_>>();
                     bitset.union(CharBitset::from_range(cs[0], cs[2]));
                 }
-                Rule::literal => bitset.union(CharBitset::from(p.as_str().chars().next().unwrap())),
+                Rule::character => {
+                    bitset.union(CharBitset::from(p.as_str().chars().next().unwrap()))
+                }
                 _ => unreachable!(),
             });
             if invert {
@@ -398,12 +400,34 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
             }
             Some(Ast::Class(bitset))
         }
+        Rule::partial_group => Some(Ast::Sequence(
+            // TODO: Support arbitrary terms inside the partial_group
+            // e.g. "((hello)(world):?)"
+            pair.as_str()
+                .chars()
+                .map(|c| Ast::Repetition {
+                    term: Box::new(Ast::Class(CharBitset::from(c))),
+                    min: 0,
+                    max: Some(1),
+                })
+                .collect(),
+        )),
         Rule::group => Some(Ast::Sequence(
             pair.into_inner().filter_map(parse_subexpression).collect(),
         )),
         Rule::sequence => Some(Ast::Sequence(
             pair.into_inner().filter_map(parse_subexpression).collect(),
         )),
+        Rule::number => {
+            let dot = Ast::Class(CharBitset::LETTERS);
+            let n: usize = pair.as_str().parse().unwrap();
+            // TODO: Add whitespace; set whitespace flag
+            Some(Ast::Repetition {
+                term: Box::new(dot),
+                min: n,
+                max: Some(n),
+            })
+        }
         Rule::repeat_optional
         | Rule::repeat_any
         | Rule::repeat_oneormore
