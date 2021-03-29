@@ -150,17 +150,17 @@ impl<'word> CacheBuilder<'word> {
     /// `RUNTIME: O(words)`
     fn finalize(mut self, new_wordlist: &[&'word Word]) -> Cache {
         assert!(self.single_fully_drained);
-        println!(
-            "prefixed={}, matched={}, elided={}",
-            self.total_prefixed,
-            self.total_matched - self.total_prefixed,
-            self.total_length - self.total_matched
-        );
-        println!(
-            "{} distinct classes with {} words",
-            self.cache.classes.len(),
-            self.nonnull_wordlist.len(),
-        );
+        //println!(
+        //    "prefixed={}, matched={}, elided={}",
+        //    self.total_prefixed,
+        //    self.total_matched - self.total_prefixed,
+        //    self.total_length - self.total_matched
+        //);
+        //println!(
+        //    "{} distinct classes with {} words",
+        //    self.cache.classes.len(),
+        //    self.nonnull_wordlist.len(),
+        //);
 
         let mut new_word_classes = vec![];
         let mut i: usize = 0;
@@ -237,15 +237,20 @@ impl<'word> Matcher<'word> {
     pub fn from_ast(query_ast: &parser::QueryAst, wordlist: &[&'word Word]) -> Self {
         // TODO: Use `options.dictionary`
         // TODO: Use `options.quiet`
-        let max_words = query_ast.options.max_words.unwrap_or(2);
+        const DEFAULT_MAX_WORDS: usize = 10;
+        const DEFAULT_RESULTS_LIMIT: usize = 300;
+        let max_words = query_ast.options.max_words.unwrap_or(DEFAULT_MAX_WORDS);
         let expressions: Vec<_> = query_ast
             .expressions
             .iter()
-            .map(|expr| Expression::from_ast(expr).unwrap())
+            .map(|expr| Expression::from_ast(expr))
             .collect();
 
         let mut matcher = Self::new(expressions, wordlist, max_words);
-        matcher.results_limit = query_ast.options.results_limit.or(Some(100));
+        matcher.results_limit = query_ast
+            .options
+            .results_limit
+            .or(Some(DEFAULT_RESULTS_LIMIT));
 
         matcher
     }

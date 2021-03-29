@@ -49,12 +49,12 @@ pub struct Expression {
 
 impl Expression {
     /// Compile an `Expression` from its string representation
-    pub fn new(text: &str) -> Result<Self> {
-        let ast_root = parser::ExpressionAst::new_from_str(text).unwrap();
-        Self::from_ast(&ast_root)
+    pub fn new(text: &str) -> parser::Result<Self> {
+        let ast_root = parser::ExpressionAst::new_from_str(text)?;
+        Ok(Self::from_ast(&ast_root))
     }
 
-    pub fn from_ast(ast_root: &parser::ExpressionAst) -> Result<Self> {
+    pub fn from_ast(ast_root: &parser::ExpressionAst) -> Self {
         // TODO: Use `options.ignore_word_boundaries`
         // TODO: Use `options.ignore_punctuation`
         let ignore_word_boundaries = !ast_root.options.explicit_word_boundaries.unwrap_or(false);
@@ -63,7 +63,7 @@ impl Expression {
         //println!("Ast: {:#?}", ast_root);
 
         let mut states = vec![];
-        Self::build_states(&ast_root.root, &mut states)?;
+        Self::build_states(&ast_root.root, &mut states);
         // Add a "success" end state (this may not be needed?) that absorbs word boundaries
         states.push(State::new_transition(Char::WORD_END.into(), states.len()));
 
@@ -77,9 +77,9 @@ impl Expression {
         };
         //println!("Pre-opt: {:?}", expr);
         Self::optimize_states(&mut expr.states);
-        println!("Post-opt: {:?}", expr);
+        //println!("Post-opt: {:?}", expr);
 
-        Ok(expr)
+        expr
     }
 
     pub fn states_len(&self) -> usize {
@@ -89,7 +89,7 @@ impl Expression {
     /// Extend `states` with the NFA representation of the `ast`
     /// The first new state is the "start" state, and the last added
     /// state must have a "success" transition to the next state.
-    fn build_states(ast: &parser::Ast, states: &mut Vec<State>) -> Result<()> {
+    fn build_states(ast: &parser::Ast, states: &mut Vec<State>) {
         let initial_len = states.len();
         match ast {
             parser::Ast::CharClass(char_bitset) => {
@@ -103,7 +103,7 @@ impl Expression {
                     states[initial_len]
                         .epsilon_states_bitset_mut()
                         .insert(next_index);
-                    Self::build_states(alt, states)?;
+                    Self::build_states(alt, states);
                     end_indexes.push(states.len() - 1);
                 }
                 let next_index = states.len();
@@ -119,7 +119,7 @@ impl Expression {
             }
             parser::Ast::Sequence(terms) => {
                 for term in terms {
-                    Self::build_states(term, states)?;
+                    Self::build_states(term, states);
                 }
             }
             parser::Ast::Repetition {
@@ -132,7 +132,7 @@ impl Expression {
                 min: 1,
                 max: Some(1),
             } => {
-                Self::build_states(term, states)?;
+                Self::build_states(term, states);
             }
             parser::Ast::Repetition { term, min, max } => {
                 states.push(State::new());
@@ -146,7 +146,7 @@ impl Expression {
                             .insert(next_index);
                     }
                     final_term_index = states.len();
-                    Self::build_states(term, states)?;
+                    Self::build_states(term, states);
                 }
                 let final_index = states.len();
                 states.push(State::new());
@@ -166,7 +166,6 @@ impl Expression {
             }
             parser::Ast::Anagram { kind: _, bank: _ } => unreachable!(),
         }
-        Ok(())
     }
 
     /// Perform an optimization pass on the NFA, modifying `states` so
@@ -285,6 +284,7 @@ impl Expression {
 
         // Shrink the `epsilon_states` set to exactly fit the total number of states, so that it
         // can be easily manipulated by `Matcher`'s `BitSet`s
+        let states_len = states.len();
         for state in states.iter_mut() {
             state.epsilon_states = state.epsilon_states.borrow().resize(states_len);
         }
