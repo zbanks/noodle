@@ -9,17 +9,24 @@ fn main() {
     println!(" === Time to load wordlist: {:?} ===", start.elapsed());
 
     let queries = vec![
-        "helloworld",
-        "h.... _ w....; <hello+>; <world+5>; [hale]+<owl>.*",
-        "<smiles>",
-        "<smiles>; .*ss.*",
-        "ahumongoussentencewithmultiplewords",
-        "ahumongoussentincewithmultiplewords !' !1",
-        "3 3 8 7; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:?) !'",
-        "hen !1; hay !1",
-        "breadfast !2",
+        ("helloworld", 1..=1),
+        ("8; [aehl]+([lo]*w[lo]*).*", 37..=40),
+        (
+            "h.... _ w....; <hello+>; <world+5>; [hale]+<owl>.*",
+            10..=10,
+        ),
+        ("<smiles>", 300..=10000),
+        ("<smiles>; .*ss.*", 120..=140),
+        ("ahumongoussentencewithmultiplewords", 10..=10),
+        ("ahumongoussentincewithmultiplewords !' !1", 265..=275),
+        (
+            "3 3 8 7; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:?) !'",
+            24..=24,
+        ),
+        ("hen !1; hay !1", 2..=2),
+        ("breadfast !2", 300..=10000),
     ];
-    for query_str in queries {
+    for (query_str, expected_range) in queries {
         println!();
         println!();
         println!(">>> Query: {} <<<", query_str);
@@ -30,12 +37,24 @@ fn main() {
         println!(" === Time to parse query: {:?} ===", start.elapsed());
 
         //let start = time::Instant::now();
-        //for _w in matcher {
-        //    println!("> {}", _w);
+        //let matcher: Vec<String> = matcher.collect();
+        //for w in matcher.iter() {
+        //    println!("> {}", w);
         //}
-        println!("# matches: {}", matcher.count());
+        //let count = matcher.len();
+
+        let count = matcher.count();
+        println!("# matches: {}", count);
         let duration = start.elapsed();
         println!(" === Time to evaluate matches: {:?} === ", duration);
+
+        if !expected_range.contains(&count) {
+            println!(
+                "error: query {:?} expected {:?} matches, got {}",
+                query_str, expected_range, count
+            );
+            break;
+        }
     }
 }
 

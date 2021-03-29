@@ -276,6 +276,12 @@ impl<'a, Idx: Index> BitSetRefMut<'a, Idx> {
     pub fn clear(&mut self) {
         self.blocks.iter_mut().for_each(|x| *x = 0);
     }
+    pub fn is_subset(&self, other: BitSetRef<'_, Idx>) -> bool {
+        debug_assert!(self.blocks.len() >= other.blocks.len());
+        (0..other.blocks.len()).all(|i| unsafe {
+            (*self.blocks.get_unchecked(i) & !*other.blocks.get_unchecked(i)) == 0
+        })
+    }
     pub fn union_with(&mut self, other: BitSetRef<'_, Idx>) {
         debug_assert!(self.blocks.len() >= other.blocks.len());
         for i in 0..other.blocks.len() {

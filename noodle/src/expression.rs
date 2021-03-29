@@ -178,9 +178,6 @@ impl Expression {
         //      for the NFAs that `build_states` spits out, rather than being "general-purpose".
         //      This keeps the `build_states` code simpler, and allows the optimizations to be
         //      maybe be applied more broadly.
-        // TODO: "Epsilon pushing":
-        //      If state S is only reachable via epsilon transition from state(s) E,
-        //      then apply `S.epsilon_states.union_with(E.epsilon_states)`
         // TODO: Eliding start state
         //      If state[0].epsilon_states = {1 | state[1].epsilon_states}, and char_bitset = 0
         //      then it can be elided & state[1] can be the new start state
@@ -188,105 +185,229 @@ impl Expression {
         // `Matcher` requires that there is a transitive closure over `epsilon_states` and that
         // each state has itself included in that set
         // RUNTIME: O(states^4)
-        let states_len = states.len();
-        for i in 0..states_len {
-            // Add an epsilon transition from each state to itself
-            states[i].epsilon_states.borrow_mut().insert(i);
+        fn epsilon_transitive_closure(states: &mut Vec<State>) {
+            let states_len = states.len();
+            for i in 0..states_len {
+                // Add an epsilon transition from each state to itself
+                states[i].epsilon_states.borrow_mut().insert(i);
 
-            // Calculate transitive closure over `epsilon_states`
-            // RUNTIME: O(states^3)
-            loop {
-                let mut ss: BitSet1D = states[i].epsilon_states.clone();
-                let mut bs = ss.borrow_mut();
+                // Calculate transitive closure over `epsilon_states`
+                // RUNTIME: O(states^3)
+                loop {
+                    let mut ss: BitSet1D = states[i].epsilon_states.clone();
+                    let mut bs = ss.borrow_mut();
 
-                // RUNTIME: O(states^2)
-                for (i2, state2) in states.iter().enumerate() {
-                    if !bs.contains(i2) {
-                        continue;
+                    // RUNTIME: O(states^2)
+                    for (i2, state2) in states.iter().enumerate() {
+                        if bs.contains(i2) {
+                            bs.union_with(state2.epsilon_states_bitset());
+                        }
                     }
-                    bs.union_with(state2.epsilon_states_bitset());
+                    if states[i].epsilon_states_bitset() == bs.reborrow() {
+                        break;
+                    }
+                    states[i].epsilon_states = ss;
                 }
-                if states[i].epsilon_states_bitset() == bs.reborrow() {
-                    break;
+            }
+        }
+
+        // Combine pairs of states, an "epsilon" state and a "char" state:
+        //  - The "epsilon" state has only epsilon transitions
+        //  - The "char" state has only a char_bitset transition
+        //  - The epsilon state can transition to the char state AND char state's next_state
+        //  - The epsilon state's epsilon transitions only contains:
+        //      - Itself
+        //      - The char state
+        //      - The epsilon_states of the char state's next state
+        // This could be more generic if states supported an arbitrary set of edges
+        // TODO: this code is pretty inefficient
+        // RUNTIME: O(states^3)?
+        fn collapse_epsilon_char_pairs(states: &mut Vec<State>) {
+            // RUNTIME: O(states)
+            fn bitset_only_contains(bitset: BitSetRef1D, index: usize) -> bool {
+                bitset.is_empty() || (bitset.contains(index) && bitset.ones().count() == 1)
+            }
+
+            // RUNTIME: O(states)
+            #[allow(clippy::nonminimal_bool)]
+            fn is_a_pair(eps_index: usize, char_index: usize, states: &[State]) -> bool {
+                let eps_state = &states[eps_index];
+                let char_state = &states[char_index];
+
+                let mut allowed_epsilons = char_state.epsilon_states.clone();
+                allowed_epsilons.borrow_mut().insert(eps_index);
+                allowed_epsilons
+                    .borrow_mut()
+                    .union_with(states[char_state.next_state].epsilon_states.borrow());
+
+                true
+                    // We can't delete the first state
+                    && char_index != 0
+                    // eps_state must be pure-epsilon
+                    && eps_state.char_bitset == CharBitset::EMPTY
+                    // char_state must be pure-char (epsilon to itself is allowed)
+                    && char_state.next_state != eps_index
+                    && char_state.next_state != char_index
+                    && bitset_only_contains(char_state.epsilon_states.borrow(), char_index)
+                    // eps_state must point to char_state, ...
+                    && eps_state.epsilon_states.borrow().contains(char_index)
+                    // ...char_state's next_state, ...
+                    && eps_state
+                        .epsilon_states
+                        .borrow()
+                        .contains(char_state.next_state)
+                    // ...but point to at most: itself, char_state, and char_state.next_state's epsilons
+                    && eps_state.epsilon_states.borrow().is_subset(&allowed_epsilons.borrow())
+            }
+
+            // RUNTIME: O(states^2)
+            fn collapse(eps_index: usize, char_index: usize, states: &mut Vec<State>) {
+                assert!(eps_index != char_index);
+
+                states[eps_index].char_bitset = states[char_index].char_bitset;
+                states[eps_index].next_state = states[char_index].next_state;
+
+                let remap = |i: usize| match i.cmp(&char_index) {
+                    std::cmp::Ordering::Less => i,
+                    std::cmp::Ordering::Equal if eps_index < char_index => eps_index,
+                    std::cmp::Ordering::Equal if eps_index > char_index => eps_index - 1,
+                    std::cmp::Ordering::Greater => i - 1,
+                    _ => unreachable!(),
+                };
+
+                for state in states.iter_mut() {
+                    state.next_state = remap(state.next_state);
+
+                    let mut new_epsilon_states = state.epsilon_states.clone();
+                    let mut new_epsilon_states_ref = new_epsilon_states.borrow_mut();
+                    new_epsilon_states_ref.clear();
+
+                    for i in state.epsilon_states.borrow().ones() {
+                        new_epsilon_states_ref.insert(remap(i));
+                    }
+
+                    state.epsilon_states = new_epsilon_states;
                 }
-                states[i].epsilon_states = ss;
+
+                states.remove(char_index);
+            }
+
+            // TODO: This loop indexing is sketchy, could probably be both optimized and rust-ified
+            // RUNTIME: O(states^3)?
+            let mut i = 0;
+            'outer: while i < states.len() {
+                for j in 0..states.len() {
+                    if is_a_pair(i, j, states) {
+                        collapse(i, j, states);
+                        continue 'outer;
+                    } else if is_a_pair(j, i, states) {
+                        collapse(j, i, states);
+                        continue 'outer;
+                    }
+                }
+                i += 1;
             }
         }
 
         // Identify redundant states, and prune them
         // RUNTIME: O(states^3)
-        let mut state_map: Vec<_> = (0..states_len).collect();
-        let mut state_map_from: Vec<Option<usize>> = (0..states_len).map(Some).collect();
-        let mut deleted: Vec<usize> = vec![];
-        for (i, state) in states.iter().enumerate() {
-            // Shift the state index down by the number of states before it that were deleted
-            state_map[i] -= deleted.iter().filter(|&d| *d < i).count();
+        fn prune_epsilon_pairs(states: &mut Vec<State>) {
+            let states_len = states.len();
+            let mut state_map: Vec<_> = (0..states_len).collect();
+            let mut state_map_from: Vec<Option<usize>> = (0..states_len).map(Some).collect();
+            let mut deleted: Vec<usize> = vec![];
+            for (i, state) in states.iter().enumerate() {
+                // Shift the state index down by the number of states before it that were deleted
+                state_map[i] -= deleted.iter().filter(|&d| *d < i).count();
 
-            // Don't attempt to collapse the first state
-            // Removing it would add a lot of complexity, with little benefit
-            if i == 0 {
-                continue;
-            }
-
-            // Only pure-epsilon states can be removed
-            if state.char_bitset != CharBitset::EMPTY {
-                continue;
-            }
-
-            // Look for any states that are equivalent to `state`,
-            // (except for containing the transition from itself)
-            // RUNTIME: O(states^2)
-            let mut similar_states = state.epsilon_states.clone();
-            similar_states.borrow_mut().remove(i);
-            for (i2, state2) in states.iter().enumerate() {
-                // We're doing a "triangle search", and only comparing `states[i] ~ states[i2]` where `i > i2`
-                if i2 <= i {
+                // Don't attempt to collapse the first state
+                // Removing it would add a lot of complexity, with little benefit
+                if i == 0 {
                     continue;
                 }
-                if similar_states == state2.epsilon_states {
-                    deleted.push(i2);
-                    state_map[i2] = i;
-                    state_map_from[i2] = None;
-                    state_map_from.iter_mut().for_each(|s| {
-                        if *s == Some(i) {
-                            *s = Some(i2)
-                        }
-                    });
-                    break;
+
+                // Only pure-epsilon states can be removed
+                if state.char_bitset != CharBitset::EMPTY {
+                    continue;
+                }
+
+                // Look for any states that are equivalent to `state`,
+                // (except for containing the transition from itself)
+                // RUNTIME: O(states^2)
+                let mut similar_states = state.epsilon_states.clone();
+                similar_states.borrow_mut().remove(i);
+                for (i2, state2) in states.iter().enumerate() {
+                    // We're doing a "triangle search", and only comparing `states[i] ~ states[i2]` where `i > i2`
+                    if i2 <= i {
+                        continue;
+                    }
+                    if similar_states == state2.epsilon_states {
+                        deleted.push(i2);
+                        state_map[i2] = i;
+                        state_map_from[i2] = None;
+                        state_map_from.iter_mut().for_each(|s| {
+                            if *s == Some(i) {
+                                *s = Some(i2)
+                            }
+                        });
+                        break;
+                    }
                 }
             }
-        }
 
-        // Re-create the state table, pruning the `deleted` states
-        // - `state_map_from[i] == None` iff `i` is in `deleted` (and the state is pruned)
-        // - Otherwise, replace the state at `i` with the state at index `state_map_from[i]`
-        // - Everywhere, change references to state `i` to `state_map[i]` (e.g. `next_state`, `epsilon_states`)
-        // RUNTIME: O(states^2)
-        let new_states_len = states_len - deleted.len();
-        state_map.iter().for_each(|&s| assert!(s < new_states_len));
-        *states = state_map_from
-            .iter()
-            .filter_map(|&from| {
-                from.map(|from_index| {
-                    let state = &states[from_index];
-                    let mut epsilon_states = BitSet1D::new((), new_states_len);
-                    for s in state.epsilon_states.borrow().ones() {
-                        epsilon_states.borrow_mut().insert(state_map[s])
-                    }
-                    State {
-                        char_bitset: state.char_bitset,
-                        next_state: state_map[state.next_state],
-                        epsilon_states,
-                    }
+            // Re-create the state table, pruning the `deleted` states
+            // - `state_map_from[i] == None` iff `i` is in `deleted` (and the state is pruned)
+            // - Otherwise, replace the state at `i` with the state at index `state_map_from[i]`
+            // - Everywhere, change references to state `i` to `state_map[i]` (e.g. `next_state`, `epsilon_states`)
+            // RUNTIME: O(states^2)
+            let new_states_len = states_len - deleted.len();
+            state_map.iter().for_each(|&s| assert!(s < new_states_len));
+            *states = state_map_from
+                .iter()
+                .filter_map(|&from| {
+                    from.map(|from_index| {
+                        let state = &states[from_index];
+                        let mut epsilon_states = BitSet1D::new((), new_states_len);
+                        for s in state.epsilon_states.borrow().ones() {
+                            epsilon_states.borrow_mut().insert(state_map[s])
+                        }
+                        State {
+                            char_bitset: state.char_bitset,
+                            next_state: state_map[state.next_state],
+                            epsilon_states,
+                        }
+                    })
                 })
-            })
-            .collect();
+                .collect();
+        }
 
         // Shrink the `epsilon_states` set to exactly fit the total number of states, so that it
         // can be easily manipulated by `Matcher`'s `BitSet`s
-        let states_len = states.len();
-        for state in states.iter_mut() {
-            state.epsilon_states = state.epsilon_states.borrow().resize(states_len);
+        // RUNTIME: O(states^2)
+        fn shrink_bitsets(states: &mut Vec<State>) {
+            let states_len = states.len();
+            for state in states.iter_mut() {
+                state.epsilon_states = state.epsilon_states.borrow().resize(states_len);
+            }
+        }
+
+        // RUNTIME: O(states^4)? (May be able to set a tighter bound on loop_count?)
+        let mut loop_count = 0;
+        loop {
+            // RUNTIME: O(states^3)
+            let states_len = states.len();
+            epsilon_transitive_closure(states);
+            prune_epsilon_pairs(states);
+            collapse_epsilon_char_pairs(states);
+            if states.len() == states_len {
+                break;
+            }
+
+            shrink_bitsets(states);
+            loop_count += 1;
+        }
+        if loop_count > 2 {
+            println!("warning: optimize_states required {} loops", loop_count);
         }
     }
 
