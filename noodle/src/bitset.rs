@@ -1,27 +1,37 @@
 use std::fmt;
 
+/// Allocation-efficient multi-dimensional bitsets
+/// A `BitSet3D` stores a 3 axis bitset in a single allocation,
+/// and can be sliced to return 2- or 1-axis bitsets for further ops.
+
 // This borrows some implementation from the fixedbitset crate, v0.4.0,
-// which is licensed under the MIT license.
+// which is licensed under the MIT license, Copyright (c) 2015-2017.
 // https://github.com/petgraph/fixedbitset
 
+// TODO: This whole thing feels like a mess, I think it needs some cleanup
+// to be more Rust-y. I don't like how much the API requires `.borrow()`,
+// and overall could use more abstraction over mutability & reference.
+//
+// It might also be good to abstract out a (1D?) `Set` trait, which could
+// get backed by a single `u32` to replace `CharBitset`?
+
 pub type BitSet1D = BitSet<()>;
+#[allow(dead_code)]
+pub type BitSet2D = BitSet<usize>;
 pub type BitSet3D = BitSet<(usize, usize)>;
 
 pub type BitSetRef1D<'a> = BitSetRef<'a, ()>;
+pub type BitSetRef2D<'a> = BitSetRef<'a, usize>;
 #[allow(dead_code)]
 pub type BitSetRef3D<'a> = BitSetRef<'a, (usize, usize)>;
 
 pub type BitSetRefMut1D<'a> = BitSetRefMut<'a, ()>;
+pub type BitSetRefMut2D<'a> = BitSetRefMut<'a, usize>;
 #[allow(dead_code)]
 pub type BitSetRefMut3D<'a> = BitSetRefMut<'a, (usize, usize)>;
 
-type Block = u32;
-const BLOCK_BITS: usize = 32;
-
-fn div_rem(x: usize, d: usize) -> (usize, usize) {
-    (x / d, x % d)
-}
-
+/// The bitset's `Index` represents an (n-1)-dimensional size/index
+/// The final dimension is implicitly stored in the size of the slice
 pub trait Index: Copy {
     type Range: std::slice::SliceIndex<[Block], Output = [Block]>;
 
@@ -69,6 +79,13 @@ impl Index for (usize, usize) {
         let start = self.1 * (self.0 * sub.0 + sub.1);
         start..start + self.1
     }
+}
+
+type Block = u32;
+const BLOCK_BITS: usize = 32;
+
+fn div_rem(x: usize, d: usize) -> (usize, usize) {
+    (x / d, x % d)
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -146,7 +163,7 @@ impl fmt::Debug for BitSet<()> {
 }
 
 impl BitSet<(usize, usize)> {
-    pub fn slice2d(&self, index: usize) -> BitSetRef<'_, usize> {
+    pub fn slice2d(&self, index: usize) -> BitSetRef2D<'_> {
         let range = self.size.total_size() * index..self.size.total_size() * (index + 1);
         let blocks = unsafe { self.blocks.get_unchecked(range) };
         BitSetRef {
@@ -154,7 +171,7 @@ impl BitSet<(usize, usize)> {
             size: self.size.1,
         }
     }
-    pub fn slice2d_mut(&mut self, index: usize) -> BitSetRefMut<'_, usize> {
+    pub fn slice2d_mut(&mut self, index: usize) -> BitSetRefMut2D<'_> {
         let range = self.size.total_size() * index..self.size.total_size() * (index + 1);
         let blocks = unsafe { self.blocks.get_unchecked_mut(range) };
         BitSetRefMut {

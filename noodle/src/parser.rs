@@ -11,9 +11,11 @@ pub type Result<T> = std::result::Result<T, PestError<Rule>>;
 #[grammar = "noodle_grammar.pest"]
 struct NoodleParser;
 
+/// A query is a representation of whole input sent to Noodle. It may be made up of
+/// multiple expressions, and also contains global options like which wordlist to use.
+/// This is used to build a `matcher::Matcher`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryAst {
-    original_text: String,
     macros: IndexMap<String, String>,
     pub expressions: Vec<ExpressionAst>,
     pub options: QueryOptions,
@@ -27,9 +29,10 @@ pub struct QueryOptions {
     pub quiet: Option<bool>,
 }
 
+/// An expression is similar to a single regular expression.
+/// This is used to build `expression::Expression`(s)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExpressionAst {
-    pub original_text: Option<String>,
     pub root: Ast,
     pub options: ExpressionOptions,
 }
@@ -41,6 +44,7 @@ pub struct ExpressionOptions {
     pub fuzz: Option<usize>,
 }
 
+/// A generic Abstract Syntax Tree node
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ast {
     // Base operations, available in "simple expressions"
@@ -71,15 +75,11 @@ pub enum AnagramKind {
 
 impl ExpressionAst {
     pub fn new_from_str(input_str: &str) -> Result<Self> {
-        let pairs = NoodleParser::parse(Rule::expression, input_str)?
+        let pair = NoodleParser::parse(Rule::expression, input_str)?
             .next()
-            .unwrap()
-            .into_inner();
+            .unwrap();
 
-        let mut expr = parse_expression(pairs);
-        expr.original_text = Some(input_str.to_owned());
-
-        Ok(expr)
+        Ok(parse_expression(pair))
     }
 }
 
@@ -99,17 +99,6 @@ impl fmt::Display for ExpressionAst {
     }
 }
 
-fn error_set_line(mut err: PestError<Rule>, line: usize) -> PestError<Rule> {
-    match &mut err.line_col {
-        LineColLocation::Pos((l, _)) => *l = line,
-        LineColLocation::Span((l1, _), (l2, _)) => {
-            *l2 = line + *l2 - *l1;
-            *l1 = line;
-        }
-    };
-    err
-}
-
 impl QueryAst {
     pub fn new_from_str(input_str: &str) -> Result<Self> {
         let mut expressions = vec![];
@@ -120,6 +109,17 @@ impl QueryAst {
             results_limit: None,
             quiet: None,
         };
+
+        fn error_set_line(mut err: PestError<Rule>, line: usize) -> PestError<Rule> {
+            match &mut err.line_col {
+                LineColLocation::Pos((l, _)) => *l = line,
+                LineColLocation::Span((l1, _), (l2, _)) => {
+                    *l2 = line + *l2 - *l1;
+                    *l1 = line;
+                }
+            };
+            err
+        }
 
         for (i, line) in input_str.split(&['\n', ';'][..]).enumerate() {
             let mut line = line.to_owned();
@@ -137,9 +137,7 @@ impl QueryAst {
             if let Some(pair) = pair.next() {
                 match pair.as_rule() {
                     Rule::expression => {
-                        let mut expr = parse_expression(pair.into_inner());
-                        expr.original_text = Some(line);
-
+                        let expr = parse_expression(pair);
                         expressions.push(expr);
                     }
                     Rule::pragma_words => {
@@ -177,7 +175,6 @@ impl QueryAst {
         }
 
         let mut ast = QueryAst {
-            original_text: input_str.to_owned(),
             macros,
 
             expressions,
@@ -188,6 +185,10 @@ impl QueryAst {
         Ok(ast)
     }
 
+    /// Some components of the AST are not suitable for evaluating directly, like `Ast::Anagram`.
+    /// One expression with nodes like this may need expand into *multiple* expressions.
+    /// Scan the list of expressions and perform these re-writes on the AST, so that the query can
+    /// be later handled by `expression::Expression` and evaluated.
     fn expand_expressions(&mut self) {
         fn visit<F>(node: &mut Ast, action: &mut F)
         where
@@ -239,12 +240,14 @@ impl QueryAst {
                 })
                 .collect();
 
-            let max_unique_letters = anagram_sets
-                .iter()
-                .map(|(_k, h)| h.iter().count())
-                .max()
-                .unwrap_or(0);
-
+            // Each anagram block with N unique letters needs to be expanded into (at least) N+1 expressions
+            // Ex: `<tests>` becomes 4 expressions:
+            //      - `[st]*e[st]*` -- there is exactly one `e` amid some `s` & `t`s
+            //      - `[et]*s[et]*s[et]*` -- there are exactly two `s`s amid some `e` & `t`s
+            //      - `[es]*t[es]*t[es]*` -- there are exactly two `t`s amid some `e` & `s`s
+            //      - `[est]{5}` -- the total string is 5 letters, made up of `e`, `s`, and `t`s
+            // If an expression has mutliple anagrams, we can do these expansions "in parallel".
+            // For `i` anagrams with N_1, N_2, ... unique letters, it can be expanded into max(N_i)+1 expressions
             fn ast_for_anagram(kind: AnagramKind, histogram: &[(Char, usize)], nth: usize) -> Ast {
                 let total_length = histogram.iter().map(|(_, i)| i).sum();
                 let mut histogram: Vec<_> = histogram.into();
@@ -288,7 +291,7 @@ impl QueryAst {
                                 max: None,
                             }
                         }
-                        // For additive, the letters between can be anything
+                        // For additive, the added letters between can be anything (even the histogram letter)
                         AnagramKind::Super | AnagramKind::TransAdd(_) => Ast::Repetition {
                             term: Box::new(Ast::CharClass(CharBitset::LETTERS)),
                             min: 0,
@@ -334,6 +337,12 @@ impl QueryAst {
                     }
                 }
             }
+
+            let max_unique_letters = anagram_sets
+                .iter()
+                .map(|(_k, h)| h.iter().count())
+                .max()
+                .unwrap_or(0);
 
             let replacements: Vec<Vec<Ast>> = anagram_sets
                 .iter()
@@ -416,10 +425,17 @@ impl fmt::Display for Ast {
                 term,
                 min,
                 max: Some(max),
-            } => write!(f, "{}{{{}, {}}}", term, min, max)?,
-            Ast::Anagram { kind: _, bank } => {
+            } => write!(f, "{}{{{},{}}}", term, min, max)?,
+            Ast::Anagram { kind, bank } => {
                 write!(f, "<")?;
                 bank.iter().try_for_each(|c| write!(f, "{:?}", c))?;
+                match kind {
+                    AnagramKind::Standard => {}
+                    AnagramKind::Super => write!(f, "+")?,
+                    AnagramKind::Sub => write!(f, "-")?,
+                    AnagramKind::TransAdd(n) => write!(f, "+{}", n)?,
+                    AnagramKind::TransDelete(n) => write!(f, "-{}", n)?,
+                }
                 write!(f, ">")?;
             }
         }
@@ -427,6 +443,8 @@ impl fmt::Display for Ast {
     }
 }
 
+/// Given a (flat) list of parsed `pairs`, parse every `Rule::number` into a `usize` and return
+/// them in a `Vec<usize>`.
 fn parse_numbers(pairs: Pairs<'_, Rule>) -> Vec<usize> {
     pairs
         .filter_map(|p| {
@@ -439,6 +457,9 @@ fn parse_numbers(pairs: Pairs<'_, Rule>) -> Vec<usize> {
         .collect()
 }
 
+/// Given the contents of an anagram-like rule, return a tuple containing the parsed contents of
+/// the `anagram_body` & `number` rules.
+/// The outer `pairs` *must* either be `[Rule::anagram_body]` or `[Rule::anagram_body, Rule::number]`
 fn parse_anagram(mut pairs: Pairs<'_, Rule>) -> (Vec<Char>, Option<usize>) {
     let body = pairs.next().unwrap();
     assert_eq!(body.as_rule(), Rule::anagram_body);
@@ -448,7 +469,9 @@ fn parse_anagram(mut pairs: Pairs<'_, Rule>) -> (Vec<Char>, Option<usize>) {
     (bank, number)
 }
 
-fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
+/// Given an outer pair (a `Rule::term`, `Rule::subexpression`, or similar), parse the contents
+/// into an `Ast` if it contains anything. If it is empty (e.g. whitespace), return `None`.
+fn parse_term(pair: Pair<Rule>) -> Option<Ast> {
     let rule = pair.as_rule();
     match rule {
         Rule::character => Some(Ast::CharClass(CharBitset::from(
@@ -481,7 +504,7 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
         }
         Rule::partial_group => Some(Ast::Sequence(
             pair.into_inner()
-                .filter_map(parse_subexpression)
+                .filter_map(parse_term)
                 .map(|c| Ast::Repetition {
                     term: Box::new(c),
                     min: 0,
@@ -490,10 +513,10 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
                 .collect(),
         )),
         Rule::group => Some(Ast::Sequence(
-            pair.into_inner().filter_map(parse_subexpression).collect(),
+            pair.into_inner().filter_map(parse_term).collect(),
         )),
         Rule::sequence => Some(Ast::Sequence(
-            pair.into_inner().filter_map(parse_subexpression).collect(),
+            pair.into_inner().filter_map(parse_term).collect(),
         )),
         Rule::number => {
             let dot = Ast::CharClass(CharBitset::LETTERS);
@@ -515,7 +538,7 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
         | Rule::repeat_atleast
         | Rule::repeat_range => {
             let mut pairs = pair.into_inner();
-            let term = Box::new(pairs.next().and_then(parse_subexpression).unwrap());
+            let term = Box::new(pairs.next().and_then(parse_term).unwrap());
             let numbers = parse_numbers(pairs);
             let (min, max) = match rule {
                 Rule::repeat_optional => (0, Some(1)),
@@ -547,7 +570,7 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
             assert!(number.is_some());
             let mut number = number.unwrap();
             if rule == Rule::transdelete && number > bank.len() {
-                // TODO: is this an error? or should it just degrade to a subanagram?
+                // NB: Should this be an error?
                 println!("Warning: transdelete longer than bank");
                 number = bank.len();
             }
@@ -561,13 +584,15 @@ fn parse_subexpression(pair: Pair<Rule>) -> Option<Ast> {
             })
         }
         Rule::alternatives => Some(Ast::Alternatives(
-            pair.into_inner().filter_map(parse_subexpression).collect(),
+            pair.into_inner().filter_map(parse_term).collect(),
         )),
 
         _ => None,
     }
 }
 
+/// Given a list of pairs from the "end" of a `Rule::expression` (after the `Rule::subexpression` term),
+/// extract the option flags into an `ExpressionOptions` struct.
 fn parse_options(pairs: Pairs<'_, Rule>) -> ExpressionOptions {
     let mut explicit_word_boundaries = None;
     let mut explicit_punctuation = None;
@@ -575,14 +600,9 @@ fn parse_options(pairs: Pairs<'_, Rule>) -> ExpressionOptions {
 
     for pair in pairs {
         match pair.as_rule() {
-            Rule::flag => {
-                let flag = pair.as_str().get(1..).unwrap();
-                match flag {
-                    "_" => explicit_word_boundaries = Some(true),
-                    "'" | "-" => explicit_punctuation = Some(true),
-                    _ => fuzz = Some(parse_numbers(pair.into_inner())[0]),
-                }
-            }
+            Rule::option_word_boundaries => explicit_word_boundaries = Some(true),
+            Rule::option_punctuation => explicit_punctuation = Some(true),
+            Rule::option_fuzz => fuzz = Some(parse_numbers(pair.into_inner())[0]),
             Rule::EOI => (),
             _ => unreachable!(),
         }
@@ -595,6 +615,8 @@ fn parse_options(pairs: Pairs<'_, Rule>) -> ExpressionOptions {
     }
 }
 
+/// After parsing an expression, scan the Ast to "auto-enable" certain flags.
+/// Ex: if the Ast contains explicit usage of `_`, then enable `explicit_word_boundaries`
 fn detect_options(ast: &Ast, options: &mut ExpressionOptions) {
     match ast {
         Ast::CharClass(char_bitset) => {
@@ -623,21 +645,21 @@ fn detect_options(ast: &Ast, options: &mut ExpressionOptions) {
     }
 }
 
-pub fn parse_expression(mut pairs: Pairs<'_, Rule>) -> ExpressionAst {
+/// Build an AST for the given `Rule::expression`
+fn parse_expression(pair: Pair<Rule>) -> ExpressionAst {
+    assert_eq!(pair.as_rule(), Rule::expression);
+
+    let mut pairs = pair.into_inner();
     let subexpression = pairs.next().unwrap();
     assert!(
         subexpression.as_rule() == Rule::sequence || subexpression.as_rule() == Rule::alternatives
     );
 
-    let expression = parse_subexpression(subexpression).unwrap();
+    let ast = parse_term(subexpression).unwrap();
     let mut options = parse_options(pairs);
-    detect_options(&expression, &mut options);
+    detect_options(&ast, &mut options);
 
-    ExpressionAst {
-        original_text: None,
-        root: expression,
-        options,
-    }
+    ExpressionAst { root: ast, options }
 }
 
 #[test]
@@ -662,15 +684,12 @@ fn test_expression_ast() {
     chars_cd.union('d'.into());
 
     assert_eq!(
-        ExpressionAst::new_from_str("cd[cd][^abe-z].[.abc]")
-            .unwrap()
-            .root,
+        ExpressionAst::new_from_str("cd[cd][^abe-z].").unwrap().root,
         Sequence(vec![
             CharClass('c'.into()),
             CharClass('d'.into()),
             CharClass(chars_cd),
             CharClass(chars_cd),
-            CharClass(CharBitset::LETTERS),
             CharClass(CharBitset::LETTERS),
         ])
     );
@@ -863,4 +882,23 @@ fn test_expression_options() {
 
     assert!(ExpressionAst::new_from_str("uh oh!").is_err());
     assert!(ExpressionAst::new_from_str("!_ too early").is_err());
+}
+
+#[test]
+fn test_parse_roundtrip() {
+    fn roundtrip(s: &str) {
+        let expr = ExpressionAst::new_from_str(s).unwrap();
+        let s2 = format!("{}", expr);
+        assert_eq!(s, &s2);
+    }
+
+    // Note: not all syntax components make it through unchanged,
+    // nor is that a requirement. (Example: "[ab]", "[ba]" are equivalent)
+    // These are a representative set of expressions which *can* be roundtripped
+    roundtrip("(hello)");
+    roundtrip("(cd[cd].)");
+    roundtrip("(a+(b[cd]?)*)");
+    roundtrip("(a{2}b{3,}c{,4}d{5,6})");
+    roundtrip("(a|(bc)|(d|(ef)))");
+    roundtrip("(<abc><def+><ghi-><jkl+2><mno-2>)");
 }

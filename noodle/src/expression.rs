@@ -55,8 +55,6 @@ impl Expression {
     }
 
     pub fn from_ast(ast_root: &parser::ExpressionAst) -> Self {
-        // TODO: Use `options.ignore_word_boundaries`
-        // TODO: Use `options.ignore_punctuation`
         let ignore_word_boundaries = !ast_root.options.explicit_word_boundaries.unwrap_or(false);
         let ignore_punctuation = !ast_root.options.explicit_punctuation.unwrap_or(false);
 
