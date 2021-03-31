@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 use std::fmt;
 use std::io::{self, BufRead};
+use unicode_normalization::UnicodeNormalization;
 
 // 28 values: A-Z, Punctuation, Space
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
@@ -58,6 +59,10 @@ impl fmt::Debug for Char {
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct CharBitset(u32);
 
+// TODO: CharBitset is incredibly lightweight compared to BitSet1D,
+// 4 stack bytes vs. 16 stack bytes & 8 heap bytes.
+// This does mean that there's a some redundant code -- maybe there could
+// be a Set trait that these different reprs could implement for consistency?
 impl CharBitset {
     pub const EMPTY: Self = Self(0);
     pub const LETTERS: Self = Self((1 << 26) - 1);
@@ -76,7 +81,7 @@ impl CharBitset {
         self.0 ^= Self::LETTERS.0;
     }
 
-    pub fn union(&mut self, other: Self) {
+    pub fn union_with(&mut self, other: Self) {
         self.0 |= other.0;
     }
 
@@ -148,6 +153,7 @@ impl Word {
             text: text.into(),
             chars: text
                 .chars()
+                .nfkd()
                 .map(|c| c.into())
                 .chain(std::iter::once(Char::WORD_END))
                 .collect(),

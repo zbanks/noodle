@@ -1,236 +1,50 @@
 use crate::bitset::BitSet3D;
 use crate::expression::Expression;
 use crate::parser;
-use crate::words::*;
+use crate::words::{Char, Word};
 use indexmap::IndexMap;
-use std::fmt;
 
-#[derive(Debug)]
-struct CacheClass {
-    n_words: usize,
-}
-
-struct CacheBuilder<'word> {
-    cache: Cache,
-
-    index: usize,
-    // We want an immutable reference to this, but with it allowed
-    // to change out underneath us
-    // This is owned by us and populated by us, others take a reference to it
-    nonnull_wordlist: Vec<&'word Word>,
-    transition_table: Vec<BitSet3D>,
-    previous_chars: &'word [Char],
-    single_fully_drained: bool,
-
-    total_prefixed: usize,
-    total_matched: usize,
-    total_length: usize,
-}
-
-struct CacheBuilderIter<'word, 'it> {
-    cache_builder: &'it mut CacheBuilder<'word>,
-    wordlist: &'it [&'word Word],
-}
-
-impl<'word> CacheBuilder<'word> {
-    fn iter<'it>(&'it mut self, wordlist: &'it [&'word Word]) -> CacheBuilderIter<'word, 'it> {
-        CacheBuilderIter {
-            cache_builder: self,
-            wordlist,
-        }
-    }
-
-    fn new(expression: Expression, word_len_max: usize) -> Self {
-        let mut classes = IndexMap::new();
-        let word_classes = vec![];
-
-        let transition_group_new = || {
-            BitSet3D::new(
-                (expression.states_len(), expression.fuzz + 1),
-                expression.states_len(),
-            )
-        };
-
-        // The first class (0) is always the "empty" class
-        classes.insert_full(transition_group_new(), CacheClass { n_words: 0 });
-
-        let transition_table = vec![transition_group_new(); word_len_max];
-
-        Self {
-            cache: Cache {
-                expression,
-                classes,
-                word_classes,
-            },
-
-            index: 0,
-            nonnull_wordlist: vec![],
-            transition_table,
-            previous_chars: &[],
-
-            total_prefixed: 0,
-            total_matched: 0,
-            total_length: 0,
-            single_fully_drained: false,
-        }
-    }
-
-    /// `RUNTIME: O(words * chars * fuzz * states^3)`
-    fn next_single_word(&mut self, wordlist: &[&'word Word]) -> Option<&'word Word> {
-        // RUNTIME: O(words * chars * fuzz * states^3)
-        let fuzz_range = 0..self.cache.expression.fuzz + 1;
-        while self.index < wordlist.len() {
-            let word = &wordlist[self.index];
-            self.index += 1;
-
-            // RUNTIME: O(chars)
-            let word_len = word.chars.len();
-            let mut si: usize = 0;
-            while si < word_len
-                && si < self.previous_chars.len()
-                && word.chars[si] == self.previous_chars[si]
-            {
-                si += 1;
-            }
-
-            // RUNTIME: O(fuzz * states^2)
-            let prefixed_table = &mut self.transition_table[si..];
-            if si == 0 {
-                // Clear table
-                prefixed_table[0].borrow_mut().clear();
-                for i in 0..self.cache.expression.states_len() {
-                    prefixed_table[0]
-                        .slice_mut((i, 0))
-                        .union_with(self.cache.expression.epsilon_states(i));
-                }
-            }
-
-            // RUNTIME: O(chars * fuzz * states^3)
-            let valid_len = self
-                .cache
-                .expression
-                .fill_transition_table(&word.chars[si..], prefixed_table)
-                + si;
-
-            self.total_prefixed += si;
-            self.total_matched += valid_len;
-            self.total_length += word_len;
-
-            self.previous_chars = &word.chars[0..valid_len];
-            if valid_len < word_len {
-                continue;
-            }
-            assert!(valid_len == word_len);
-
-            // RUNTIME: O(fuzz * states^2)
-            let entry = self
-                .cache
-                .classes
-                .entry(self.transition_table[word_len].clone())
-                .and_modify(|v| v.n_words += 1);
-            if entry.index() != 0 {
-                self.nonnull_wordlist.push(word);
-                self.cache.word_classes.push(entry.index());
-            }
-            entry.or_insert(CacheClass { n_words: 1 });
-
-            // RUNTIME: O(fuzz)
-            for f in fuzz_range.clone() {
-                let start_transitions = self.transition_table[word_len].slice((0, f));
-                if start_transitions.contains(self.cache.expression.states_len() - 1) {
-                    return Some(word);
-                }
-            }
-        }
-
-        self.single_fully_drained = true;
-        None
-    }
-
-    /// `RUNTIME: O(words)`
-    fn finalize(mut self, new_wordlist: &[&'word Word]) -> Cache {
-        assert!(self.single_fully_drained);
-        //println!(
-        //    "prefixed={}, matched={}, elided={}",
-        //    self.total_prefixed,
-        //    self.total_matched - self.total_prefixed,
-        //    self.total_length - self.total_matched
-        //);
-        //println!(
-        //    "{} distinct classes with {} words",
-        //    self.cache.classes.len(),
-        //    self.nonnull_wordlist.len(),
-        //);
-
-        let mut new_word_classes = vec![];
-        let mut i: usize = 0;
-
-        // RUNTIME: O(words)
-        for (&word, &class) in self
-            .nonnull_wordlist
-            .iter()
-            .zip(self.cache.word_classes.iter())
-        {
-            if i < new_wordlist.len() && *word == *new_wordlist[i] {
-                new_word_classes.push(class);
-                i += 1;
-            }
-        }
-        assert!(i == new_wordlist.len());
-        self.cache.word_classes = new_word_classes;
-        assert!(self.cache.word_classes.len() == new_wordlist.len());
-
-        self.cache
-    }
-}
-
-impl<'word> Iterator for CacheBuilderIter<'word, '_> {
-    type Item = &'word Word;
-
-    fn next(&mut self) -> Option<&'word Word> {
-        self.cache_builder.next_single_word(self.wordlist)
-    }
-}
-
-#[derive(Debug)]
-struct Cache {
-    expression: Expression,
-    classes: IndexMap<BitSet3D, CacheClass>,
-    word_classes: Vec<usize>,
-}
-
-#[derive(Debug)]
-struct Layer<'word> {
-    wi: usize,
-    stem: Option<&'word Word>,
-    states: BitSet3D,
-}
-
-impl<'word> Layer<'word> {
-    fn new(caches_count: usize, fuzz_count: usize, states_count: usize) -> Self {
-        Self {
-            wi: 0,
-            stem: None,
-            states: BitSet3D::new((caches_count, fuzz_count), states_count),
-        }
-    }
-}
-
+/// Evaluate a query, consisting of multiple expressions, on a given wordset.
+/// Returns words and phrases that match *all* of the given expressions.
 pub struct Matcher<'word> {
     cache_builders: Vec<CacheBuilder<'word>>,
     caches: Vec<Cache>,
     layers: Vec<Layer<'word>>,
-    // TODO: On `new`, this is populated with the input wordlist;
-    // but later it is replaced with the last `nonnull_wordlist`
-    // We don't really need the input wordlist?
+    // TODO: On `new`, this is populated with the input wordlist; but later it is
+    // replaced with the last `nonnull_wordlist`. Is that weird?
     wordlist: Vec<&'word Word>,
     singles_done: bool,
 
     max_words: usize,
     results_limit: Option<usize>,
 
-    index: usize,
+    layer_index: usize,
     results_count: usize,
+}
+
+/// A `Layer` holds the state for 1 word slot in a search for matching phrases.
+#[derive(Debug)]
+struct Layer<'word> {
+    // The layer represents the nth word (`word_index`) in the wordlist...
+    word_index: usize,
+    // ...which is populated in `stem`
+    stem: Option<&'word Word>,
+
+    // `states` is a 3D bitset: [cache][fuzz][to_state]
+    //
+    // It contains the reachable `to_state`s for `cache` within `fuzz` edits
+    // *before* consuming the given word.
+    states: BitSet3D,
+}
+
+impl<'word> Layer<'word> {
+    fn new(caches_count: usize, fuzz_count: usize, states_count: usize) -> Self {
+        Self {
+            word_index: 0,
+            stem: None,
+            states: BitSet3D::new((caches_count, fuzz_count), states_count),
+        }
+    }
 }
 
 impl<'word> Matcher<'word> {
@@ -276,7 +90,7 @@ impl<'word> Matcher<'word> {
             wordlist,
             max_words,
             results_limit: None,
-            index: 0,
+            layer_index: 0,
             results_count: 0,
         }
     }
@@ -354,14 +168,6 @@ impl<'word> Matcher<'word> {
         None
     }
 
-    fn format_output(&self) -> String {
-        self.layers[0..=self.index]
-            .iter()
-            .map(|layer| layer.stem.unwrap().text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ")
-    }
-
     /// `RUNTIME: O(words^max_words * expressions * fuzz^2 * states^2)`
     fn next_phrase(&mut self) -> Option<String> {
         assert!(self.singles_done);
@@ -374,22 +180,26 @@ impl<'word> Matcher<'word> {
         loop {
             let mut no_match = false;
             {
-                let (lower_layers, upper_layers) = self.layers.split_at_mut(self.index + 1);
-                let this_layer = &mut lower_layers[self.index];
+                let (lower_layers, upper_layers) = self.layers.split_at_mut(self.layer_index + 1);
+                let this_layer = &mut lower_layers[self.layer_index];
                 let next_layer = &mut upper_layers[0];
 
                 // RUNTIME: O(expressions * fuzz^2 * states^2)
                 let mut all_end_match = true;
                 let mut all_no_advance = true;
-                let wi = this_layer.wi;
-                let word = self.wordlist[wi];
+                let word_index = this_layer.word_index;
+                let word = self.wordlist[word_index];
                 for (c, cache) in self.caches.iter().enumerate() {
-                    if cache.word_classes[wi] == 0 {
+                    if cache.word_classes[word_index] == 0 {
                         no_match = true;
                         break;
                     }
 
-                    let class = cache.classes.get_index(cache.word_classes[wi]).unwrap().0;
+                    let class = cache
+                        .classes
+                        .get_index(cache.word_classes[word_index])
+                        .unwrap()
+                        .0;
                     next_layer.states.slice2d_mut(c).clear();
 
                     // RUNTIME: O(fuzz^2 * states^2)
@@ -454,7 +264,7 @@ impl<'word> Matcher<'word> {
 
                 if !no_match {
                     this_layer.stem = Some(word);
-                    if all_end_match && self.index >= 1 {
+                    if all_end_match && self.layer_index >= 1 {
                         result = Some(self.format_output());
                     }
                 }
@@ -468,35 +278,65 @@ impl<'word> Matcher<'word> {
         result
     }
 
+    /// Advance the phrase iterator. Return `true` if the iterator is exhausted.
+    ///
+    /// If there was a `partial_match`, then attempt to "descend" by incrementing
+    /// `self.layer_index` to build a longer phrase.
+    /// If the was not a partial match, then try the next word in the wordlist.
+    /// But, if there are no words left in the wordlist, "ascend" by decrementing
+    /// `self.layer_index` to try a shorter phrase.
+    ///
     /// `RUNTIME: O(max_words)`
-    fn advance(&mut self, partial_match: bool) -> bool {
-        let mut pm = partial_match;
+    fn advance(&mut self, mut partial_match: bool) -> bool {
         loop {
-            if !pm {
-                self.layers[self.index].wi += 1;
-                if self.layers[self.index].wi >= self.wordlist.len() {
-                    if self.index == 0 {
+            // If there's a partial_match, try to build a longer phrase
+            if partial_match {
+                // If we've hit the `max_words` limit, too bad.
+                // Treat it like we didn't have a partial match
+                if self.layer_index + 1 >= self.max_words {
+                    partial_match = false;
+                    continue;
+                }
+
+                // Descend to the next layer (resetting the layer's word_index to 0)
+                self.layer_index += 1;
+                self.layers[self.layer_index].word_index = 0;
+                break;
+            } else {
+                // This word didn't create a match, so try the next word
+                self.layers[self.layer_index].word_index += 1;
+
+                // Did we exhaust the whole word list at this layer?
+                if self.layers[self.layer_index].word_index >= self.wordlist.len() {
+                    // If there isn't a previous layer, then we're done!
+                    if self.layer_index == 0 {
                         println!(
                             "Matcher done with {} result(s) (up to {} word phrases)",
                             self.results_count, self.max_words
                         );
+
+                        // Signal that the iterator is exhausted
                         return true;
                     }
-                    self.index -= 1;
+
+                    // Ascend back to the previous layer (perhaps recursively!)
+                    self.layer_index -= 1;
                     continue;
                 }
-                break;
-            } else {
-                if self.index + 1 >= self.max_words {
-                    pm = false;
-                    continue;
-                }
-                self.index += 1;
-                self.layers[self.index].wi = 0;
                 break;
             }
         }
+
+        // The iterator is not exhausted
         false
+    }
+
+    fn format_output(&self) -> String {
+        self.layers[0..=self.layer_index]
+            .iter()
+            .map(|layer| layer.stem.unwrap().text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 
@@ -522,8 +362,235 @@ impl Iterator for Matcher<'_> {
     }
 }
 
-impl<'word> fmt::Debug for Matcher<'word> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Matcher for {} expressions", self.caches.len())
+/// During the initial search, each word in the wordlist is fully characterized
+/// in relation to an `Expression`.
+///
+/// The words can be sorted into "equivalency classes" based on their net transitions
+/// on the expression's NFA: for each starting state, which states are reachable after
+/// consuming the entire word, within a certain edit distance?
+///
+/// Often, we can eliminate words which have *no* reachable states within the given
+/// edit limit (fuzz), regardless of starting state.
+/// The reachable words are referred to as the "`nonnull_wordlist`"
+#[derive(Debug)]
+struct Cache {
+    expression: Expression,
+    // The keys in `classes` are 3D bitsets on: [from_state][fuzz][to_state]
+    //
+    // These represent "equivalency classes": words which have equivalent behavior
+    // on the `expression` NFA.
+    classes: IndexMap<BitSet3D, CacheClass>,
+
+    // This is a parallel vector to `wordlist`: for each word in the wordlist, which
+    // class does it belong to (by index)?
+    word_classes: Vec<usize>,
+}
+
+#[derive(Debug)]
+struct CacheClass {
+    // TODO: In future optimizations, it may be useful to store other information here
+    n_words: usize,
+}
+
+/// This struct is used while doing the first pass over wordlist, looking for single-word
+/// matches and populating the equivalency class cache.
+///
+/// After scanning `wordlist` once, this struct is consumed by `finalize(...)` and turned
+/// into a bare `Cache`.
+struct CacheBuilder<'word> {
+    cache: Cache,
+
+    // We want an immutable reference to this, but with it allowed
+    // to change out underneath us
+    // This is owned by us and populated by us, others take a reference to it
+    nonnull_wordlist: Vec<&'word Word>,
+
+    // `transition_table` is a 4D bitset: [char_index][from_state][fuzz][to_state]
+    //
+    // After being populated by `Expression::fill_transition_table(...)`, it contains elements such
+    // that starting at `from_state` and consuming characters `0..=char_index` can reach `to_state`
+    // in exactly `fuzz` edit distance.
+    //
+    // Entries in `char_index` have undefined state when `char_index` >= `previous_chars.len()`
+    transition_table: Vec<BitSet3D>,
+    previous_chars: &'word [Char],
+
+    word_index: usize,
+    single_fully_drained: bool,
+
+    // Statistics for debugging
+    total_prefixed: usize,
+    total_matched: usize,
+    total_length: usize,
+}
+
+impl<'word> CacheBuilder<'word> {
+    fn new(expression: Expression, word_len_max: usize) -> Self {
+        let mut classes = IndexMap::new();
+        let word_classes = vec![];
+
+        let transition_group_new = || {
+            BitSet3D::new(
+                (expression.states_len(), expression.fuzz + 1),
+                expression.states_len(),
+            )
+        };
+
+        // The first class (0) is always the "null" class for words which do not match
+        classes.insert_full(transition_group_new(), CacheClass { n_words: 0 });
+
+        let transition_table = vec![transition_group_new(); word_len_max];
+
+        Self {
+            cache: Cache {
+                expression,
+                classes,
+                word_classes,
+            },
+
+            word_index: 0,
+            nonnull_wordlist: vec![],
+            transition_table,
+            previous_chars: &[],
+
+            total_prefixed: 0,
+            total_matched: 0,
+            total_length: 0,
+            single_fully_drained: false,
+        }
+    }
+
+    /// `RUNTIME: O(words * chars * fuzz * states^3)`
+    fn next_single_word(&mut self, wordlist: &[&'word Word]) -> Option<&'word Word> {
+        // RUNTIME: O(words * chars * fuzz * states^3)
+        let fuzz_range = 0..self.cache.expression.fuzz + 1;
+        while self.word_index < wordlist.len() {
+            let word = &wordlist[self.word_index];
+            self.word_index += 1;
+
+            // RUNTIME: O(chars)
+            let word_len = word.chars.len();
+            let mut si: usize = 0;
+            while si < word_len
+                && si < self.previous_chars.len()
+                && word.chars[si] == self.previous_chars[si]
+            {
+                si += 1;
+            }
+
+            // RUNTIME: O(fuzz * states^2)
+            let prefixed_table = &mut self.transition_table[si..];
+            if si == 0 {
+                // Clear table
+                prefixed_table[0].borrow_mut().clear();
+                for i in 0..self.cache.expression.states_len() {
+                    prefixed_table[0]
+                        .slice_mut((i, 0))
+                        .union_with(self.cache.expression.epsilon_states(i));
+                }
+            }
+
+            // RUNTIME: O(chars * fuzz * states^3)
+            let valid_len = self
+                .cache
+                .expression
+                .fill_transition_table(&word.chars[si..], prefixed_table)
+                + si;
+
+            self.total_prefixed += si;
+            self.total_matched += valid_len;
+            self.total_length += word_len;
+
+            self.previous_chars = &word.chars[0..valid_len];
+            if valid_len < word_len {
+                continue;
+            }
+            assert!(valid_len == word_len);
+
+            // RUNTIME: O(fuzz * states^2)
+            let entry = self
+                .cache
+                .classes
+                .entry(self.transition_table[word_len].clone())
+                .and_modify(|v| v.n_words += 1);
+            if entry.index() != 0 {
+                self.nonnull_wordlist.push(word);
+                self.cache.word_classes.push(entry.index());
+            }
+            entry.or_insert(CacheClass { n_words: 1 });
+
+            // RUNTIME: O(fuzz)
+            for f in fuzz_range.clone() {
+                let start_transitions = self.transition_table[word_len].slice((0, f));
+                if start_transitions.contains(self.cache.expression.states_len() - 1) {
+                    return Some(word);
+                }
+            }
+        }
+
+        self.single_fully_drained = true;
+        None
+    }
+
+    /// This must be called after consuming the entire iterator
+    /// `new_wordlist` must be a subset of the original wordlist (in the exact same order)
+    ///
+    /// `RUNTIME: O(words)`
+    fn finalize(mut self, new_wordlist: &[&'word Word]) -> Cache {
+        assert!(self.single_fully_drained);
+        // TODO: There should be an API for stats
+        //println!(
+        //    "prefixed={}, matched={}, elided={}",
+        //    self.total_prefixed,
+        //    self.total_matched - self.total_prefixed,
+        //    self.total_length - self.total_matched
+        //);
+        //println!(
+        //    "{} distinct classes with {} words",
+        //    self.cache.classes.len(),
+        //    self.nonnull_wordlist.len(),
+        //);
+
+        let mut new_word_classes = vec![];
+        let mut i: usize = 0;
+
+        // RUNTIME: O(words)
+        for (&word, &class) in self
+            .nonnull_wordlist
+            .iter()
+            .zip(self.cache.word_classes.iter())
+        {
+            if i < new_wordlist.len() && *word == *new_wordlist[i] {
+                new_word_classes.push(class);
+                i += 1;
+            }
+        }
+        assert!(i == new_wordlist.len());
+        self.cache.word_classes = new_word_classes;
+        assert!(self.cache.word_classes.len() == new_wordlist.len());
+
+        self.cache
+    }
+
+    fn iter<'it>(&'it mut self, wordlist: &'it [&'word Word]) -> CacheBuilderIter<'word, 'it> {
+        CacheBuilderIter {
+            cache_builder: self,
+            wordlist,
+        }
+    }
+}
+
+/// Wrapper for iterating over the single-word results from a CacheBuilder,
+/// which requires providing the `wordlist` slice
+struct CacheBuilderIter<'word, 'it> {
+    cache_builder: &'it mut CacheBuilder<'word>,
+    wordlist: &'it [&'word Word],
+}
+
+impl<'word> Iterator for CacheBuilderIter<'word, '_> {
+    type Item = &'word Word;
+
+    fn next(&mut self) -> Option<&'word Word> {
+        self.cache_builder.next_single_word(self.wordlist)
     }
 }

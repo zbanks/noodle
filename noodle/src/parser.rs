@@ -254,7 +254,7 @@ impl QueryAst {
                 let mut char_bitset: CharBitset = CharBitset::EMPTY;
                 histogram
                     .iter()
-                    .for_each(|(c, _)| char_bitset.union(c.into()));
+                    .for_each(|(c, _)| char_bitset.union_with(c.into()));
 
                 if nth < histogram.len() {
                     let (ch, count) = histogram.remove(nth);
@@ -490,10 +490,10 @@ fn parse_term(pair: Pair<Rule>) -> Option<Ast> {
                 Rule::invert => invert = true,
                 Rule::letter_range => {
                     let cs = p.as_str().chars().collect::<Vec<_>>();
-                    bitset.union(CharBitset::from_range(cs[0], cs[2]));
+                    bitset.union_with(CharBitset::from_range(cs[0], cs[2]));
                 }
                 Rule::character => {
-                    bitset.union(CharBitset::from(p.as_str().chars().next().unwrap()))
+                    bitset.union_with(CharBitset::from(p.as_str().chars().next().unwrap()))
                 }
                 _ => unreachable!(),
             });
@@ -681,7 +681,7 @@ fn test_expression_ast() {
     // Character classes: ., [...], [^...], [a-z]
     // TODO: Test punctuation, word boundary
     let mut chars_cd: CharBitset = 'c'.into();
-    chars_cd.union('d'.into());
+    chars_cd.union_with('d'.into());
 
     assert_eq!(
         ExpressionAst::new_from_str("cd[cd][^abe-z].").unwrap().root,

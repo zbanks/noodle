@@ -3,9 +3,9 @@ use crate::parser;
 use crate::words::{Char, CharBitset};
 use std::fmt;
 
-const MAX_SET_SIZE: usize = 2048;
-
-pub type Result<T> = std::result::Result<T, ()>;
+// This is only used while constructing the `Expression`,
+// the sets are resized before they are evaluated.
+const MAX_SET_SIZE: usize = 16 * 1024;
 
 #[derive(Debug, Clone)]
 struct State {

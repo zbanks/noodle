@@ -145,6 +145,8 @@
             </div>
         </div>
         <script type="text/javascript">
+        </script>
+        <script type="text/javascript">
             function stop() {
                 if (window.req) {
                     console.log("aborting xhr", window.req);
@@ -176,22 +178,27 @@
                 stop();
                 var inputText = "#dict " + wordlist.value + "\n" + input.value;
                 window.location.hash = "#" + encodeURI(inputText);
-                var req = new XMLHttpRequest();
-                var updateOutput = function() {
-                    document.querySelector("#output").innerText = processResponse(this.responseText);
-                };
-                updateOutput();
-                req.addEventListener("load", updateOutput);
-                req.addEventListener("loadstart", updateOutput);
-                req.addEventListener("progress", updateOutput);
-                req.addEventListener("error", function() {
-                    var div = document.querySelector("#output");
-                    div.innerText = "No response from server" + "\n\n" + div.innerText;
-                });
-                req.open("POST", "/query");
-                req.setRequestHeader("Content-Type", "text/plain");
-                req.send(inputText);
-                window.req = req;
+
+                var div = document.querySelector("#output");
+                div.innerText = "";
+
+                if (window.ws) {
+                    window.ws.onclose = null;
+                    window.ws.close();
+                }
+                var ws = new WebSocket("ws://" + window.location.host + "/ws");
+                window.ws = ws;
+                ws.onopen = function(ev) {
+                    console.log(ev);
+                    ws.send(inputText);
+                }
+                ws.onerror = function(ev) {
+                    console.log(ev);
+                    div.innerText = "Unable to connect to Noodle server";
+                }
+                ws.onmessage = function(ev) {
+                    div.innerText += ev.data;
+                }
             }
             document.querySelector("#stop").addEventListener("click", stop);
             document.querySelector("#query").addEventListener("click", submit);
