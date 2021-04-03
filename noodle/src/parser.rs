@@ -662,6 +662,7 @@ fn parse_expression(pair: Pair<Rule>) -> ExpressionAst {
     ExpressionAst { root: ast, options }
 }
 
+// TODO: Investigate proptest?
 #[test]
 fn test_expression_ast() {
     use Ast::*;

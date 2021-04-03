@@ -1,6 +1,7 @@
 use either::Either;
 use futures::{stream, SinkExt, Stream, StreamExt};
 use noodle::{load_wordlist, parser, Matcher, Word};
+use serde::Serialize;
 use std::sync::Mutex;
 use std::time::{self, Duration};
 use warp::ws::Message;
@@ -23,7 +24,15 @@ lazy_static! {
     };
     static ref ACTIVE_QUERIES: Mutex<usize> = Mutex::new(0_usize);
 }
-static TIMEOUT: Duration = Duration::from_secs(3);
+static TIMEOUT: Duration = Duration::from_secs(30);
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum Response<'a> {
+    Status(&'a str),
+    Log { message: &'a str, level: usize },
+    Match { phrase: &'a [&'a Word] },
+}
 
 /// Convert a `Stream` on `Result<T, T>` items into a `Stream` on `T`.
 /// Returns items from the input stream while they are `Ok`, then returns
@@ -43,6 +52,11 @@ where
         .map(|x| x.unwrap())
 }
 
+fn flatten_phrase(phrase: Vec<&Word>) -> String {
+    let response = Response::Match { phrase: &phrase };
+    serde_json::to_string(&response).unwrap()
+}
+
 /// Plain HTTP interface, for use with cURL or GSheets IMPORTDATA
 fn run_query_sync(query_str: &str) -> http::Result<http::Response<hyper::Body>> {
     // TODO: hyper's implementation of "transfer-encoding: chunked" buffers the results of the
@@ -54,21 +68,14 @@ fn run_query_sync(query_str: &str) -> http::Result<http::Response<hyper::Body>> 
     //
     // TODO: I don't like that this has a lot of the same code as run_websocket,
     // but it's a pain to abstract out streams due to their long types
-    let start = time::Instant::now();
     let query_ast = parser::QueryAst::new_from_str(query_str);
     let body = match query_ast {
         Ok(query_ast) => {
-            let matcher = Matcher::from_ast(&query_ast, &WORDLIST);
-            println!(" === Time to parse query: {:?} ===", start.elapsed());
-
-            let response = std::iter::once("#0 Running query...\n#1 ".to_string())
-                .chain(matcher)
-                .map(Ok)
-                .chain(std::iter::once("#0 Done".to_string()).map(Err));
-            let response_stream = stream::iter(response);
+            let matcher = Matcher::from_ast(&query_ast, &WORDLIST).map(flatten_phrase);
+            let response_stream = stream::iter(matcher.map(Ok));
 
             let timeout_stream = stream::once(tokio::time::sleep(TIMEOUT))
-                .map(|_| Err(format!("#0 Timeout after {:?}", TIMEOUT)));
+                .map(|_| Err(format!("# Timeout after {:?}", TIMEOUT)));
 
             // TODO: The string building code here is pretty bad
             let result_stream = stream_until_error(stream::select(response_stream, timeout_stream))
@@ -108,10 +115,13 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
         };
         let start = time::Instant::now();
         let r = tx
-            .send(Message::text(format!(
-                "  Running query ({} other(s) active)...\n",
-                n_active - 1
-            )))
+            .send(Message::text(
+                serde_json::to_string(&Response::Status(&format!(
+                    "Running query ({} other(s) active)...",
+                    n_active - 1
+                )))
+                .unwrap(),
+            ))
             .await;
         if let Err(e) = r {
             println!("websocket send error: {:?}", e);
@@ -122,25 +132,42 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
         let body = match query_ast {
             Ok(query_ast) => {
                 let header = std::iter::once_with(|| {
-                    format!("  Parsed query in {:?}...\n", start.elapsed())
+                    serde_json::to_string(&Response::Status(&format!(
+                        "Parsed query in {:?}...",
+                        start.elapsed()
+                    )))
+                    .unwrap()
                 });
-                let matcher = Matcher::from_ast(&query_ast, &WORDLIST);
-                let footer =
-                    std::iter::once_with(|| format!("\n  Finished in {:?}", start.elapsed()));
+                let matcher = Matcher::from_ast(&query_ast, &WORDLIST).map(flatten_phrase);
+                let footer = std::iter::once_with(|| {
+                    serde_json::to_string(&Response::Status(&format!(
+                        "Finished in {:?}",
+                        start.elapsed()
+                    )))
+                    .unwrap()
+                });
 
                 Either::Left(header.chain(matcher).map(Ok).chain(footer.map(Err)))
             }
             Err(error) => {
                 println!("err: {:?}", error);
-                Either::Right(std::iter::once(Err(error.to_string())))
+                Either::Right(std::iter::once(Err(serde_json::to_string(
+                    &Response::Status(&error.to_string()),
+                )
+                .unwrap())))
             }
         };
         let body = stream::iter(body);
-        let timeout_stream = stream::once(tokio::time::sleep(TIMEOUT))
-            .map(|_| Err(format!("\n Timeout after {:?}", start.elapsed())));
+        let timeout_stream = stream::once(tokio::time::sleep(TIMEOUT)).map(|_| {
+            Err(serde_json::to_string(&Response::Status(&format!(
+                "Timeout after {:?}",
+                start.elapsed()
+            )))
+            .unwrap())
+        });
 
         let _ = stream_until_error(stream::select(body, timeout_stream))
-            .map(|r| Ok(Message::text(format!("{}\n", r))))
+            .map(|r| Ok(Message::text(r)))
             .forward(&mut tx)
             .await;
 

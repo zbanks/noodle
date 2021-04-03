@@ -15,9 +15,19 @@
                 font-family: Monospace;
                 font-size: 1.4rem;
             }
+            #status {
+            }
             #output {
                 font-family: Monospace;
                 font-size: 1.2rem;
+                white-space: pre-wrap;
+
+                margin-top: 10px;
+                margin-bottom: 10px;
+            }
+            #log {
+                font-family: Monospace;
+                font-size: 0.8rem;
                 white-space: pre-wrap;
             }
             .column-container {
@@ -81,8 +91,9 @@
             </div>
             <div class="column">
                 <h2>Output</h2>
-                <div id="output">
-                </div>
+                <div id="status"></div>
+                <div id="output"></div>
+                <div id="log"></div>
             </div>
             <div class="column">
                 <h2>Help</h2>
@@ -154,23 +165,6 @@
                     window.req = null;
                 }
             }
-            function processResponse(text) {
-                if (!text) {
-                    return "";
-                }
-                output = "";
-                header = [];
-                var lines = text.split("\n");
-                for (var i = 0; i < lines.length; i++) {
-                    var line = lines[i];
-                    if (line[0] == "#") {
-                        header[+line[1]] = line.slice(3);
-                    } else {
-                        output += line + "\n";
-                    }
-                }
-                return header.join("\n") + "\n" + output;
-            }
             var input = document.querySelector("#input");
             input.value = decodeURI(window.location.hash.substring(1));
             var wordlist = document.querySelector("#wordlist");
@@ -179,8 +173,14 @@
                 var inputText = "#dict " + wordlist.value + "\n" + input.value;
                 window.location.hash = "#" + encodeURI(inputText);
 
-                var div = document.querySelector("#output");
-                div.innerText = "";
+                var outputDiv = document.querySelector("#output");
+                outputDiv.innerText = "";
+
+                var statusDiv = document.querySelector("#status");
+                statusDiv.innerText = "";
+
+                var logDiv = document.querySelector("#log");
+                logDiv.innerText = "";
 
                 if (window.ws) {
                     window.ws.onclose = null;
@@ -194,10 +194,22 @@
                 }
                 ws.onerror = function(ev) {
                     console.log(ev);
-                    div.innerText = "Unable to connect to Noodle server";
+                    statusDiv.innerText = "Unable to connect to Noodle server";
                 }
                 ws.onmessage = function(ev) {
-                    div.innerText += ev.data;
+                    var data = JSON.parse(ev.data);
+                    console.log(data);
+                    if (data.status) {
+                        statusDiv.innerText = data.status;
+                    } else if (data.log) {
+                        logDiv.innerText += data.log.message + "\n";
+                    } else if (data.match) {
+                        for (var i = 0; i < data.match.phrase.length; i++) {
+                            var word = data.match.phrase[i];
+                            outputDiv.innerText += word.text + " ";
+                        }
+                        outputDiv.innerText += "\n";
+                    }
                 }
             }
             document.querySelector("#stop").addEventListener("click", stop);

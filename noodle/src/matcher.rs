@@ -96,7 +96,7 @@ impl<'word> Matcher<'word> {
     }
 
     /// `RUNTIME: O(expressions * (words + fuzz * states))`
-    fn next_single(&mut self) -> Option<String> {
+    fn next_single(&mut self) -> Option<&'word Word> {
         assert!(!self.singles_done);
 
         // Check for single-word matches
@@ -110,7 +110,7 @@ impl<'word> Matcher<'word> {
                 wordlist = &cache.nonnull_wordlist;
             }
             if all_match {
-                return Some(word.text.clone());
+                return Some(word);
             }
         }
 
@@ -169,7 +169,7 @@ impl<'word> Matcher<'word> {
     }
 
     /// `RUNTIME: O(words^max_words * expressions * fuzz^2 * states^2)`
-    fn next_phrase(&mut self) -> Option<String> {
+    fn next_phrase(&mut self) -> Option<Vec<&'word Word>> {
         assert!(self.singles_done);
         if self.wordlist.is_empty() {
             return None;
@@ -265,7 +265,12 @@ impl<'word> Matcher<'word> {
                 if !no_match {
                     this_layer.stem = Some(word);
                     if all_end_match && self.layer_index >= 1 {
-                        result = Some(self.format_output());
+                        result = Some(
+                            self.layers[0..=self.layer_index]
+                                .iter()
+                                .map(|layer| layer.stem.unwrap())
+                                .collect(),
+                        );
                     }
                 }
             }
@@ -330,20 +335,12 @@ impl<'word> Matcher<'word> {
         // The iterator is not exhausted
         false
     }
-
-    fn format_output(&self) -> String {
-        self.layers[0..=self.layer_index]
-            .iter()
-            .map(|layer| layer.stem.unwrap().text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ")
-    }
 }
 
-impl Iterator for Matcher<'_> {
-    type Item = String;
+impl<'word> Iterator for Matcher<'word> {
+    type Item = Vec<&'word Word>;
 
-    fn next(&mut self) -> Option<String> {
+    fn next(&mut self) -> Option<Vec<&'word Word>> {
         let r = if self
             .results_limit
             .map(|lim| lim < self.results_count)
@@ -351,7 +348,9 @@ impl Iterator for Matcher<'_> {
         {
             None
         } else if !self.singles_done {
-            self.next_single().or_else(|| self.next_phrase())
+            self.next_single()
+                .map(|w| vec![w])
+                .or_else(|| self.next_phrase())
         } else {
             self.next_phrase()
         };

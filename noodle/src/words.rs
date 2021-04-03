@@ -3,6 +3,9 @@ use std::fmt;
 use std::io::{self, BufRead};
 use unicode_normalization::UnicodeNormalization;
 
+#[cfg(feature = "serialize")]
+use serde::Serialize;
+
 // 28 values: A-Z, Punctuation, Space
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct Char(u8);
@@ -142,9 +145,12 @@ impl fmt::Debug for CharBitset {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 pub struct Word {
     pub text: String,
+    #[serde(skip)]
     pub chars: Vec<Char>,
+    pub score: u64,
 }
 
 impl Word {
@@ -157,6 +163,7 @@ impl Word {
                 .map(|c| c.into())
                 .chain(std::iter::once(Char::WORD_END))
                 .collect(),
+            score: 0,
         }
     }
 }
