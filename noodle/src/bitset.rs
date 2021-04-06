@@ -249,6 +249,9 @@ impl<'a, Idx: Index> BitSetRef<'a, Idx> {
             remaining_blocks: &self.blocks[1..],
         }
     }
+    pub fn as_block(&self) -> Block {
+        self.blocks[0]
+    }
 }
 
 #[derive(Debug, Hash, PartialEq, Eq)]
@@ -322,6 +325,9 @@ impl<'a, Idx: Index> BitSetRefMut<'a, Idx> {
         for i in 0..self.blocks.len() {
             unsafe { *self.blocks.get_unchecked_mut(i) = *other.blocks.get_unchecked(i) };
         }
+    }
+    pub fn as_block_mut(&mut self) -> &mut Block {
+        &mut self.blocks[0]
     }
 }
 

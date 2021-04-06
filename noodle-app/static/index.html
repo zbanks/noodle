@@ -171,7 +171,7 @@
             function submit() {
                 stop();
                 var inputText = "#dict " + wordlist.value + "\n" + input.value;
-                window.location.hash = "#" + encodeURI(inputText);
+                window.location.hash = "#" + encodeURI(input.value);
 
                 var outputDiv = document.querySelector("#output");
                 outputDiv.innerText = "";

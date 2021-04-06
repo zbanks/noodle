@@ -40,7 +40,7 @@ impl State {
 /// Representation of a low-level Noodle Expression
 pub struct Expression {
     states: Vec<State>,
-    text: String,
+    pub text: String,
 
     pub ignore_word_boundaries: bool,
     pub ignore_punctuation: bool,

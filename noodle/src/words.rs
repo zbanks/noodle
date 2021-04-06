@@ -144,7 +144,7 @@ impl fmt::Debug for CharBitset {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 pub struct Word {
     pub text: String,
