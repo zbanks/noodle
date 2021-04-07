@@ -1,9 +1,10 @@
-use either::Either;
-use futures::{future, stream, SinkExt, Stream, StreamExt};
-use noodle::{load_wordlist, parser, Matcher, Word};
+use anyhow::{self as ah, anyhow};
+use futures::task::Poll;
+use futures::{future, poll, stream, SinkExt, Stream, StreamExt};
+use noodle::{load_wordlist, parser, Matcher, MatcherResponse, Word};
 use serde::Serialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{self, Duration};
+use std::time::{Duration, Instant};
 use warp::ws::Message;
 use warp::Filter;
 
@@ -12,7 +13,7 @@ extern crate lazy_static;
 
 lazy_static! {
     static ref WORDS: Vec<Word> = {
-        let start = time::Instant::now();
+        let start = Instant::now();
         let words = load_wordlist("/usr/share/dict/words").unwrap();
         println!(" === Time to load wordlist: {:?} ===", start.elapsed());
         words
@@ -24,13 +25,13 @@ lazy_static! {
     };
     static ref ACTIVE_QUERIES: AtomicUsize = AtomicUsize::new(0_usize);
 }
-static TIMEOUT: Duration = Duration::from_secs(30);
+static TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Response {
     Status(String),
-    Log { message: String, level: usize },
+    Log { message: String },
     Match { phrase: Vec<Word> },
 }
 
@@ -71,7 +72,15 @@ fn run_query_sync(query_str: &str) -> http::Result<http::Response<hyper::Body>> 
     let query_ast = parser::QueryAst::new_from_str(query_str);
     let body = match query_ast {
         Ok(query_ast) => {
-            let matcher = Matcher::from_ast(&query_ast, &WORDLIST).map(flatten_phrase);
+            let matcher = Matcher::from_ast(&query_ast, &WORDLIST)
+                .filter_map(|m| {
+                    if let MatcherResponse::Match(p) = m {
+                        Some(p)
+                    } else {
+                        None
+                    }
+                })
+                .map(flatten_phrase);
             let response_stream = stream::iter(matcher.map(Ok));
 
             let timeout_stream = stream::once(tokio::time::sleep(TIMEOUT))
@@ -92,86 +101,117 @@ fn run_query_sync(query_str: &str) -> http::Result<http::Response<hyper::Body>> 
 
 /// Websockets interface, for interactive use
 async fn run_websocket(websocket: warp::ws::WebSocket) {
-    let (tx, mut rx) = websocket.split();
+    let (tx, rx) = websocket.split();
     let mut tx = tx.with(|response| {
         future::ok::<_, warp::Error>(Message::text(serde_json::to_string(&response).unwrap()))
     });
+    let mut rx = rx.fuse();
 
-    // TODO: Using a new websocket for every query may seem a bit excessive, but it
-    // has the benefit of being incredibly simple, and avoids the race condition of
-    // returning mixing in results from the previous query.
-    // We're not really using websockets for any performance reason, it's mostly for
-    // the robust framing capabilities (which Warp has good support for).
-    if let Some(result) = rx.next().await {
-        let msg = match result {
-            Ok(msg) => msg,
-            Err(e) => {
-                println!("websocket error: {:?}", e);
-                return;
-            }
-        };
+    let r: ah::Result<()> = async {
+        // TODO: Using a new websocket for every query may seem a bit excessive, but it
+        // has the benefit of being incredibly simple, and avoids the race condition of
+        // returning mixing in results from the previous query.
+        // We're not really using websockets for any performance reason, it's mostly for
+        // the robust framing capabilities (which Warp has good support for).
+        let msg = rx
+            .next()
+            .await
+            .map(|m| m.map_err(Into::into))
+            .unwrap_or(Err(anyhow!("Websocket closed without data")))?;
 
         let n_active = { ACTIVE_QUERIES.fetch_add(1, Ordering::Relaxed) };
-        let start = time::Instant::now();
-        let r = tx
-            .send(Response::Status(format!(
-                "Running query ({} other(s) active)...",
-                n_active
-            )))
-            .await;
-        if let Err(e) = r {
-            println!("websocket send error: {:?}", e);
-            return;
-        }
+        let start = Instant::now();
+        tx.send(Response::Status(format!(
+            "Running query ({} other(s) active)...",
+            n_active
+        )))
+        .await?;
 
         let query_ast = parser::QueryAst::new_from_str(msg.to_str().unwrap());
-        let body = match query_ast {
-            Ok(query_ast) => {
-                let matcher = Matcher::from_ast(&query_ast, &WORDLIST);
 
-                let header = std::iter::once(Response::Status(format!(
-                    "Parsed query in {:?}...",
+        if let Err(e) = &query_ast {
+            tx.send(Response::Status(format!("Query parse error")))
+                .await?;
+            tx.send(Response::Log {
+                message: e.to_string(),
+            })
+            .await?;
+        }
+        let query_ast = query_ast?;
+        tx.send(Response::Status(format!(
+            "Parsed query in {:?}...",
+            start.elapsed()
+        )))
+        .await?;
+
+        let mut matcher = Matcher::from_ast(&query_ast, &WORDLIST);
+        for expression in matcher.expressions() {
+            tx.send(Response::Log {
+                message: format!("{:?}", expression),
+            })
+            .await?;
+        }
+
+        let mut duration = Duration::from_millis(0);
+        loop {
+            match poll!(rx.next()) {
+                Poll::Ready(None) => {
+                    println!(
+                        "Computation terminated by client after {:?}",
+                        start.elapsed()
+                    );
+                    break;
+                }
+                _ => {}
+            }
+
+            let now = Instant::now();
+            while start + duration < now {
+                duration += Duration::from_millis(100);
+            }
+            if duration > TIMEOUT {
+                tx.send(Response::Status(format!(
+                    "Timeout after {:?}",
                     start.elapsed()
-                )));
-                let header = header.chain(
-                    matcher
-                        .expressions()
-                        .map(|expr| Response::Log {
-                            message: format!("{:?}", expr),
-                            level: 0,
-                        })
-                        .collect::<Vec<_>>()
-                        .into_iter(),
-                );
-                let footer = std::iter::once_with(|| {
-                    Response::Status(format!("Finished in {:?}", start.elapsed()))
-                });
-
-                let matcher = matcher.map(|phrase| Response::Match { phrase });
-
-                Either::Left(header.chain(matcher).map(Ok).chain(footer.map(Err)))
+                )))
+                .await?;
+                break;
             }
-            Err(error) => {
-                println!("err: {:?}", error);
-                Either::Right(std::iter::once(Err(Response::Status(error.to_string()))))
+            let deadline = start + duration;
+            let response = matcher.next_with_deadline(Some(deadline)).map(|m| match m {
+                MatcherResponse::Match(phrase) => Response::Match { phrase },
+                MatcherResponse::Logs(_) => Response::Status("logs".to_string()),
+                MatcherResponse::Timeout => Response::Status(format!(
+                    "Processing, {:0.01}s...: {}",
+                    duration.as_secs_f64(),
+                    matcher.progress()
+                )),
+            });
+            if let Some(response) = response {
+                tx.send(response).await?;
+            } else {
+                tx.send(Response::Status(format!(
+                    "Complete after {:?}",
+                    start.elapsed()
+                )))
+                .await?;
+                break;
             }
-        };
-        let body = stream::iter(body);
-        let timeout_stream = stream::once(tokio::time::sleep(TIMEOUT)).map(|_| {
-            Err(Response::Status(format!(
-                "Timeout after {:?}",
-                start.elapsed()
-            )))
-        });
-
-        let _ = stream_until_error(stream::select(body, timeout_stream))
-            .map(Ok)
-            .forward(&mut tx)
-            .await;
+        }
 
         ACTIVE_QUERIES.fetch_sub(1, Ordering::Relaxed);
+        Ok(())
     }
-    let _ = tx.into_inner().reunite(rx).unwrap().close().await;
+    .await;
+    if let Err(e) = r {
+        println!("Error: {:?}", e);
+    }
+    let _ = tx
+        .into_inner()
+        .reunite(rx.into_inner())
+        .unwrap()
+        .close()
+        .await;
 }
 
 #[tokio::main(flavor = "multi_thread")]

@@ -69,5 +69,5 @@ fn expected_count() {
     query_ast.options.results_limit = Some(2000);
     let matcher = Matcher::from_ast(&query_ast, &wordlist);
 
-    assert_eq!(matcher.count(), 1395);
+    assert_eq!(matcher.filter(|m| m == MatcherResponse::Match(_)).count(), 1395);
 }

@@ -10,5 +10,5 @@ pub mod matcher;
 pub mod words;
 
 pub use expression::Expression;
-pub use matcher::Matcher;
+pub use matcher::{Matcher, MatcherResponse};
 pub use words::{load_wordlist, Word};

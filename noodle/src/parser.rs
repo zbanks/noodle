@@ -169,6 +169,7 @@ impl QueryAst {
                         // TODO: Maybe check if it's unique? Or not use a hashmap at all?
                         macros.insert(terms[0].to_owned(), terms[1].to_owned());
                     }
+                    Rule::EOI => (),
                     _ => println!("Unexpected: {:?}", pair),
                 }
             }

@@ -5,6 +5,7 @@ authors = ["Zach Banks <zjbanks@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+anyhow = "1.0"
 indexmap = "1.6.2"
 pest = "2.1.0"
 pest_derive = "2.1.0"

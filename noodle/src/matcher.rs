@@ -3,6 +3,13 @@ use crate::expression::Expression;
 use crate::parser;
 use crate::words::{Char, Word};
 use indexmap::IndexMap;
+use std::time::Instant;
+
+pub enum MatcherResponse {
+    Timeout,
+    Logs(Vec<String>),
+    Match(Vec<Word>),
+}
 
 /// Evaluate a query, consisting of multiple expressions, on a given wordset.
 /// Returns words and phrases that match *all* of the given expressions.
@@ -76,6 +83,18 @@ impl<'word> Matcher<'word> {
             .chain(self.caches.iter().map(|c| &c.expression))
     }
 
+    pub fn progress(&self) -> String {
+        if self.layers.is_empty() {
+            format!("stage 1: {}", self.cache_builders[0].progress())
+        } else {
+            format!(
+                "stage 2: = {}/{}",
+                self.layers[0].word_index,
+                self.wordlist.len()
+            )
+        }
+    }
+
     pub fn new(expressions: Vec<Expression>, wordlist: &[&'word Word], max_words: usize) -> Self {
         assert!(!expressions.is_empty());
 
@@ -103,12 +122,12 @@ impl<'word> Matcher<'word> {
     }
 
     /// `RUNTIME: O(expressions * (words + fuzz * states))`
-    fn next_single(&mut self) -> Option<Word> {
+    fn next_single(&mut self, deadline: Option<Instant>) -> Option<MatcherResponse> {
         assert!(!self.singles_done);
 
         // Check for single-word matches
         let (first_cache, remaining_caches) = self.cache_builders.split_at_mut(1);
-        while let Some(word) = first_cache[0].next_single_word(&self.wordlist) {
+        while let Some(word) = first_cache[0].next_single_word(&self.wordlist, deadline) {
             let mut wordlist = &first_cache[0].nonnull_wordlist;
             let mut all_match = true;
             for cache in remaining_caches.iter_mut() {
@@ -117,8 +136,11 @@ impl<'word> Matcher<'word> {
                 wordlist = &cache.nonnull_wordlist;
             }
             if all_match {
-                return Some(word.clone());
+                return Some(MatcherResponse::Match(vec![word.clone()]));
             }
+        }
+        if deadline.is_some() && Some(Instant::now()) > deadline {
+            return Some(MatcherResponse::Timeout);
         }
 
         // Process the remaining words (even though they can't be single-word matches)
@@ -176,13 +198,14 @@ impl<'word> Matcher<'word> {
     }
 
     /// `RUNTIME: O(words^max_words * expressions * fuzz^2 * states^2)`
-    fn next_phrase(&mut self) -> Option<Vec<Word>> {
+    fn next_phrase(&mut self, deadline: Option<Instant>) -> Option<MatcherResponse> {
         assert!(self.singles_done);
         if self.wordlist.is_empty() {
             return None;
         }
 
         // RUNTIME: O(words^max_words * expressions * fuzz^2 * states^2)
+        let mut check_count = 0;
         let mut result = None;
         loop {
             let mut no_match = false;
@@ -272,18 +295,24 @@ impl<'word> Matcher<'word> {
                 if !no_match {
                     this_layer.stem = Some(word);
                     if all_end_match && self.layer_index >= 1 {
-                        result = Some(
+                        result = Some(MatcherResponse::Match(
                             self.layers[0..=self.layer_index]
                                 .iter()
                                 .map(|layer| layer.stem.unwrap().clone())
                                 .collect(),
-                        );
+                        ));
                     }
                 }
             }
 
             if self.advance(!no_match) || result.is_some() {
                 break;
+            }
+            check_count += 1;
+            if check_count % 256 == 0 {
+                if deadline.is_some() && Some(Instant::now()) > deadline {
+                    return Some(MatcherResponse::Timeout);
+                }
             }
         }
 
@@ -342,12 +371,8 @@ impl<'word> Matcher<'word> {
         // The iterator is not exhausted
         false
     }
-}
 
-impl Iterator for Matcher<'_> {
-    type Item = Vec<Word>;
-
-    fn next(&mut self) -> Option<Vec<Word>> {
+    pub fn next_with_deadline(&mut self, deadline: Option<Instant>) -> Option<MatcherResponse> {
         let r = if self
             .results_limit
             .map(|lim| lim < self.results_count)
@@ -355,16 +380,26 @@ impl Iterator for Matcher<'_> {
         {
             None
         } else if !self.singles_done {
-            self.next_single()
-                .map(|w| vec![w])
-                .or_else(|| self.next_phrase())
+            self.next_single(deadline).or_else(|| {
+                Some(MatcherResponse::Logs(vec![format!(
+                    "Done with single matches"
+                )]))
+            })
         } else {
-            self.next_phrase()
+            self.next_phrase(deadline)
         };
-        if r.is_some() {
+        if let Some(MatcherResponse::Match(_)) = r {
             self.results_count += 1;
         }
         r
+    }
+}
+
+impl Iterator for Matcher<'_> {
+    type Item = MatcherResponse;
+
+    fn next(&mut self) -> Option<MatcherResponse> {
+        self.next_with_deadline(None)
     }
 }
 
@@ -424,10 +459,11 @@ struct CacheBuilder<'word> {
     word_index: usize,
     single_fully_drained: bool,
 
-    // Statistics for debugging
+    // Statistics for debugging/progress
     total_prefixed: usize,
     total_matched: usize,
     total_length: usize,
+    input_wordlist_length: Option<usize>,
 }
 
 impl<'word> CacheBuilder<'word> {
@@ -462,13 +498,30 @@ impl<'word> CacheBuilder<'word> {
             total_prefixed: 0,
             total_matched: 0,
             total_length: 0,
+            input_wordlist_length: None,
             single_fully_drained: false,
         }
     }
 
+    fn progress(&self) -> String {
+        if let Some(input_wordlist_length) = self.input_wordlist_length {
+            format!("{}/{}", self.word_index, input_wordlist_length)
+        } else {
+            format!("0/?")
+        }
+    }
+
     /// `RUNTIME: O(words * chars * fuzz * states^3)`
-    fn next_single_word(&mut self, wordlist: &[&'word Word]) -> Option<&'word Word> {
+    fn next_single_word(
+        &mut self,
+        wordlist: &[&'word Word],
+        deadline: Option<Instant>,
+    ) -> Option<&'word Word> {
         // RUNTIME: O(words * chars * fuzz * states^3)
+        self.input_wordlist_length
+            .get_or_insert_with(|| wordlist.len());
+        let mut check_count = 0;
+
         let fuzz_range = 0..self.cache.expression.fuzz + 1;
         while self.word_index < wordlist.len() {
             let word = &wordlist[self.word_index];
@@ -530,6 +583,13 @@ impl<'word> CacheBuilder<'word> {
                 let start_transitions = self.transition_table[word_len].slice((0, f));
                 if start_transitions.contains(self.cache.expression.states_len() - 1) {
                     return Some(word);
+                }
+            }
+
+            check_count += 1;
+            if check_count % 256 == 0 {
+                if deadline.is_some() && Some(Instant::now()) > deadline {
+                    return None;
                 }
             }
         }
@@ -597,6 +657,6 @@ impl<'word> Iterator for CacheBuilderIter<'word, '_> {
     type Item = &'word Word;
 
     fn next(&mut self) -> Option<&'word Word> {
-        self.cache_builder.next_single_word(self.wordlist)
+        self.cache_builder.next_single_word(self.wordlist, None)
     }
 }

@@ -158,47 +158,42 @@
         <script type="text/javascript">
         </script>
         <script type="text/javascript">
-            function stop() {
-                if (window.req) {
-                    console.log("aborting xhr", window.req);
-                    window.req.abort();
-                    window.req = null;
-                }
-            }
+            var outputDiv = document.querySelector("#output");
+            var statusDiv = document.querySelector("#status");
+            var logDiv = document.querySelector("#log");
             var input = document.querySelector("#input");
-            input.value = decodeURI(window.location.hash.substring(1));
             var wordlist = document.querySelector("#wordlist");
-            function submit() {
-                stop();
-                var inputText = "#dict " + wordlist.value + "\n" + input.value;
-                window.location.hash = "#" + encodeURI(input.value);
 
-                var outputDiv = document.querySelector("#output");
-                outputDiv.innerText = "";
+            input.value = decodeURI(window.location.hash.substring(1));
 
-                var statusDiv = document.querySelector("#status");
-                statusDiv.innerText = "";
-
-                var logDiv = document.querySelector("#log");
-                logDiv.innerText = "";
-
+            function stop() {
                 if (window.ws) {
                     window.ws.onclose = null;
                     window.ws.close();
+                    statusDiv.innerText = "Stopped by user";
                 }
+            }
+            function submit() {
+                stop();
+                outputDiv.innerText = "";
+                statusDiv.innerText = "Connecting to Noodle server...";
+                logDiv.innerText = "";
+
+                var inputText = "#dict " + wordlist.value + "\n" + input.value;
+                window.location.hash = "#" + encodeURI(input.value);
+
                 var ws = new WebSocket("ws://" + window.location.host + "/ws");
                 window.ws = ws;
                 ws.onopen = function(ev) {
-                    console.log(ev);
+                    statusDiv.innerText = "Connected to Noodle server...";
                     ws.send(inputText);
                 }
                 ws.onerror = function(ev) {
-                    console.log(ev);
                     statusDiv.innerText = "Unable to connect to Noodle server";
+                    console.error("Websocket error:", ev);
                 }
                 ws.onmessage = function(ev) {
                     var data = JSON.parse(ev.data);
-                    console.log(data);
                     if (data.status) {
                         statusDiv.innerText = data.status;
                     } else if (data.log) {
@@ -215,6 +210,7 @@
             document.querySelector("#stop").addEventListener("click", stop);
             document.querySelector("#query").addEventListener("click", submit);
             document.querySelector("#input").addEventListener("keydown", function (e) {
+                // Ctrl+Enter as a shortcut to submit query
                 if (e.keyCode == 13 && e.ctrlKey) {
                     submit();
                 }
