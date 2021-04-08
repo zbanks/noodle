@@ -1,4 +1,4 @@
-use noodle::{load_wordlist, parser, Matcher, Word};
+use noodle::{load_wordlist, parser, Matcher, MatcherResponse, Word};
 use std::time;
 
 fn main() {
@@ -43,7 +43,10 @@ fn main() {
         //}
         //let count = matcher.len();
 
-        let count = matcher.count();
+        let count = matcher
+            .filter(|m| matches!(m, MatcherResponse::Match(_)))
+            //.map(|x| { println!("match: {:?}", x); x})
+            .count();
         println!("# matches: {}", count);
         let duration = start.elapsed();
         println!(" === Time to evaluate matches: {:?} === ", duration);
@@ -69,5 +72,9 @@ fn expected_count() {
     query_ast.options.results_limit = Some(2000);
     let matcher = Matcher::from_ast(&query_ast, &wordlist);
 
-    assert_eq!(matcher.filter(|m| m == MatcherResponse::Match(_)).count(), 1395);
+    let count = matcher
+        .filter(|m| matches!(m, MatcherResponse::Match(_)))
+        //.map(|x| { println!("match: {:?}", x); x})
+        .count();
+    assert_eq!(count, 1395);
 }

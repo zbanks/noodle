@@ -117,7 +117,7 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
             .next()
             .await
             .map(|m| m.map_err(Into::into))
-            .unwrap_or(Err(anyhow!("Websocket closed without data")))?;
+            .unwrap_or_else(|| Err(anyhow!("Websocket closed without data")))?;
 
         let n_active = { ACTIVE_QUERIES.fetch_add(1, Ordering::Relaxed) };
         let start = Instant::now();
@@ -130,7 +130,7 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
         let query_ast = parser::QueryAst::new_from_str(msg.to_str().unwrap());
 
         if let Err(e) = &query_ast {
-            tx.send(Response::Status(format!("Query parse error")))
+            tx.send(Response::Status("Query parse error".to_string()))
                 .await?;
             tx.send(Response::Log {
                 message: e.to_string(),
@@ -154,15 +154,12 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
 
         let mut duration = Duration::from_millis(0);
         loop {
-            match poll!(rx.next()) {
-                Poll::Ready(None) => {
-                    println!(
-                        "Computation terminated by client after {:?}",
-                        start.elapsed()
-                    );
-                    break;
-                }
-                _ => {}
+            if let Poll::Ready(None) = poll!(rx.next()) {
+                println!(
+                    "Computation terminated by client after {:?}",
+                    start.elapsed()
+                );
+                break;
             }
 
             let now = Instant::now();

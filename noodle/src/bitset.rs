@@ -249,6 +249,12 @@ impl<'a, Idx: Index> BitSetRef<'a, Idx> {
             remaining_blocks: &self.blocks[1..],
         }
     }
+    pub fn to_bitset(&'a self) -> BitSet<Idx> {
+        BitSet {
+            blocks: self.blocks.into(),
+            size: self.size,
+        }
+    }
 }
 
 #[derive(Debug, Hash, PartialEq, Eq)]

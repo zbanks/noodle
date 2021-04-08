@@ -163,7 +163,7 @@ impl Word {
                 .map(|c| c.into())
                 .chain(std::iter::once(Char::WORD_END))
                 .collect(),
-            score: 0,
+            score: 1 << 16,
         }
     }
 }
