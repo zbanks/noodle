@@ -7,26 +7,28 @@ fn main() {
     let mut wordlist: Vec<&Word> = words.iter().collect();
     wordlist.sort_by_key(|w| &w.chars);
     println!(" === Time to load wordlist: {:?} ===", start.elapsed());
-
     let queries = vec![
-        ("helloworld", 1..=1),
-        ("8; [aehl]+([lo]*w[lo]*).*", 37..=40),
+        ("helloworld", 1..=1, 13),
+        ("8; [aehl]+([lo]*w[lo]*).*", 37..=40, 204),
         (
             "h.... _ w....; <hello+>; <world+5>; [hale]+<owl>.*",
             10..=10,
+            132,
         ),
-        ("<smiles>", 300..=10000),
-        ("<smiles>; .*ss.*", 120..=140),
-        ("ahumongoussentencewithmultiplewords", 10..=10),
-        ("ahumongoussentincewithmultiplewords !' !1", 265..=275),
+        ("<smiles>", 300..=10000, 14),
+        ("<smiles>; .*ss.*", 120..=140, 16),
+        ("ahumongoussentencewithmultiplewords", 10..=10, 40),
+        ("ahumongoussentincewithmultiplewords !' !1", 265..=275, 382),
         (
             "3 3 8 7; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:?) !'",
             24..=24,
+            508,
         ),
-        ("hen !1; hay !1", 2..=2),
-        ("breadfast !2", 300..=10000),
+        ("hen !1; hay !1", 2..=2, 10),
+        ("breadfast !2", 300..=10000, 128),
     ];
-    for (query_str, expected_range) in queries {
+    let mut times = vec![];
+    for (query_str, expected_range, expected_time_ms) in queries.iter() {
         println!();
         println!();
         println!(">>> Query: {} <<<", query_str);
@@ -35,13 +37,6 @@ fn main() {
         let query_ast = parser::QueryAst::new_from_str(query_str).unwrap();
         let matcher = Matcher::from_ast(&query_ast, &wordlist);
         println!(" === Time to parse query: {:?} ===", start.elapsed());
-
-        //let start = time::Instant::now();
-        //let matcher: Vec<String> = matcher.collect();
-        //for w in matcher.iter() {
-        //    println!("> {}", w);
-        //}
-        //let count = matcher.len();
 
         let count = matcher
             .filter(|m| matches!(m, MatcherResponse::Match(_)))
@@ -58,6 +53,13 @@ fn main() {
             );
             break;
         }
+        times.push(duration) //, time::Duration::from_millis(expected_time_ms)));
+    }
+    for ((query_str, _, expected_time_ms), duration) in queries.iter().zip(times.iter()) {
+        println!(
+            "{:64} {:-4}ms -> {:?}",
+            query_str, expected_time_ms, duration
+        );
     }
 }
 

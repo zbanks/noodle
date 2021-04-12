@@ -162,6 +162,21 @@ impl fmt::Debug for BitSet<()> {
     }
 }
 
+impl fmt::Debug for BitSet<usize> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let implied_size = (self.blocks.len() / self.size.total_size(), self.size);
+        let mut values = vec![];
+        for x in 0..implied_size.0 {
+            let row = self.slice(x).ones().collect::<Vec<_>>();
+            values.push(row);
+        }
+        f.debug_struct("BitSet3D")
+            .field("size", &implied_size)
+            .field("sets", &values)
+            .finish()
+    }
+}
+
 impl BitSet<(usize, usize)> {
     pub fn slice2d(&self, index: usize) -> BitSetRef2D<'_> {
         let range = self.size.total_size() * index..self.size.total_size() * (index + 1);
