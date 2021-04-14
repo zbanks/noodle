@@ -1,4 +1,4 @@
-use noodle::{load_wordlist, parser, Matcher, MatcherResponse, Word};
+use noodle::{load_wordlist, parser, QueryEvaluator, QueryResponse, Word};
 use std::time;
 
 fn main() {
@@ -28,23 +28,27 @@ fn main() {
         ("breadfast !2", 300..=10000, 128),
     ];
     let mut times = vec![];
-    for (query_str, expected_range, expected_time_ms) in queries.iter() {
+    for (query_str, expected_range, _) in queries.iter() {
         println!();
         println!();
         println!(">>> Query: {} <<<", query_str);
 
         let start = time::Instant::now();
         let query_ast = parser::QueryAst::new_from_str(query_str).unwrap();
-        let matcher = Matcher::from_ast(&query_ast, &wordlist);
-        println!(" === Time to parse query: {:?} ===", start.elapsed());
 
-        let count = matcher
-            .filter(|m| matches!(m, MatcherResponse::Match(_)))
-            //.map(|x| { println!("match: {:?}", x); x})
-            .count();
+        let evaluator = QueryEvaluator::from_ast(&query_ast, &wordlist);
+        println!(" === Time to parse query: {:?} ===", start.elapsed());
+        let mut results = evaluator.filter(|m| matches!(m, QueryResponse::Match(_)));
+
+        let _first_match = results.next();
+        let first_time = start.elapsed();
+        let count = 1 + results.count();
         println!("# matches: {}", count);
         let duration = start.elapsed();
-        println!(" === Time to evaluate matches: {:?} === ", duration);
+        println!(
+            " === Time to evaluate matches: {:?} (first in {:?}) === ",
+            duration, first_time
+        );
 
         if !expected_range.contains(&count) {
             println!(
@@ -53,12 +57,14 @@ fn main() {
             );
             break;
         }
-        times.push(duration) //, time::Duration::from_millis(expected_time_ms)));
+        times.push((first_time, duration));
     }
-    for ((query_str, _, expected_time_ms), duration) in queries.iter().zip(times.iter()) {
+    for ((query_str, _, expected_time_ms), (first_time, duration)) in
+        queries.iter().zip(times.iter())
+    {
         println!(
-            "{:64} {:-4}ms -> {:?}",
-            query_str, expected_time_ms, duration
+            "{:64} {:-4}ms -> {:?} (first in {:?})",
+            query_str, expected_time_ms, duration, first_time
         );
     }
 }
@@ -72,10 +78,10 @@ fn expected_count() {
     let query_str = "ex.res*iontest !2 !'; ex?z?press+[^i].* !'; #words 3";
     let mut query_ast = parser::QueryAst::new_from_str(query_str).unwrap();
     query_ast.options.results_limit = Some(2000);
-    let matcher = Matcher::from_ast(&query_ast, &wordlist);
+    let evaluator = QueryEvaluator::from_ast(&query_ast, &wordlist);
 
-    let count = matcher
-        .filter(|m| matches!(m, MatcherResponse::Match(_)))
+    let count = evaluator
+        .filter(|m| matches!(m, QueryResponse::Match(_)))
         //.map(|x| { println!("match: {:?}", x); x})
         .count();
     assert_eq!(count, 1395);

@@ -81,6 +81,33 @@ impl Index for (usize, usize) {
     }
 }
 
+pub trait SplitIndex: Index + Copy {
+    type OuterIndex: Index + Copy;
+    type InnerIndex: Index + Copy;
+
+    fn slice_outer(&self, x: Self::OuterIndex) -> (Self::Range, Self::InnerIndex);
+}
+
+impl SplitIndex for usize {
+    type OuterIndex = usize;
+    type InnerIndex = ();
+
+    fn slice_outer(&self, x: Self::OuterIndex) -> (Self::Range, Self::InnerIndex) {
+        (self.slice(x), ())
+    }
+}
+
+impl SplitIndex for (usize, usize) {
+    type OuterIndex = usize;
+    type InnerIndex = usize;
+
+    fn slice_outer(&self, x: Self::OuterIndex) -> (Self::Range, Self::InnerIndex) {
+        let start = self.1 * (self.0 * x);
+        let range = start..start + (self.0 * self.1);
+        (range, self.1)
+    }
+}
+
 type Block = u32;
 const BLOCK_BITS: usize = 32;
 
@@ -271,6 +298,16 @@ impl<'a, Idx: Index> BitSetRef<'a, Idx> {
         }
     }
 }
+impl<Idx: SplitIndex> BitSetRef<'_, Idx> {
+    pub fn slice(&self, index: Idx::OuterIndex) -> BitSetRef<Idx::InnerIndex> {
+        let (range, inner_size) = self.size.slice_outer(index);
+        let blocks = unsafe { self.blocks.get_unchecked(range) };
+        BitSetRef {
+            blocks,
+            size: inner_size,
+        }
+    }
+}
 
 #[derive(Debug, Hash, PartialEq, Eq)]
 pub struct BitSetRefMut<'a, Idx: Index> {
@@ -342,6 +379,26 @@ impl<'a, Idx: Index> BitSetRefMut<'a, Idx> {
         debug_assert_eq!(self.blocks.len(), other.blocks.len());
         for i in 0..self.blocks.len() {
             unsafe { *self.blocks.get_unchecked_mut(i) = *other.blocks.get_unchecked(i) };
+        }
+    }
+}
+
+impl<Idx: SplitIndex> BitSetRefMut<'_, Idx> {
+    pub fn slice(&self, index: Idx::OuterIndex) -> BitSetRef<Idx::InnerIndex> {
+        let (range, inner_size) = self.size.slice_outer(index);
+        let blocks = unsafe { self.blocks.get_unchecked(range) };
+        BitSetRef {
+            blocks,
+            size: inner_size,
+        }
+    }
+
+    pub fn slice_mut(&mut self, index: Idx::OuterIndex) -> BitSetRefMut<Idx::InnerIndex> {
+        let (range, inner_size) = self.size.slice_outer(index);
+        let blocks = unsafe { self.blocks.get_unchecked_mut(range) };
+        BitSetRefMut {
+            blocks,
+            size: inner_size,
         }
     }
 }

@@ -1,7 +1,7 @@
 use anyhow::{self as ah, anyhow};
 use futures::task::Poll;
 use futures::{future, poll, stream, SinkExt, Stream, StreamExt};
-use noodle::{load_wordlist, parser, Matcher, MatcherResponse, Word};
+use noodle::{load_wordlist, parser, QueryEvaluator, QueryResponse, Word};
 use serde::Serialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -72,16 +72,16 @@ fn run_query_sync(query_str: &str) -> http::Result<http::Response<hyper::Body>> 
     let query_ast = parser::QueryAst::new_from_str(query_str);
     let body = match query_ast {
         Ok(query_ast) => {
-            let matcher = Matcher::from_ast(&query_ast, &WORDLIST)
+            let evaluator = QueryEvaluator::from_ast(&query_ast, &WORDLIST)
                 .filter_map(|m| {
-                    if let MatcherResponse::Match(p) = m {
+                    if let QueryResponse::Match(p) = m {
                         Some(p)
                     } else {
                         None
                     }
                 })
                 .map(flatten_phrase);
-            let response_stream = stream::iter(matcher.map(Ok));
+            let response_stream = stream::iter(evaluator.map(Ok));
 
             let timeout_stream = stream::once(tokio::time::sleep(TIMEOUT))
                 .map(|_| Err(format!("# Timeout after {:?}", TIMEOUT)));
@@ -144,8 +144,8 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
         )))
         .await?;
 
-        let mut matcher = Matcher::from_ast(&query_ast, &WORDLIST);
-        for expression in matcher.expressions() {
+        let mut evaluator = QueryEvaluator::from_ast(&query_ast, &WORDLIST);
+        for expression in evaluator.expressions() {
             tx.send(Response::Log {
                 message: format!("{:?}", expression),
             })
@@ -175,15 +175,17 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
                 break;
             }
             let deadline = start + duration;
-            let response = matcher.next_with_deadline(Some(deadline)).map(|m| match m {
-                MatcherResponse::Match(phrase) => Response::Match { phrase },
-                MatcherResponse::Logs(_) => Response::Status("logs".to_string()),
-                MatcherResponse::Timeout => Response::Status(format!(
-                    "Processing, {:0.01}s...: {}",
-                    duration.as_secs_f64(),
-                    matcher.progress()
-                )),
-            });
+            let response = evaluator
+                .next_within_deadline(Some(deadline))
+                .map(|m| match m {
+                    QueryResponse::Match(phrase) => Response::Match { phrase },
+                    QueryResponse::Logs(_) => Response::Status("logs".to_string()),
+                    QueryResponse::Timeout => Response::Status(format!(
+                        "Processing, {:0.01}s...: {}",
+                        duration.as_secs_f64(),
+                        evaluator.progress()
+                    )),
+                });
             if let Some(response) = response {
                 tx.send(response).await?;
             } else {
