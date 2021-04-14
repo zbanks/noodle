@@ -132,6 +132,10 @@ impl<'word> QueryEvaluator<'word> {
     }
 
     pub fn next_within_deadline(&mut self, deadline: Option<Instant>) -> Option<QueryResponse> {
+        if Some(self.results_count) >= self.results_limit {
+            self.phase = QueryPhase::Done;
+        }
+
         match &mut self.phase {
             QueryPhase::Word { matchers, wordlist } => {
                 // Check for single-word matches
@@ -151,6 +155,7 @@ impl<'word> QueryEvaluator<'word> {
 
                     // A single word is match if it is returned by every matcher's iterator
                     if all_match {
+                        self.results_count += 1;
                         return Some(QueryResponse::Match(vec![word.clone()]));
                     }
                 }
@@ -283,84 +288,57 @@ impl<'word> QueryEvaluator<'word> {
 
                     let word_index = prev_layer.word_index;
 
-                    let mut all_end_match = true;
-                    let mut all_no_advance = true;
-                    let mut no_match = false;
+                    // all_exact_match: Does this phrase lead to the success state in all matchers?
+                    let mut all_exact_match = true;
+                    // all_partial_match: Does this phrase lead to a nonzero state in all matchers?
+                    let mut all_partial_match = true;
                     for (m, matcher) in matchers.iter().enumerate() {
                         let prev_table_fuzz_dst = prev_layer.table_matcher_fuzz_dst.slice2d(m);
                         let mut next_table_fuzz_dst =
                             next_layer.table_matcher_fuzz_dst.slice2d_mut(m);
-                        next_table_fuzz_dst.clear();
 
+                        // Advance the table by one word
+                        next_table_fuzz_dst.clear();
                         matcher.step_by_word_index(
                             word_index,
                             prev_table_fuzz_dst,
                             next_table_fuzz_dst,
                         );
-                        let next_table_fuzz_dst = next_layer.table_matcher_fuzz_dst.slice2d_mut(m);
 
-                        let mut all_empty = true;
-                        let mut all_subset = true;
-                        let mut any_end_match = false;
-                        let success_state = matcher.states_len - 1;
-                        for f in 0..matcher.fuzz_limit {
-                            let dst_states = next_table_fuzz_dst.slice(f);
-                            if dst_states.contains(success_state) {
-                                any_end_match = true;
-                                all_empty = false;
-                                all_subset = false;
-                            } else if !dst_states.is_empty() {
-                                if !dst_states
-                                    .is_subset(&prev_layer.table_matcher_fuzz_dst.slice((m, f)))
-                                {
-                                    all_subset = false;
-                                }
-                                all_empty = false;
-                            }
-                        }
-
-                        if all_empty {
-                            assert!(!any_end_match);
-                            no_match = true;
+                        // Check the table to see if it is empty and/or a success
+                        let next_table_fuzz_dst = next_layer.table_matcher_fuzz_dst.slice2d(m);
+                        if next_table_fuzz_dst.is_empty() {
+                            // No match!
+                            all_exact_match = false;
+                            all_partial_match = false;
                             break;
-                        }
-                        if !all_subset {
-                            all_no_advance = false;
-                        }
-                        if !any_end_match {
-                            all_end_match = false;
+                        } else if !matcher.has_success_state(next_table_fuzz_dst) {
+                            all_exact_match = false;
                         }
                     }
-                    if all_no_advance {
-                        no_match = true;
-                    }
-                    if !no_match {
-                        if all_end_match && *layer_index >= 1 {
-                            result = Some(QueryResponse::Match(
-                                search_layers[0..=*layer_index]
-                                    .iter()
-                                    .map(|sl| wordlist[sl.word_index].clone())
-                                    .collect(),
-                            ));
-                        }
+                    if all_exact_match && *layer_index >= 1 {
+                        self.results_count += 1;
+                        result = Some(QueryResponse::Match(
+                            search_layers[0..=*layer_index]
+                                .iter()
+                                .map(|sl| wordlist[sl.word_index].clone())
+                                .collect(),
+                        ));
                     }
 
-                    let mut partial_match = !no_match;
-                    loop {
-                        if partial_match {
-                            // If we've hit the `max_words` limit, too bad.
-                            // Treat it like we didn't have a partial match
-                            if *layer_index + 1 >= self.search_depth_limit {
-                                partial_match = false;
-                                continue;
-                            }
-
-                            // Descend to the next layer (resetting the layer's word_index to 0)
-                            *layer_index += 1;
-                            search_layers[*layer_index].word_index = 0;
-                            break;
-                        } else {
-                            // This word didn't create a match, so try the next word
+                    // There was a partial (or exact match), so try to extend the phrase by one
+                    // more word (as long as we haven't hit the search depth limit)
+                    if (all_partial_match || all_exact_match)
+                        && *layer_index + 1 < self.search_depth_limit
+                    {
+                        // Descend to the next layer (and reset its word_index to 0)
+                        *layer_index += 1;
+                        search_layers[*layer_index].word_index = 0;
+                    } else {
+                        // This phrase did not match, and was not a prefix to a match, so try
+                        // the next "peer" phrase (or ascend)
+                        loop {
+                            // Try replacing the last word with the next word
                             search_layers[*layer_index].word_index += 1;
 
                             // Did we exhaust the whole word list at this layer?
@@ -408,15 +386,7 @@ impl Iterator for QueryEvaluator<'_> {
     type Item = QueryResponse;
 
     fn next(&mut self) -> Option<QueryResponse> {
-        let result = self.next_within_deadline(None);
-        if result.is_some() {
-            self.results_count += 1;
-            if Some(self.results_count) >= self.results_limit {
-                self.phase = QueryPhase::Done;
-            }
-            return result;
-        }
-        None
+        self.next_within_deadline(None)
     }
 }
 

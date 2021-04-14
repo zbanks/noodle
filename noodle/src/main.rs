@@ -13,19 +13,19 @@ fn main() {
         (
             "h.... _ w....; <hello+>; <world+5>; [hale]+<owl>.*",
             10..=10,
-            109,
+            110,
         ),
-        ("<smiles>", 300..=10000, 14),
-        ("<smiles>; .*ss.*", 120..=140, 17),
-        ("ahumongoussentencewithmultiplewords", 10..=10, 36),
-        ("ahumongoussentincewithmultiplewords !' !1", 265..=275, 290),
+        ("<smiles>", 300..=10000, 13),
+        ("<smiles>; .*ss.*", 120..=140, 18),
+        ("ahumongoussentencewithmultiplewords", 10..=10, 40),
+        ("ahumongoussentincewithmultiplewords !' !1", 265..=275, 272),
         (
             "3 3 8 7; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:?) !'",
             24..=24,
-            525,
+            505,
         ),
         ("hen !1; hay !1", 2..=2, 11),
-        ("breadfast !2", 300..=10000, 270),
+        ("breadfast !2", 300..=10000, 241),
     ];
     let mut times = vec![];
     for (query_str, expected_range, _) in queries.iter() {

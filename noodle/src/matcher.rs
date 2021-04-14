@@ -23,11 +23,6 @@ pub struct WordMatcher<'word> {
     table_chars: &'word [Char],
 
     word_index: usize,
-
-    // Statistics for debugging/progress
-    pub total_prefixed: usize,
-    pub total_matched: usize,
-    pub total_len: usize,
 }
 
 pub struct WordMatcherIter<'word, 'it> {
@@ -81,10 +76,6 @@ impl<'word> WordMatcher<'word> {
             alive_wordlist: vec![],
             table_char_src_fuzz_dst,
             table_chars: &[],
-
-            total_prefixed: 0,
-            total_matched: 0,
-            total_len: 0,
         }
     }
 
@@ -544,6 +535,15 @@ impl PhraseMatcher {
             .0;
 
         self.step(word_table, prev_fuzz_dst, next_fuzz_dst);
+    }
+
+    pub fn has_success_state(&self, table_fuzz_dst: BitSetRef2D) -> bool {
+        for f in 0..self.fuzz_limit {
+            if table_fuzz_dst.slice(f).contains(self.states_len - 1) {
+                return true;
+            }
+        }
+        false
     }
 
     fn step(

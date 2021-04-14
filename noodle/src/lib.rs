@@ -3,8 +3,8 @@ extern crate pest;
 extern crate pest_derive;
 
 mod bitset;
-mod matcher;
 pub mod expression;
+mod matcher;
 pub mod parser;
 pub mod query;
 pub mod words;
