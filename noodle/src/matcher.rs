@@ -535,7 +535,7 @@ impl PhraseMatcher {
         prev_fuzz_dst: BitSetRef2D,
         next_fuzz_dst: BitSetRefMut2D,
     ) {
-        assert!(self.word_classes[word_index] != 0);
+        //assert!(self.word_classes[word_index] != 0);
 
         let word_table = self
             .classes

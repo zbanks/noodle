@@ -207,24 +207,26 @@ impl<'word> QueryEvaluator<'word> {
                     );
                 }
 
-                // TODO:
+                // If there are no words, there are no phrases that can match; we're done
                 if alive_wordlist.is_empty() {
                     self.phase = QueryPhase::Done;
                     return None;
                 }
 
+                // We're done with the WordMatchers, pull out the PhraseMatchers
                 let phrase_matchers: Vec<_> = matchers
                     .drain(..)
                     .map(|m| m.into_phrase_matcher())
                     .collect();
 
-                // TODO
+                // Use the wordlist & PhraseMatcher to try to tighten the phrase length search bound
                 for phrase_matcher in phrase_matchers.iter() {
                     self.search_depth_limit = self
                         .search_depth_limit
                         .min(phrase_matcher.phrase_length_bounds(self.search_depth_limit));
                 }
 
+                // Construct the SearchLayers, which are used to hold state during DFS
                 let states_max = phrase_matchers
                     .iter()
                     .map(|pm| pm.states_len)
@@ -260,7 +262,8 @@ impl<'word> QueryEvaluator<'word> {
                     layer_index: 0,
                 };
 
-                None
+                // Recurse, to call the QueryPhase::Phrase match arm
+                self.next_within_deadline(deadline)
             }
             QueryPhase::Phrase {
                 matchers,
@@ -405,15 +408,13 @@ impl Iterator for QueryEvaluator<'_> {
     type Item = QueryResponse;
 
     fn next(&mut self) -> Option<QueryResponse> {
-        while !matches!(self.phase, QueryPhase::Done) {
-            let result = self.next_within_deadline(None);
-            if result.is_some() {
-                self.results_count += 1;
-                if Some(self.results_count) >= self.results_limit {
-                    self.phase = QueryPhase::Done;
-                }
-                return result;
+        let result = self.next_within_deadline(None);
+        if result.is_some() {
+            self.results_count += 1;
+            if Some(self.results_count) >= self.results_limit {
+                self.phase = QueryPhase::Done;
             }
+            return result;
         }
         None
     }
