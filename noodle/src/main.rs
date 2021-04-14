@@ -9,7 +9,7 @@ fn main() {
     println!(" === Time to load wordlist: {:?} ===", start.elapsed());
     let queries = vec![
         ("helloworld", 1..=1, 12),
-        ("8; [aehl]+([lo]*w[lo]*).*", 37..=40, 206),
+        ("8; [aehl]+([lo]*w[lo]*).*", 37..=40, 188),
         (
             "h.... _ w....; <hello+>; <world+5>; [hale]+<owl>.*",
             10..=10,
@@ -18,14 +18,14 @@ fn main() {
         ("<smiles>", 300..=10000, 13),
         ("<smiles>; .*ss.*", 120..=140, 17),
         ("ahumongoussentencewithmultiplewords", 10..=10, 40),
-        ("ahumongoussentincewithmultiplewords !' !1", 265..=275, 286),
+        ("ahumongoussentincewithmultiplewords !' !1", 265..=275, 272),
         (
             "3 3 8 7; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:?) !'",
             24..=24,
-            515,
+            500,
         ),
         ("hen !1; hay !1", 2..=2, 10),
-        ("breadfast !2", 300..=10000, 122),
+        ("breadfast !2", 300..=10000, 125),
     ];
     let mut times = vec![];
     for (query_str, expected_range, _) in queries.iter() {

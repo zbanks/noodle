@@ -90,8 +90,9 @@ impl<'word> WordMatcher<'word> {
         &self.phrase_matcher.expression
     }
 
-    pub fn phrase_length_bounds(&self, search_depth_limit: usize) -> usize {
-        self.phrase_matcher.phrase_length_bounds(search_depth_limit)
+    pub fn phrase_length_bounds(&self, valid_search_depths: &mut Vec<usize>) {
+        self.phrase_matcher
+            .phrase_length_bounds(valid_search_depths)
     }
 
     /// TODO
@@ -583,13 +584,18 @@ impl PhraseMatcher {
         }
     }
 
-    pub fn phrase_length_bounds(&self, max_length: usize) -> usize {
+    pub fn phrase_length_bounds(&self, valid_search_depths: &mut Vec<usize>) {
         let mut states_fuzz_dst = BitSet2D::new(self.fuzz_limit, self.states_len);
         states_fuzz_dst
             .slice_mut(0)
             .union_with(self.start_states.borrow());
 
-        for w in 1..=max_length {
+        if valid_search_depths.is_empty() {
+            return;
+        }
+        let max_depth = *valid_search_depths.last().unwrap();
+
+        for w in 1..=max_depth {
             let mut next_states_fuzz_dst = BitSet2D::new(self.fuzz_limit, self.states_len);
             for table_src_fuzz_dst in self.classes.keys() {
                 self.step(
@@ -599,19 +605,16 @@ impl PhraseMatcher {
                 );
             }
 
-            if next_states_fuzz_dst.borrow() == states_fuzz_dst.borrow() {
+            if next_states_fuzz_dst.borrow().is_empty() {
+                valid_search_depths.retain(|&d| d < w);
                 break;
-            } else if next_states_fuzz_dst.borrow().is_empty() {
-                return w - 1;
-            }
-            for f in 0..self.fuzz_limit {
-                if next_states_fuzz_dst.slice(f).contains(self.states_len - 1) {
-                    break;
-                }
+            } else if !self.has_success_state(next_states_fuzz_dst.borrow())
+                && valid_search_depths.contains(&w)
+            {
+                valid_search_depths.retain(|&d| d != w);
             }
             states_fuzz_dst = next_states_fuzz_dst;
         }
-        max_length
     }
 
     fn insert_word_table(&mut self, word: &Word, table_src_fuzz_dst: &BitSet3D) {

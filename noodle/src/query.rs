@@ -3,7 +3,6 @@ use crate::expression::Expression;
 use crate::matcher::{PhraseLength, PhraseMatcher, Tranche, WordMatcher};
 use crate::parser;
 use crate::words::Word;
-use std::cmp::Ord;
 use std::time::Instant;
 
 /// Evaluate a query, consisting of multiple expressions, on a given wordset.
@@ -203,16 +202,34 @@ impl<'word> QueryEvaluator<'word> {
 
                     loop {
                         optimization_passes += 1;
-
-                        // Try to tighten the `search_depth_limit` with the wordset we have so far
-                        for matcher in matchers.iter() {
-                            self.search_depth_limit = self
-                                .search_depth_limit
-                                .min(matcher.phrase_length_bounds(self.search_depth_limit));
-                        }
-                        println!("reduced search depth to {}", self.search_depth_limit);
-
                         let mut converged = true;
+
+                        // Try to tighten the `search_depth_limit` with the wordset/matchers we have so far
+                        self.search_depth_limit = {
+                            let mut valid_search_depths: Vec<usize> =
+                                (2..=self.search_depth_limit).collect();
+                            loop {
+                                let l = valid_search_depths.len();
+                                for matcher in matchers.iter() {
+                                    matcher.phrase_length_bounds(&mut valid_search_depths);
+                                }
+                                if valid_search_depths.is_empty() || l == valid_search_depths.len()
+                                {
+                                    break;
+                                }
+                            }
+
+                            let new_limit = valid_search_depths.iter().max().copied().unwrap_or(1);
+                            if new_limit <= 1 {
+                                self.phase = QueryPhase::Done;
+                                return None;
+                            } else if new_limit != self.search_depth_limit {
+                                converged = false;
+                            }
+
+                            new_limit
+                        };
+
                         for matcher in matchers.iter_mut().rev() {
                             // Optimize each PhraseMatcher
                             let did_opt = matcher
