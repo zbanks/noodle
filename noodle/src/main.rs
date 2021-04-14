@@ -8,24 +8,24 @@ fn main() {
     wordlist.sort_by_key(|w| &w.chars);
     println!(" === Time to load wordlist: {:?} ===", start.elapsed());
     let queries = vec![
-        ("helloworld", 1..=1, 13),
-        ("8; [aehl]+([lo]*w[lo]*).*", 37..=40, 185),
+        ("helloworld", 1..=1, 12),
+        ("8; [aehl]+([lo]*w[lo]*).*", 37..=40, 206),
         (
             "h.... _ w....; <hello+>; <world+5>; [hale]+<owl>.*",
             10..=10,
-            110,
+            120,
         ),
         ("<smiles>", 300..=10000, 13),
-        ("<smiles>; .*ss.*", 120..=140, 18),
+        ("<smiles>; .*ss.*", 120..=140, 17),
         ("ahumongoussentencewithmultiplewords", 10..=10, 40),
-        ("ahumongoussentincewithmultiplewords !' !1", 265..=275, 272),
+        ("ahumongoussentincewithmultiplewords !' !1", 265..=275, 286),
         (
             "3 3 8 7; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:?) !'",
             24..=24,
-            505,
+            515,
         ),
-        ("hen !1; hay !1", 2..=2, 11),
-        ("breadfast !2", 300..=10000, 241),
+        ("hen !1; hay !1", 2..=2, 10),
+        ("breadfast !2", 300..=10000, 122),
     ];
     let mut times = vec![];
     for (query_str, expected_range, _) in queries.iter() {

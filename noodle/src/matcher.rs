@@ -90,6 +90,10 @@ impl<'word> WordMatcher<'word> {
         &self.phrase_matcher.expression
     }
 
+    pub fn phrase_length_bounds(&self, search_depth_limit: usize) -> usize {
+        self.phrase_matcher.phrase_length_bounds(search_depth_limit)
+    }
+
     /// TODO
     //pub fn is_word_match(&self, word: &'word Word) -> bool {
     //    false
@@ -188,13 +192,18 @@ impl<'word> WordMatcher<'word> {
         None
     }
 
-    pub fn optimize_for_wordlist(&mut self, new_wordlist: &[&'word Word]) -> bool {
-        // Filter down `alive_wordlist` to exactly match `new_wordlist`.
+    pub fn optimize_for_wordlist(
+        &mut self,
+        new_input_wordlist: &[&'word Word],
+        search_depth_limit: usize,
+    ) -> bool {
+        // Filter down `alive_wordlist` to exactly match `new_input_wordlist`.
         //
-        // `new_wordlist` must be a (weak) subset of our `alive_wordlist`
+        // `new_input_wordlist` must be a (weak) subset of our `alive_wordlist`
         // If they are not already equal, filter out the missing words
-        if self.alive_wordlist.len() != new_wordlist.len() {
-            assert!(self.alive_wordlist.len() > new_wordlist.len());
+        if true {
+            // self.alive_wordlist.len() != new_input_wordlist.len() {
+            assert!(self.alive_wordlist.len() >= new_input_wordlist.len());
 
             self.phrase_matcher
                 .classes
@@ -209,20 +218,23 @@ impl<'word> WordMatcher<'word> {
                 .iter()
                 .zip(self.phrase_matcher.word_classes.iter())
             {
-                if i < new_wordlist.len() && *word == *new_wordlist[i] {
-                    new_word_classes.push(class_index);
-                    new_alive_wordlist.push(word);
-                    self.phrase_matcher
-                        .classes
-                        .get_index_mut(class_index)
-                        .unwrap()
-                        .1
-                        .add_word(word);
+                if i < new_input_wordlist.len() && *word == *new_input_wordlist[i] {
+                    if class_index != 0 {
+                        new_word_classes.push(class_index);
+                        new_alive_wordlist.push(word);
+                        self.phrase_matcher
+                            .classes
+                            .get_index_mut(class_index)
+                            .unwrap()
+                            .1
+                            .add_word(word);
+                    }
                     i += 1;
                 }
             }
-            assert_eq!(new_word_classes.len(), new_wordlist.len());
-            assert_eq!(i, new_wordlist.len());
+            assert_eq!(new_word_classes.len(), new_alive_wordlist.len());
+            assert_eq!(i, new_input_wordlist.len());
+            assert!(new_alive_wordlist.len() <= new_input_wordlist.len());
             self.phrase_matcher.word_classes = new_word_classes;
             self.alive_wordlist = new_alive_wordlist;
         }
@@ -239,9 +251,9 @@ impl<'word> WordMatcher<'word> {
                 .slice_mut(0)
                 .union_with(self.phrase_matcher.start_states.borrow());
 
-            // Iterate, expanding the `reachable_fuzz_dst` set until it stabilizes
-            // TODO: Pass in max # of words, rather than loop forever
-            loop {
+            // Iterate, expanding the `reachable_fuzz_dst` set until it stabilizes, or the limit is
+            // reached.
+            for _ in 0..search_depth_limit {
                 let mut next_reachable_fuzz_dst = reachable_fuzz_dst.clone();
                 for (table_src_fuzz_dst, word_class) in self.phrase_matcher.classes.iter() {
                     if word_class.words_count == 0 {
@@ -279,8 +291,7 @@ impl<'word> WordMatcher<'word> {
                 let mut table_fuzz_dst = BitSet2D::new(fuzz_limit, states_len);
                 table_fuzz_dst.slice_mut(0).insert(src);
 
-                // TODO: Pass in max # of words, rather than loop forever
-                loop {
+                for _ in 0..=search_depth_limit {
                     // Check if the success state is reachable, if so mark `src` as a candidate
                     let success_state = states_len - 1;
                     for f in 0..fuzz_limit {
@@ -397,7 +408,8 @@ impl<'word> WordMatcher<'word> {
 
         // Now that we've computed the set of redundant states, remove them
         let new_states_len = redundant_states.iter().filter(|x| x.is_none()).count();
-        // There were no redundant states! Already optimized
+
+        // There were no redundant states! Already optimized, nothing to remove
         if new_states_len == states_len {
             return false;
         }
@@ -457,7 +469,10 @@ impl<'word> WordMatcher<'word> {
             class_map[class_index] = entry.index();
             entry.or_insert_with(Default::default);
         }
-        assert_eq!(self.phrase_matcher.word_classes.len(), new_wordlist.len());
+        assert_eq!(
+            self.phrase_matcher.word_classes.len(),
+            self.alive_wordlist.len()
+        );
 
         let mut new_alive_wordlist = vec![];
         let mut new_word_classes = vec![];
@@ -526,7 +541,10 @@ impl PhraseMatcher {
         prev_fuzz_dst: BitSetRef2D,
         next_fuzz_dst: BitSetRefMut2D,
     ) {
-        //assert!(self.word_classes[word_index] != 0);
+        // This assert isn't stictly required; but class 0 denotes "empty" words,
+        // so if there are still empty words hanging around in the alive_wordlist,
+        // then there were some missed optimizations.
+        assert!(self.word_classes[word_index] != 0);
 
         let word_table = self
             .classes

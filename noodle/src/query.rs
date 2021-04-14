@@ -16,18 +16,27 @@ pub struct QueryEvaluator<'word> {
     results_count: usize,
 }
 
-/// TODO
+/// Evaluating a query goes through three separate phases:
+///  - Single word matches (while simultaneously populating the PhraseMatcher datastructure)
+///  - Phrase matches
+///  - Done
 enum QueryPhase<'word> {
     Word {
         matchers: Vec<WordMatcher<'word>>,
-        wordlist: Vec<&'word Word>,
+
+        /// The input wordlist (unfiltered)
+        wordlist: &'word [&'word Word],
     },
     Phrase {
         matchers: Vec<PhraseMatcher>,
+
+        /// The "alive" wordlist, which has been filtered to only contain words that
+        /// *could* contribute to a phrase match across all `PhraseMatcher`s
         wordlist: Vec<&'word Word>,
+
         search_layers: Vec<SearchLayer>,
         search_depth: (PhraseLength, Tranche),
-        layer_index: usize,
+        layer_index: PhraseLength,
     },
     Done,
 }
@@ -40,7 +49,9 @@ pub enum QueryResponse {
     Match(Vec<Word>),
 }
 
-/// TODO
+/// Internal state to `QueryEvaluator` during the Phrase search phase
+/// Each `SearchLayer` contains the current state up to a certain depth,
+/// so a search for a 10-word phrase would use a vec of 10 `SearchLayer`s
 #[derive(Debug)]
 struct SearchLayer {
     /// The nth word in the wordlist
@@ -56,15 +67,11 @@ struct SearchLayer {
 impl<'word> QueryEvaluator<'word> {
     pub fn new(
         expressions: Vec<Expression>,
-        input_wordlist: &[&'word Word],
+        input_wordlist: &'word [&'word Word],
         search_depth_limit: PhraseLength,
         results_limit: Option<usize>,
     ) -> Self {
         assert!(!expressions.is_empty());
-
-        // TODO: This does a copy of the wordlist slice, which would not be great
-        // if we had ~millions of words.
-        let input_wordlist = input_wordlist.to_vec();
 
         // TODO: Remove +1
         let max_word_len = 1 + input_wordlist
@@ -89,7 +96,7 @@ impl<'word> QueryEvaluator<'word> {
         }
     }
 
-    pub fn from_ast(query_ast: &parser::QueryAst, input_wordlist: &[&'word Word]) -> Self {
+    pub fn from_ast(query_ast: &parser::QueryAst, input_wordlist: &'word [&'word Word]) -> Self {
         // TODO: Use `options.dictionary`
         // TODO: Use `options.quiet`
         // TODO: Maybe `results_limit` should be handled upstream?
@@ -181,32 +188,60 @@ impl<'word> QueryEvaluator<'word> {
                 }
                 .clone();
 
+                // Repeatedly call `optimize_for_wordlist` on each `PhraseMatcher`,
+                // until nothing changes (e.g. it is fully optimized)
+                //
                 // TODO: Be clever to avoid ~n^2 scenario?
+                // Right now, `optimize_for_wordlist` is sort of "self-centered" and
+                // naive -- it's expected that it'll get called repeatedly until it
+                // converges. It may be possible to rewrite to avoid arbitrary looping?
                 {
-                    let initial_size = alive_wordlist.len();
+                    // Some debugging vars for printing later
                     let start = Instant::now();
-                    loop {
-                        let mut optimized = false;
-                        for matcher in matchers.iter_mut().rev() {
-                            let opt = matcher.optimize_for_wordlist(&alive_wordlist);
-                            optimized = optimized || opt;
+                    let initial_size = alive_wordlist.len();
+                    let mut optimization_passes: usize = 0;
 
+                    loop {
+                        optimization_passes += 1;
+
+                        // Try to tighten the `search_depth_limit` with the wordset we have so far
+                        for matcher in matchers.iter() {
+                            self.search_depth_limit = self
+                                .search_depth_limit
+                                .min(matcher.phrase_length_bounds(self.search_depth_limit));
+                        }
+                        println!("reduced search depth to {}", self.search_depth_limit);
+
+                        let mut converged = true;
+                        for matcher in matchers.iter_mut().rev() {
+                            // Optimize each PhraseMatcher
+                            let did_opt = matcher
+                                .optimize_for_wordlist(&alive_wordlist, self.search_depth_limit);
+                            converged = converged && !did_opt;
+
+                            // If the optimization step reduced the `alive_wordlist`, then use that
+                            // moving forward.
                             if matcher.alive_wordlist.len() != alive_wordlist.len() {
                                 assert!(matcher.alive_wordlist.len() < alive_wordlist.len());
+                                converged = false;
+
+                                // TODO: can the big Vec clone be avoided?
                                 alive_wordlist = matcher.alive_wordlist.clone();
+
                                 if alive_wordlist.is_empty() {
                                     break;
                                 }
                             }
                         }
-                        if !optimized {
+                        if converged {
                             break;
                         }
                     }
 
                     println!(
-                        "optimizing took {:?}, wordlist shrunk {} -> {}",
+                        "optimizing took {:?} in {} passes, wordlist shrunk {} -> {}",
                         start.elapsed(),
+                        optimization_passes,
                         initial_size,
                         alive_wordlist.len()
                     );
@@ -224,12 +259,17 @@ impl<'word> QueryEvaluator<'word> {
                     .map(|m| m.into_phrase_matcher())
                     .collect();
 
-                // Use the wordlist & PhraseMatcher to try to tighten the phrase length search bound
-                for phrase_matcher in phrase_matchers.iter() {
-                    self.search_depth_limit = self
-                        .search_depth_limit
-                        .min(phrase_matcher.phrase_length_bounds(self.search_depth_limit));
-                }
+                println!(
+                    "optimized state sizes: {:?} -> {:?}",
+                    phrase_matchers
+                        .iter()
+                        .map(|m| m.expression.states_len())
+                        .collect::<Vec<_>>(),
+                    phrase_matchers
+                        .iter()
+                        .map(|m| m.states_len)
+                        .collect::<Vec<_>>()
+                );
 
                 // Construct the SearchLayers, which are used to hold state during DFS
                 let states_max = phrase_matchers
