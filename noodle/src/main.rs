@@ -15,17 +15,17 @@ fn main() {
             10..=10,
             120,
         ),
-        ("<smiles>", 300..=10000, 13),
-        ("<smiles>; .*ss.*", 120..=140, 17),
+        ("<smiles>", 300..=10000, 12),
+        ("<smiles>; .*ss.*", 120..=140, 35),
         ("ahumongoussentencewithmultiplewords", 10..=10, 40),
-        ("ahumongoussentincewithmultiplewords !' !1", 265..=275, 272),
+        ("ahumongoussentincewithmultiplewords !' !1", 265..=275, 625),
         (
             "3 3 8 7; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:?) !'",
             24..=24,
-            500,
+            510,
         ),
         ("hen !1; hay !1", 2..=2, 10),
-        ("breadfast !2", 300..=10000, 125),
+        ("breadfast !2", 300..=10000, 70),
     ];
     let mut times = vec![];
     for (query_str, expected_range, _) in queries.iter() {

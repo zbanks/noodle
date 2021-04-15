@@ -6,6 +6,8 @@ use unicode_normalization::UnicodeNormalization;
 #[cfg(feature = "serialize")]
 use serde::Serialize;
 
+pub type Tranche = usize;
+
 // 28 values: A-Z, Punctuation, Space
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct Char(u8);
@@ -150,11 +152,19 @@ pub struct Word {
     pub text: String,
     #[serde(skip)]
     pub chars: Vec<Char>,
-    pub score: u64,
+    pub tranche: Tranche,
+    pub score: u32,
 }
 
 impl Word {
     pub fn new(text: &str) -> Self {
+        let tranche = match text.len() {
+            12..=1000 => 1,
+            7..=10 => 2,
+            4..=6 => 3,
+            _ => 4,
+        };
+
         Word {
             text: text.into(),
             chars: text
@@ -163,6 +173,7 @@ impl Word {
                 .map(|c| c.into())
                 .chain(std::iter::once(Char::WORD_END))
                 .collect(),
+            tranche,
             score: 1 << 16,
         }
     }

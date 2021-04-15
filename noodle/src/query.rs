@@ -2,7 +2,7 @@ use crate::bitset::BitSet3D;
 use crate::expression::Expression;
 use crate::matcher::{PhraseLength, PhraseMatcher, WordMatcher};
 use crate::parser;
-use crate::words::Word;
+use crate::words::{Tranche, Word};
 use std::time::Instant;
 
 /// Evaluate a query, consisting of multiple expressions, on a given wordset.
@@ -33,8 +33,14 @@ enum QueryPhase<'word> {
         /// *could* contribute to a phrase match across all `PhraseMatcher`s
         wordlist: Vec<&'word Word>,
 
+        /// The search is sort of a form of IDDFS, see
+        /// https://en.wikipedia.org/wiki/Iterative_deepening_depth-first_search
+        /// First we try phrases length 2, then length 3, then 4, etc.
+        /// This is memory efficient, and returns short phrases first.
+        /// But, it requires that we do a bunch of re-computation so it can be slower
+        /// than "normal" DFS.
+        search_queue: Vec<(PhraseLength, Tranche)>,
         search_layers: Vec<SearchLayer>,
-        search_queue: Vec<PhraseLength>,
         layer_index: PhraseLength,
     },
     Done,
@@ -194,7 +200,9 @@ impl<'word> QueryEvaluator<'word> {
                 // Right now, `optimize_for_wordlist` is sort of "self-centered" and
                 // naive -- it's expected that it'll get called repeatedly until it
                 // converges. It may be possible to rewrite to avoid arbitrary looping?
-                let mut search_queue: Vec<usize> = (2..=self.search_depth_limit).collect();
+                let mut search_queue: Vec<_> = (2..=self.search_depth_limit)
+                    .map(|d| (d, Tranche::MAX))
+                    .collect();
                 {
                     // Some debugging vars for printing later
                     let start = Instant::now();
@@ -224,7 +232,7 @@ impl<'word> QueryEvaluator<'word> {
                         for matcher in matchers.iter_mut().rev() {
                             // Optimize each PhraseMatcher
                             let did_opt =
-                                matcher.optimize_for_wordlist(&alive_wordlist, &mut search_queue);
+                                matcher.optimize_for_wordlist(&alive_wordlist, &search_queue);
                             converged = converged && !did_opt;
 
                             // If the optimization step reduced the `alive_wordlist`, then use that
@@ -292,9 +300,10 @@ impl<'word> QueryEvaluator<'word> {
                     .max()
                     .unwrap();
 
-                let mut search_layers: Vec<_> = (0..=search_queue.iter().max().copied().unwrap())
-                    .map(|_| SearchLayer::new(phrase_matchers.len(), fuzz_max, states_max))
-                    .collect();
+                let mut search_layers: Vec<_> =
+                    (0..=search_queue.iter().map(|(d, _)| d).max().copied().unwrap())
+                        .map(|_| SearchLayer::new(phrase_matchers.len(), fuzz_max, states_max))
+                        .collect();
 
                 for (i, phrase_matcher) in phrase_matchers.iter().enumerate() {
                     search_layers[0]
@@ -330,6 +339,7 @@ impl<'word> QueryEvaluator<'word> {
                 let mut deadline_check_count = 0;
                 let mut result = None;
                 loop {
+                    let (search_depth, _search_tranche) = search_queue[0];
                     let (lower_layers, upper_layers) = search_layers.split_at_mut(*layer_index + 1);
                     let prev_layer = &mut lower_layers[*layer_index];
                     let next_layer = &mut upper_layers[0];
@@ -364,7 +374,7 @@ impl<'word> QueryEvaluator<'word> {
                             all_exact_match = false;
                         }
                     }
-                    if all_exact_match && *layer_index + 1 == search_queue[0] {
+                    if all_exact_match && *layer_index + 1 == search_depth {
                         self.results_count += 1;
                         result = Some(QueryResponse::Match(
                             search_layers[0..=*layer_index]
@@ -376,8 +386,7 @@ impl<'word> QueryEvaluator<'word> {
 
                     // There was a partial (or exact match), so try to extend the phrase by one
                     // more word (as long as we haven't hit the search depth limit)
-                    if (all_partial_match || all_exact_match) && *layer_index + 1 < search_queue[0]
-                    {
+                    if (all_partial_match || all_exact_match) && *layer_index + 1 < search_depth {
                         // Descend to the next layer (and reset its word_index to 0)
                         *layer_index += 1;
                         search_layers[*layer_index].word_index = 0;
