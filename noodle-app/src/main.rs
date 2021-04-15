@@ -20,7 +20,8 @@ lazy_static! {
     };
     static ref WORDLIST: Vec<&'static Word> = {
         let mut wordlist: Vec<&'static Word> = WORDS.iter().collect();
-        wordlist.sort_by_key(|w| &w.chars);
+        //wordlist.sort_by_key(|w| &w.chars);
+        wordlist.sort();
         wordlist
     };
     static ref ACTIVE_QUERIES: AtomicUsize = AtomicUsize::new(0_usize);

@@ -5,26 +5,31 @@ fn main() {
     let start = time::Instant::now();
     let words = load_wordlist("/usr/share/dict/words").unwrap();
     let mut wordlist: Vec<&Word> = words.iter().collect();
-    wordlist.sort_by_key(|w| &w.chars);
+    wordlist.sort();
     println!(" === Time to load wordlist: {:?} ===", start.elapsed());
     let queries = vec![
-        ("helloworld", 1..=1, 12),
-        ("8; [aehl]+([lo]*w[lo]*).*", 37..=40, 188),
+        ("helloworld", 1..=1, 13),
+        ("8; [aehl]+([lo]*w[lo]*).*", 37..=40, 230),
         (
             "h.... _ w....; <hello+>; <world+5>; [hale]+<owl>.*",
             10..=10,
-            120,
+            140,
         ),
-        ("<smiles>", 300..=10000, 12),
-        ("<smiles>; .*ss.*", 120..=140, 35),
+        ("<smiles>", 300..=10000, 15),
+        ("<smiles>; .*ss.*", 120..=140, 26),
         ("ahumongoussentencewithmultiplewords", 10..=10, 40),
-        ("ahumongoussentincewithmultiplewords !' !1", 265..=275, 625),
+        ("ahumongoussentincewithmultiplewords !' !1", 265..=275, 800),
         (
             "3 3 8 7; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:?) !'",
             24..=24,
-            510,
+            690,
         ),
-        ("hen !1; hay !1", 2..=2, 10),
+        //(
+        //    "(.{4,8}_){4}; .{20,}; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:?) !'",
+        //    300..=10000,
+        //    830,
+        //),
+        ("hen !1; hay !1", 2..=2, 11),
         ("breadfast !2", 300..=10000, 70),
     ];
     let mut times = vec![];
@@ -74,7 +79,7 @@ fn main() {
 fn expected_count() {
     let words = load_wordlist("/usr/share/dict/words").unwrap();
     let mut wordlist: Vec<&Word> = words.iter().collect();
-    wordlist.sort_by_key(|w| &w.chars);
+    wordlist.sort();
 
     let query_str = "ex.res*iontest !2 !'; ex?z?press+[^i].* !'; #words 3";
     let mut query_ast = parser::QueryAst::new_from_str(query_str).unwrap();

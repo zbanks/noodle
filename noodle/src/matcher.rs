@@ -4,8 +4,6 @@ use crate::words::{Char, Tranche, Word};
 use indexmap::IndexMap;
 use std::time::Instant;
 
-pub type PhraseLength = usize;
-
 /// TODO
 #[derive(Debug)]
 pub struct WordMatcher<'word> {
@@ -27,6 +25,16 @@ pub struct WordMatcher<'word> {
 pub struct WordMatcherIter<'word, 'it> {
     word_matcher: &'it mut WordMatcher<'word>,
     wordlist: &'it [&'word Word],
+}
+
+pub type PhraseDepth = usize;
+
+/// TODO
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct SearchPhase {
+    pub depth: PhraseDepth,
+    pub tranche: Tranche,
+    pub total_size: u64,
 }
 
 /// TODO
@@ -51,8 +59,7 @@ pub struct PhraseMatcher {
 /// TODO
 #[derive(Debug, Clone, Default)]
 struct WordClass {
-    words_per_tranche: Box<[usize]>,
-
+    //words_per_tranche: Vec<usize>,
     words_count: usize,
     min_tranche: Tranche,
 }
@@ -89,9 +96,8 @@ impl<'word> WordMatcher<'word> {
         &self.phrase_matcher.expression
     }
 
-    pub fn phrase_length_bounds(&self, valid_search_depths: &mut Vec<(PhraseLength, Tranche)>) {
-        self.phrase_matcher
-            .phrase_length_bounds(valid_search_depths)
+    pub fn filter_search_phases(&self, search_phases: &mut Vec<SearchPhase>) {
+        self.phrase_matcher.filter_search_phases(search_phases)
     }
 
     /// TODO
@@ -195,16 +201,16 @@ impl<'word> WordMatcher<'word> {
     pub fn optimize_for_wordlist(
         &mut self,
         new_input_wordlist: &[&'word Word],
-        search_queue: &Vec<(PhraseLength, Tranche)>,
+        search_queue: &Vec<SearchPhase>,
     ) -> bool {
         // Filter down `alive_wordlist` to exactly match `new_input_wordlist`.
         //
         // `new_input_wordlist` must be a (weak) subset of our `alive_wordlist`
         // If they are not already equal, filter out the missing words
-        if true {
-            // self.alive_wordlist.len() != new_input_wordlist.len() {
+        {
             assert!(self.alive_wordlist.len() >= new_input_wordlist.len());
 
+            // Reset the classes internal metadata (e.g. # of words)
             self.phrase_matcher
                 .classes
                 .values_mut()
@@ -242,13 +248,12 @@ impl<'word> WordMatcher<'word> {
         let states_len = self.phrase_matcher.states_len;
         let fuzz_limit = self.phrase_matcher.fuzz_limit;
 
+        // With the present search_queue, determine which depths are actually possible
         assert!(!search_queue.is_empty());
+        // `valid_search_depths` acts like a bitset: `[i]` is `true` if depth `i` is possible
         let valid_search_depths: Vec<bool> = {
-            let mut depths =
-                vec![false; search_queue.iter().map(|(d, _)| d).max().copied().unwrap() + 1];
-            for &(d, _t) in search_queue.iter() {
-                depths[d] = true;
-            }
+            let mut depths = vec![false; search_queue.iter().map(|p| p.depth).max().unwrap() + 1];
+            search_queue.iter().for_each(|p| depths[p.depth] = true);
             depths
         };
 
@@ -483,6 +488,12 @@ impl<'word> WordMatcher<'word> {
             self.phrase_matcher.word_classes.len(),
             self.alive_wordlist.len()
         );
+        if new_classes.len() == 2 {
+            println!(
+                "Potential optimization: phrase_matcher could be elided for {}",
+                self.phrase_matcher.expression.text
+            );
+        }
 
         let mut new_alive_wordlist = vec![];
         let mut new_word_classes = vec![];
@@ -512,8 +523,11 @@ impl<'word> WordMatcher<'word> {
         true
     }
 
-    pub fn into_phrase_matcher(self) -> PhraseMatcher {
-        self.phrase_matcher
+    pub fn into_phrase_matcher(self) -> Option<PhraseMatcher> {
+        // This returns an `Option` so that future optimizations
+        // could decide to elide this `PhraseMatcher` if all possible
+        // inputs would successfully match
+        Some(self.phrase_matcher)
     }
 }
 impl<'word> Iterator for WordMatcherIter<'word, '_> {
@@ -593,37 +607,63 @@ impl PhraseMatcher {
         }
     }
 
-    pub fn phrase_length_bounds(&self, valid_search_depths: &mut Vec<(PhraseLength, Tranche)>) {
-        let mut states_fuzz_dst = BitSet2D::new(self.fuzz_limit, self.states_len);
-        states_fuzz_dst
-            .slice_mut(0)
-            .union_with(self.start_states.borrow());
-
-        if valid_search_depths.is_empty() {
+    pub fn filter_search_phases(&self, search_phases: &mut Vec<SearchPhase>) {
+        if search_phases.is_empty() {
             return;
         }
-        let max_depth = valid_search_depths
-            .iter()
-            .map(|(d, _)| d)
-            .max()
-            .copied()
-            .unwrap();
+        let max_depth = search_phases.iter().map(|p| p.depth).max().unwrap();
+
+        let tranches = {
+            let mut ts: Vec<_> = search_phases.iter().map(|p| p.tranche).collect();
+            ts.sort();
+            ts.dedup();
+            ts
+        };
+        let tranche_map: Vec<_> = {
+            let mut map = vec![None; *tranches.iter().max().unwrap() as usize + 1];
+            tranches.iter().enumerate().for_each(|(i, &t)| {
+                let mut t = t as usize;
+                while map[t].is_none() {
+                    map[t] = Some(i);
+                    if t == 0 {
+                        break;
+                    }
+                    t -= 1;
+                }
+            });
+            map
+        };
+        let tranches_len = tranches.len();
+
+        let mut states_fuzz_dst = BitSet3D::new((tranches.len(), self.fuzz_limit), self.states_len);
+        for t in 0..tranches_len {
+            states_fuzz_dst
+                .slice_mut((t, 0))
+                .union_with(self.start_states.borrow());
+        }
 
         for w in 1..=max_depth {
-            let mut next_states_fuzz_dst = BitSet2D::new(self.fuzz_limit, self.states_len);
-            for table_src_fuzz_dst in self.classes.keys() {
-                self.step(
-                    table_src_fuzz_dst,
-                    states_fuzz_dst.borrow(),
-                    next_states_fuzz_dst.borrow_mut(),
-                );
+            let mut next_states_fuzz_dst =
+                BitSet3D::new((tranches_len, self.fuzz_limit), self.states_len);
+            for (table_src_fuzz_dst, word_class) in self.classes.iter() {
+                for t in tranche_map[word_class.min_tranche as usize].unwrap()..tranches_len {
+                    self.step(
+                        table_src_fuzz_dst,
+                        states_fuzz_dst.slice2d(t),
+                        next_states_fuzz_dst.slice2d_mut(t),
+                    );
+                }
             }
 
-            if next_states_fuzz_dst.borrow().is_empty() {
-                valid_search_depths.retain(|&(d, _)| d < w);
-                break;
-            } else if !self.has_success_state(next_states_fuzz_dst.borrow()) {
-                valid_search_depths.retain(|&(d, _)| d != w);
+            //println!("w={}, states: {:?}", w, next_states_fuzz_dst);
+            for (t, &tranche) in tranches.iter().enumerate() {
+                //if next_states_fuzz_dst.slice2d(t).is_empty() {
+                //    search_phases.retain(|p| p.depth < w || p.tranche != tranche);
+                //    break;
+                //}
+                if !self.has_success_state(next_states_fuzz_dst.slice2d(t)) {
+                    search_phases.retain(|p| p.depth != w || p.tranche != tranche);
+                }
             }
             states_fuzz_dst = next_states_fuzz_dst;
         }
@@ -648,9 +688,9 @@ impl PhraseMatcher {
 }
 
 impl WordClass {
-    // TODO
-    fn add_word(&mut self, _word: &Word) {
+    fn add_word(&mut self, word: &Word) {
         self.words_count += 1;
+        self.min_tranche = self.min_tranche.min(word.tranche);
     }
 
     fn clear(&mut self) {

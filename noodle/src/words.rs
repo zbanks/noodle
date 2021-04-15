@@ -6,7 +6,7 @@ use unicode_normalization::UnicodeNormalization;
 #[cfg(feature = "serialize")]
 use serde::Serialize;
 
-pub type Tranche = usize;
+pub type Tranche = u8;
 
 // 28 values: A-Z, Punctuation, Space
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
@@ -149,21 +149,22 @@ impl fmt::Debug for CharBitset {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 pub struct Word {
-    pub text: String,
+    #[serde(skip)]
+    pub tranche: Tranche,
     #[serde(skip)]
     pub chars: Vec<Char>,
-    pub tranche: Tranche,
+    pub text: String,
     pub score: u32,
 }
 
 impl Word {
     pub fn new(text: &str) -> Self {
-        let tranche = match text.len() {
-            12..=1000 => 1,
-            7..=10 => 2,
-            4..=6 => 3,
-            _ => 4,
+        let mut tranche = match text.len() {
+            12..=1000 => 0,
+            4..=11 => 1,
+            _ => 2,
         };
+        tranche += (!text.chars().all(|c| c.is_ascii_lowercase())) as Tranche;
 
         Word {
             text: text.into(),
@@ -174,7 +175,7 @@ impl Word {
                 .chain(std::iter::once(Char::WORD_END))
                 .collect(),
             tranche,
-            score: 1 << 16,
+            score: (tranche as u32 + 1) << 16,
         }
     }
 }
@@ -198,7 +199,7 @@ where
     // TODO: Correctly propagate errors
     let file = std::fs::File::open(filename).unwrap();
     let lines = io::BufReader::new(file).lines();
-    Ok(lines
+    let mut wordlist: Vec<_> = lines
         .filter_map(|line| line.ok())
         .filter_map(|line| {
             if line.len() > 1 || line == "I" || line == "a" {
@@ -207,5 +208,7 @@ where
                 None
             }
         })
-        .collect())
+        .collect();
+    wordlist.sort();
+    Ok(wordlist)
 }
