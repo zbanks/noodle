@@ -39,10 +39,11 @@ fn main() {
         let evaluator = QueryEvaluator::from_ast(&query_ast, &wordlist);
         println!(" === Time to parse query: {:?} ===", start.elapsed());
         let mut results = evaluator.filter(|m| matches!(m, QueryResponse::Match(_)));
+        //let mut results = results.map(|m| println!("{:?}", m));
 
-        let _first_match = results.next();
+        let first_match = results.next();
         let first_time = start.elapsed();
-        let count = 1 + results.count();
+        let count = (first_match.is_some() as usize) + results.count();
         println!("# matches: {}", count);
         let duration = start.elapsed();
         println!(

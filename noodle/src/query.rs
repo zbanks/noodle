@@ -1,6 +1,6 @@
 use crate::bitset::BitSet3D;
 use crate::expression::Expression;
-use crate::matcher::{PhraseLength, PhraseMatcher, Tranche, WordMatcher};
+use crate::matcher::{PhraseLength, PhraseMatcher, WordMatcher};
 use crate::parser;
 use crate::words::Word;
 use std::time::Instant;
@@ -34,7 +34,7 @@ enum QueryPhase<'word> {
         wordlist: Vec<&'word Word>,
 
         search_layers: Vec<SearchLayer>,
-        search_depth: (PhraseLength, Tranche),
+        search_queue: Vec<PhraseLength>,
         layer_index: PhraseLength,
     },
     Done,
@@ -194,6 +194,7 @@ impl<'word> QueryEvaluator<'word> {
                 // Right now, `optimize_for_wordlist` is sort of "self-centered" and
                 // naive -- it's expected that it'll get called repeatedly until it
                 // converges. It may be possible to rewrite to avoid arbitrary looping?
+                let mut search_queue: Vec<usize> = (2..=self.search_depth_limit).collect();
                 {
                     // Some debugging vars for printing later
                     let start = Instant::now();
@@ -204,36 +205,26 @@ impl<'word> QueryEvaluator<'word> {
                         optimization_passes += 1;
                         let mut converged = true;
 
-                        // Try to tighten the `search_depth_limit` with the wordset/matchers we have so far
-                        self.search_depth_limit = {
-                            let mut valid_search_depths: Vec<usize> =
-                                (2..=self.search_depth_limit).collect();
-                            loop {
-                                let l = valid_search_depths.len();
-                                for matcher in matchers.iter() {
-                                    matcher.phrase_length_bounds(&mut valid_search_depths);
-                                }
-                                if valid_search_depths.is_empty() || l == valid_search_depths.len()
-                                {
-                                    break;
-                                }
+                        // Try to tighten the `search_queue` with the wordset/matchers we have so far
+                        loop {
+                            let l = search_queue.len();
+                            for matcher in matchers.iter() {
+                                matcher.phrase_length_bounds(&mut search_queue);
                             }
-
-                            let new_limit = valid_search_depths.iter().max().copied().unwrap_or(1);
-                            if new_limit <= 1 {
+                            if search_queue.is_empty() {
                                 self.phase = QueryPhase::Done;
                                 return None;
-                            } else if new_limit != self.search_depth_limit {
+                            } else if l != search_queue.len() {
                                 converged = false;
+                            } else {
+                                break;
                             }
-
-                            new_limit
-                        };
+                        }
 
                         for matcher in matchers.iter_mut().rev() {
                             // Optimize each PhraseMatcher
-                            let did_opt = matcher
-                                .optimize_for_wordlist(&alive_wordlist, self.search_depth_limit);
+                            let did_opt =
+                                matcher.optimize_for_wordlist(&alive_wordlist, &mut search_queue);
                             converged = converged && !did_opt;
 
                             // If the optimization step reduced the `alive_wordlist`, then use that
@@ -301,7 +292,7 @@ impl<'word> QueryEvaluator<'word> {
                     .max()
                     .unwrap();
 
-                let mut search_layers: Vec<_> = (0..=self.search_depth_limit)
+                let mut search_layers: Vec<_> = (0..=search_queue.iter().max().copied().unwrap())
                     .map(|_| SearchLayer::new(phrase_matchers.len(), fuzz_max, states_max))
                     .collect();
 
@@ -320,7 +311,7 @@ impl<'word> QueryEvaluator<'word> {
                     matchers: phrase_matchers,
                     wordlist: alive_wordlist.to_vec(),
                     search_layers,
-                    search_depth: (2, 1),
+                    search_queue,
                     layer_index: 0,
                 };
 
@@ -331,7 +322,7 @@ impl<'word> QueryEvaluator<'word> {
                 matchers,
                 wordlist,
                 search_layers,
-                search_depth: _,
+                search_queue,
                 layer_index,
             } => {
                 assert!(!wordlist.is_empty());
@@ -373,7 +364,7 @@ impl<'word> QueryEvaluator<'word> {
                             all_exact_match = false;
                         }
                     }
-                    if all_exact_match && *layer_index >= 1 {
+                    if all_exact_match && *layer_index + 1 == search_queue[0] {
                         self.results_count += 1;
                         result = Some(QueryResponse::Match(
                             search_layers[0..=*layer_index]
@@ -385,8 +376,7 @@ impl<'word> QueryEvaluator<'word> {
 
                     // There was a partial (or exact match), so try to extend the phrase by one
                     // more word (as long as we haven't hit the search depth limit)
-                    if (all_partial_match || all_exact_match)
-                        && *layer_index + 1 < self.search_depth_limit
+                    if (all_partial_match || all_exact_match) && *layer_index + 1 < search_queue[0]
                     {
                         // Descend to the next layer (and reset its word_index to 0)
                         *layer_index += 1;
@@ -400,16 +390,24 @@ impl<'word> QueryEvaluator<'word> {
 
                             // Did we exhaust the whole word list at this layer?
                             if search_layers[*layer_index].word_index >= wordlist.len() {
-                                // If there isn't a previous layer, then we're done!
+                                // If there isn't a previous layer, then we're done with this depth
                                 if *layer_index == 0 {
-                                    println!(
-                                        "Matcher done with {} result(s) (up to {} word phrases)",
-                                        self.results_count, self.search_depth_limit
-                                    );
+                                    search_queue.remove(0);
+                                    if search_queue.is_empty() {
+                                        // If the depth queue is empty, we're done for good!
+                                        println!(
+                                            "Matcher done with {} result(s) (up to {} word phrases)",
+                                            self.results_count, self.search_depth_limit
+                                        );
 
-                                    // Signal that the iterator is exhausted
-                                    self.phase = QueryPhase::Done;
-                                    return None;
+                                        // Signal that the iterator is exhausted
+                                        self.phase = QueryPhase::Done;
+                                        return result;
+                                    } else {
+                                        // Otherwise, restart at the first layer with the new depth
+                                        search_layers[*layer_index].word_index = 0;
+                                        break;
+                                    }
                                 }
 
                                 // Ascend back to the previous layer (perhaps recursively!)

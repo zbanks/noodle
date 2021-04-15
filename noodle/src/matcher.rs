@@ -196,7 +196,7 @@ impl<'word> WordMatcher<'word> {
     pub fn optimize_for_wordlist(
         &mut self,
         new_input_wordlist: &[&'word Word],
-        search_depth_limit: usize,
+        search_queue: &mut Vec<PhraseLength>,
     ) -> bool {
         // Filter down `alive_wordlist` to exactly match `new_input_wordlist`.
         //
@@ -243,6 +243,11 @@ impl<'word> WordMatcher<'word> {
         let states_len = self.phrase_matcher.states_len;
         let fuzz_limit = self.phrase_matcher.fuzz_limit;
 
+        assert!(!search_queue.is_empty());
+        let valid_search_depths: Vec<bool> = (0..=search_queue.iter().max().copied().unwrap())
+            .map(|i| search_queue.contains(&i))
+            .collect();
+
         // Compute the set of states which are reachable from the starting state, only using words
         // that are in the alive wordset
         let reachable_srcs = {
@@ -254,7 +259,7 @@ impl<'word> WordMatcher<'word> {
 
             // Iterate, expanding the `reachable_fuzz_dst` set until it stabilizes, or the limit is
             // reached.
-            for _ in 0..search_depth_limit {
+            for (_, _valid) in valid_search_depths[1..].iter().enumerate() {
                 let mut next_reachable_fuzz_dst = reachable_fuzz_dst.clone();
                 for (table_src_fuzz_dst, word_class) in self.phrase_matcher.classes.iter() {
                     if word_class.words_count == 0 {
@@ -292,7 +297,7 @@ impl<'word> WordMatcher<'word> {
                 let mut table_fuzz_dst = BitSet2D::new(fuzz_limit, states_len);
                 table_fuzz_dst.slice_mut(0).insert(src);
 
-                for _ in 0..=search_depth_limit {
+                for (_, _valid) in valid_search_depths.iter().enumerate() {
                     // Check if the success state is reachable, if so mark `src` as a candidate
                     let success_state = states_len - 1;
                     for f in 0..fuzz_limit {
