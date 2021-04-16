@@ -92,6 +92,15 @@ impl<'word> WordMatcher<'word> {
         }
     }
 
+    pub fn progress(&self, wordlist: &[&'word Word]) -> String {
+        format!(
+            "Single-word matches: {}/{} ({}%)",
+            self.word_index,
+            wordlist.len(),
+            100 * self.word_index / wordlist.len()
+        )
+    }
+
     pub fn expression(&self) -> &Expression {
         &self.phrase_matcher.expression
     }
@@ -121,6 +130,16 @@ impl<'word> WordMatcher<'word> {
 
         // Iterate through the words we have not yet processed
         while self.word_index < wordlist.len() {
+            // If we've exceeded the deadline, return `None` for now
+            // (But only check the clock a small fraction of the time)
+            if deadline_check_count % 256 == 0
+                && deadline.is_some()
+                && Some(Instant::now()) > deadline
+            {
+                return None;
+            }
+            deadline_check_count += 1;
+
             let word = &wordlist[self.word_index];
             self.word_index += 1;
 
@@ -181,17 +200,6 @@ impl<'word> WordMatcher<'word> {
                 {
                     return Some(word);
                 }
-            }
-
-            // If we've exceeded the deadline, return `None` for now
-            // (But only check the clock a small fraction of the time)
-
-            deadline_check_count += 1;
-            if deadline_check_count % 256 == 0
-                && deadline.is_some()
-                && Some(Instant::now()) > deadline
-            {
-                return None;
             }
         }
 

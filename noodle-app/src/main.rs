@@ -165,7 +165,7 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
 
             let now = Instant::now();
             while start + duration < now {
-                duration += Duration::from_millis(100);
+                duration += Duration::from_millis(50);
             }
             if duration > TIMEOUT {
                 tx.send(Response::Status(format!(
@@ -176,27 +176,27 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
                 break;
             }
             let deadline = start + duration;
-            let response = evaluator
-                .next_within_deadline(Some(deadline))
-                .map(|m| match m {
-                    QueryResponse::Match(phrase) => Response::Match { phrase },
-                    QueryResponse::Logs(_) => Response::Status("logs".to_string()),
-                    QueryResponse::Timeout => Response::Status(format!(
+            match evaluator.next_within_deadline(Some(deadline)) {
+                QueryResponse::Match(phrase) => tx.send(Response::Match { phrase }).await?,
+                QueryResponse::Logs(logs) => {
+                    for log in logs {
+                        tx.send(Response::Log { message: log }).await?;
+                    }
+                }
+                QueryResponse::Timeout => {
+                    tx.send(Response::Status(format!(
                         "Processing, {:0.01}s...: {}",
                         duration.as_secs_f64(),
-                        evaluator.progress()
-                    )),
-                });
-            if let Some(response) = response {
-                tx.send(response).await?;
-            } else {
-                tx.send(Response::Status(format!(
-                    "Complete after {:?}",
-                    start.elapsed()
-                )))
-                .await?;
-                break;
-            }
+                        evaluator.progress(),
+                    )))
+                    .await?
+                }
+                QueryResponse::Complete(msg) => {
+                    tx.send(Response::Status(format!("{} ({:?})", msg, start.elapsed())))
+                        .await?;
+                    break;
+                }
+            };
         }
 
         ACTIVE_QUERIES.fetch_sub(1, Ordering::Relaxed);

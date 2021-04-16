@@ -43,6 +43,7 @@ enum QueryPhase<'word> {
         search_layers: Vec<SearchLayer>,
         layer_index: PhraseDepth,
         phase_had_partial_match: bool,
+        initial_search_estimate: u32,
     },
     Done,
 }
@@ -53,6 +54,7 @@ pub enum QueryResponse {
     Timeout,
     Logs(Vec<String>),
     Match(Vec<Word>),
+    Complete(String),
 }
 
 /// Internal state to `QueryEvaluator` during the Phrase search phase
@@ -71,6 +73,18 @@ struct SearchLayer {
 }
 
 // --
+
+fn search_estimate(search_phases: &[SearchPhase]) -> u32 {
+    // This is just an incredibly rough guess at how long each phase will take
+    // In theory each phase should be `O(total_size)`, but eliminating common
+    // prefixes makes it usually run much faster.
+    // (Also: sometimes total_size saturates at u64::MAX)
+    // Assume each phase is roughly `O((log total_size) ^ 2)`
+    search_phases
+        .iter()
+        .map(|p| (p.total_size as f64).log2().powf(2.0) as u32)
+        .sum()
+}
 
 impl<'word> QueryEvaluator<'word> {
     pub fn new(
@@ -143,12 +157,43 @@ impl<'word> QueryEvaluator<'word> {
     }
 
     pub fn progress(&self) -> String {
-        format!("TODO")
+        match &self.phase {
+            QueryPhase::Word { matchers, wordlist } => matchers[0].progress(wordlist),
+            QueryPhase::Phrase {
+                search_layers,
+                search_queue,
+                initial_search_estimate,
+                ..
+            } => {
+                let phase = &search_queue[0];
+                let step_index = &search_layers[0].word_index;
+
+                let estimate = search_estimate(search_queue);
+                let step_estimate =
+                    ((*step_index as f64).log2() * (phase.depth as f64)).powf(2.0) as u32;
+                let estimate = initial_search_estimate - estimate.saturating_sub(step_estimate);
+
+                format!(
+                    "Phase 2: {}/{} ({}%) - depth={}, tranche={}",
+                    estimate,
+                    initial_search_estimate,
+                    100 * estimate / initial_search_estimate,
+                    phase.depth,
+                    phase.tranche,
+                )
+            }
+            QueryPhase::Done => "Done".to_string(),
+        }
     }
 
-    pub fn next_within_deadline(&mut self, deadline: Option<Instant>) -> Option<QueryResponse> {
-        if Some(self.results_count) >= self.results_limit {
+    pub fn next_within_deadline(&mut self, deadline: Option<Instant>) -> QueryResponse {
+        if Some(self.results_count) >= self.results_limit && !matches!(self.phase, QueryPhase::Done)
+        {
             self.phase = QueryPhase::Done;
+            return QueryResponse::Complete(format!(
+                "Found {} results, stopping",
+                self.results_count
+            ));
         }
 
         match &mut self.phase {
@@ -171,18 +216,22 @@ impl<'word> QueryEvaluator<'word> {
                     // A single word is match if it is returned by every matcher's iterator
                     if all_match {
                         self.results_count += 1;
-                        return Some(QueryResponse::Match(vec![word.clone()]));
+                        return QueryResponse::Match(vec![word.clone()]);
                     }
                 }
                 if deadline.is_some() && Some(Instant::now()) > deadline {
-                    return Some(QueryResponse::Timeout);
+                    return QueryResponse::Timeout;
                 }
 
                 // Now, we're done with the single-word matches
                 if self.search_depth_limit <= 1 {
                     self.phase = QueryPhase::Done;
-                    return None;
+                    return QueryResponse::Complete(
+                        "Complete, found all single-word matches".to_string(),
+                    );
                 }
+
+                let mut log_messages = vec![];
 
                 // Process remaining words to populate phrase-matching data, even though they won't yield any single-word matches
                 let mut alive_wordlist = {
@@ -198,9 +247,12 @@ impl<'word> QueryEvaluator<'word> {
 
                 let mut tranches = alive_wordlist.iter().map(|w| w.tranche).collect::<Vec<_>>();
                 tranches.dedup();
-                //tranches.sort();
-                //tranches.dedup();
-                println!("Tranches: {:?}", tranches);
+                {
+                    let tranches_check = tranches.clone();
+                    tranches.sort();
+                    tranches.dedup();
+                    assert_eq!(tranches, tranches_check);
+                }
 
                 let mut search_queue: Vec<_> = (2..=self.search_depth_limit)
                     .flat_map(|d| {
@@ -237,7 +289,10 @@ impl<'word> QueryEvaluator<'word> {
                             }
                             if search_queue.is_empty() {
                                 self.phase = QueryPhase::Done;
-                                return None;
+                                return QueryResponse::Complete(
+                                    "Complete, found all single-word matches (no phrases possible)"
+                                        .to_string(),
+                                );
                             } else if l != search_queue.len() {
                                 converged = false;
                             } else {
@@ -270,19 +325,21 @@ impl<'word> QueryEvaluator<'word> {
                         }
                     }
 
-                    println!(
+                    log_messages.push(format!(
                         "optimizing took {:?} in {} passes, wordlist shrunk {} -> {}",
                         start.elapsed(),
                         optimization_passes,
                         initial_size,
                         alive_wordlist.len()
-                    );
+                    ));
                 }
 
                 // If there are no words, there are no phrases that can match; we're done
                 if alive_wordlist.is_empty() || search_queue.is_empty() {
                     self.phase = QueryPhase::Done;
-                    return None;
+                    return QueryResponse::Complete(
+                        "Complete, found all single-word matches (no phrases possible)".to_string(),
+                    );
                 }
 
                 let tranche_max: Tranche = search_queue.iter().map(|p| p.tranche).max().unwrap();
@@ -316,7 +373,9 @@ impl<'word> QueryEvaluator<'word> {
                 // If there are valid items left in the search_queue, we're done
                 if search_queue.is_empty() {
                     self.phase = QueryPhase::Done;
-                    return None;
+                    return QueryResponse::Complete(
+                        "Complete, found all single-word matches (no phrases possible)".to_string(),
+                    );
                 }
 
                 // We're done with the WordMatchers, pull out the PhraseMatchers
@@ -325,7 +384,7 @@ impl<'word> QueryEvaluator<'word> {
                     .filter_map(|m| m.into_phrase_matcher())
                     .collect();
 
-                println!(
+                log_messages.push(format!(
                     "optimized state sizes: {:?} -> {:?}",
                     phrase_matchers
                         .iter()
@@ -335,7 +394,7 @@ impl<'word> QueryEvaluator<'word> {
                         .iter()
                         .map(|m| m.states_len)
                         .collect::<Vec<_>>()
-                );
+                ));
 
                 // Construct the SearchLayers, which are used to hold state during DFS
                 let states_max = phrase_matchers
@@ -373,6 +432,8 @@ impl<'word> QueryEvaluator<'word> {
                         .union_with(phrase_matcher.start_states.borrow());
                 }
 
+                let initial_search_estimate = search_estimate(&search_queue);
+
                 self.phase = QueryPhase::Phrase {
                     matchers: phrase_matchers,
                     wordlist: alive_wordlist.to_vec(),
@@ -380,10 +441,10 @@ impl<'word> QueryEvaluator<'word> {
                     search_queue,
                     layer_index: 0,
                     phase_had_partial_match: false,
+                    initial_search_estimate,
                 };
 
-                // Recurse, to call the QueryPhase::Phrase match arm
-                self.next_within_deadline(deadline)
+                QueryResponse::Logs(log_messages)
             }
             QueryPhase::Phrase {
                 matchers,
@@ -392,6 +453,7 @@ impl<'word> QueryEvaluator<'word> {
                 search_queue,
                 layer_index,
                 phase_had_partial_match,
+                initial_search_estimate: _,
             } => {
                 assert!(!wordlist.is_empty());
 
@@ -487,22 +549,16 @@ impl<'word> QueryEvaluator<'word> {
                                             p.tranche > search_phase.tranche
                                                 || p.depth < search_phase.depth
                                         });
-                                        println!(
-                                            "filtering by partial match removed {} phases",
-                                            prev - search_queue.len()
-                                        );
                                     }
 
                                     if search_queue.is_empty() {
                                         // If the depth queue is empty, we're done for good!
-                                        println!(
-                                            "Matcher done with {} result(s) (up to {} word phrases)",
-                                            self.results_count, self.search_depth_limit
-                                        );
-
                                         // Signal that the iterator is exhausted
                                         self.phase = QueryPhase::Done;
-                                        return result;
+                                        return QueryResponse::Complete(format!(
+                                            "Complete, found all {} phrases up to {} words",
+                                            self.results_count, self.search_depth_limit
+                                        ));
                                     } else {
                                         // Otherwise, restart at the first layer with the new depth
                                         *phase_had_partial_match = false;
@@ -535,12 +591,14 @@ impl<'word> QueryEvaluator<'word> {
                         && deadline.is_some()
                         && Some(Instant::now()) > deadline
                     {
-                        return Some(QueryResponse::Timeout);
+                        return QueryResponse::Timeout;
                     }
                 }
-                result
+                result.unwrap()
             }
-            QueryPhase::Done => None,
+            QueryPhase::Done => QueryResponse::Complete(
+                "QueryEvaluator.next_within_deadline called repeatedly".to_string(),
+            ),
         }
     }
 }
@@ -549,7 +607,11 @@ impl Iterator for QueryEvaluator<'_> {
     type Item = QueryResponse;
 
     fn next(&mut self) -> Option<QueryResponse> {
-        self.next_within_deadline(None)
+        if matches!(self.phase, QueryPhase::Done) {
+            None
+        } else {
+            Some(self.next_within_deadline(None))
+        }
     }
 }
 

@@ -175,7 +175,7 @@
             }
             function submit() {
                 stop();
-                outputDiv.innerText = "";
+                outputDiv.innerHTML = "";
                 statusDiv.innerText = "Connecting to Noodle server...";
                 logDiv.innerText = "";
 
@@ -197,13 +197,15 @@
                     if (data.status) {
                         statusDiv.innerText = data.status;
                     } else if (data.log) {
-                        logDiv.innerText += data.log.message + "\n";
+                        let block = document.createElement("div");
+                        block.innerText = data.log.message;
+                        logDiv.appendChild(block);
                     } else if (data.match) {
+                        let block = document.createElement("div");
                         for (var i = 0; i < data.match.phrase.length; i++) {
-                            var word = data.match.phrase[i];
-                            outputDiv.innerText += word.text + " ";
+                            block.innerText += data.match.phrase[i].text + " ";
                         }
-                        outputDiv.innerText += "\n";
+                        outputDiv.appendChild(block);
                     }
                 }
             }
