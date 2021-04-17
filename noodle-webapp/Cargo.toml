@@ -1,8 +1,9 @@
 [package]
-name = "noodle-app"
+name = "noodle-webapp"
 version = "0.1.0"
 authors = ["Zach Banks <zjbanks@gmail.com>"]
 edition = "2018"
+license = "MIT"
 
 [dependencies]
 noodle = { path = "../noodle", features = ["serialize"] }

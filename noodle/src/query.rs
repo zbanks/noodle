@@ -161,6 +161,16 @@ impl<'word> QueryEvaluator<'word> {
         )
     }
 
+    pub fn set_search_depth_limit(&mut self, search_depth_limit: usize) {
+        assert!(matches!(self.phase, QueryPhase::Word { .. }));
+        self.search_depth_limit = search_depth_limit;
+    }
+
+    pub fn set_results_limit(&mut self, results_limit: Option<usize>) {
+        assert!(matches!(self.phase, QueryPhase::Word { .. }));
+        self.results_limit = results_limit;
+    }
+
     pub fn expressions(&self) -> Vec<&Expression> {
         match &self.phase {
             QueryPhase::Word { matchers, .. } => matchers.iter().map(|m| m.expression()).collect(),
@@ -200,7 +210,7 @@ impl<'word> QueryEvaluator<'word> {
     }
 
     pub fn next_within_deadline(&mut self, deadline: Option<Instant>) -> QueryResponse {
-        if Some(self.results_count) >= self.results_limit && !matches!(self.phase, QueryPhase::Done)
+        if self.results_limit.is_some() && self.results_count >= self.results_limit.unwrap() && !matches!(self.phase, QueryPhase::Done)
         {
             self.phase = QueryPhase::Done;
             return QueryResponse::Complete(format!(

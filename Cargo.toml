@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "noodle",
-    "noodle-app",
+    "noodle-webapp",
+    "noodle-cli",
 ]
 
 [profile.dev]

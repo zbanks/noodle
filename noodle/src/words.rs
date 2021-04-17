@@ -149,9 +149,9 @@ impl fmt::Debug for CharBitset {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 pub struct Word {
-    #[serde(skip)]
+    #[cfg_attr(feature = "serialize", serde(skip))]
     pub tranche: Tranche,
-    #[serde(skip)]
+    #[cfg_attr(feature = "serialize", serde(skip))]
     pub chars: Vec<Char>,
     pub text: String,
     pub score: u32,
