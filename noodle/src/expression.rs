@@ -58,8 +58,6 @@ impl Expression {
         let ignore_word_boundaries = !ast_root.options.explicit_word_boundaries.unwrap_or(false);
         let ignore_punctuation = !ast_root.options.explicit_punctuation.unwrap_or(false);
 
-        //println!("Ast: {:#?}", ast_root);
-
         let mut states = vec![];
         Self::build_states(&ast_root.root, &mut states);
         // Add a "success" end state (this may not be needed?) that absorbs word boundaries
@@ -73,9 +71,7 @@ impl Expression {
             ignore_punctuation,
             fuzz: ast_root.options.fuzz.unwrap_or(0),
         };
-        //println!("Pre-opt: {:?}", expr);
         Self::optimize_states(&mut expr.states);
-        //println!("Post-opt: {:?}", expr);
 
         expr
     }

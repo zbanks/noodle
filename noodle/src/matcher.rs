@@ -4,46 +4,83 @@ use crate::words::{Char, Tranche, Word};
 use indexmap::IndexMap;
 use std::time::Instant;
 
-/// TODO
+/// Search depth for phrase length, the number of words
+pub type PhraseDepth = usize;
+
+/// State for evaluating which words in a list match a given expression.
+///
+/// While evaluating, also populate the `PhraseMatcher` datastructure
+/// which is used in later search phases to generate *phrases* which
+/// will match the given expression.
+///
+/// The entire input wordlist needs to be evaluated before starting the
+/// phrase-matching phase.
 #[derive(Debug)]
 pub struct WordMatcher<'word> {
-    phrase_matcher: PhraseMatcher,
-
     // We want an immutable reference to this, but with it allowed
     // to change out underneath us
     // This is owned by us and populated by us, others take a reference to it
+    //
+    /// The set of words which are considered "alive" for a given expression;
+    /// these are words which *may* be possible to use to build a matching
+    /// phrase in later serach phases
+    ///
+    /// If there are multiple `WordMatchers` in a single `QueryEvaluator`,
+    /// typically each `alive_wordlist` is a (weak) subset of the previous,
+    /// with the first being a (weak) subset of the input wordlist.
     pub alive_wordlist: Vec<&'word Word>,
 
-    // `transition_table` is a 4D bitset: [char_index][from_state][fuzz][to_state]
+    // As each word in the input wordlist is checked in `.next_single_word(...)`,
+    // we also populate the `PhraseMatcher` datastructures to generate
+    // phrase matches in a later serach phase
+    // When the `WordMatcher` is done, use `.into_phrase_matcher()` to convert
+    // this `WordMatcher` into a `PhraseMatcher`.
+    phrase_matcher: PhraseMatcher,
+
+    // `table_char_src_fuzz_dst` is a 4D bitset: [char_index][from_state][fuzz][to_state]
     // TODO: Should this be done with an actual 4D bitset?
+    //
+    // This is used as a cache when evaluating words in series:
+    // if the next word in the input wordlist shares a common prefix with the
+    // previous word (see `table_chars`), then only the *un*-common suffix
+    // needs to be evaluated on the `Expression`.
     table_char_src_fuzz_dst: Vec<BitSet3D>,
+
+    // A parallel array to `table_char_src_fuzz_dst`.
+    // If `table_chars` has N elements, then the first N elements of
+    // `table_char_src_fuzz_dst` are valid, and correspond to the
+    // possible state transitions from evaluating the `Char`s in this array.
     table_chars: &'word [Char],
 
+    // Tracks progress through evalutating the input wordlist.
+    // Starts at `0`, and goes up to `input_wordlist.len()`.
+    // NB: the input wordlist can grow between calls to `.next_single_word(...)`
     word_index: usize,
 }
 
+/// Wrapper around `WordMatcher` created from `WordMatcher::iter`.
+/// Used to turn the results of `WordMatcher::next_single_word` into an `Iterator`.
 pub struct WordMatcherIter<'word, 'it> {
     word_matcher: &'it mut WordMatcher<'word>,
     wordlist: &'it [&'word Word],
+    deadline: Option<Instant>,
 }
 
-pub type PhraseDepth = usize;
-
-/// TODO
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct SearchPhase {
-    pub depth: PhraseDepth,
-    pub tranche: Tranche,
-    pub total_size: u64,
-}
-
-/// TODO
+/// State for generating phrases that match the given `Expression`
+///
+/// This struct is not constructed directly; it is populated by making
+/// a `WordMatcher`, feeding it a wordlist, then calling `WordMatcher::into_phrase_matcher()`
 #[derive(Debug)]
 pub struct PhraseMatcher {
     pub expression: Expression,
 
-    pub states_len: usize,
     pub fuzz_limit: usize,
+
+    // `states_len` & `start_states` may not match up with the values in
+    // `expression`, due to optimizations. For a given input wordlist, we
+    // may be able to elide/combine certain NFA states to make the search
+    // more efficient.
+    pub states_len: usize,
     pub start_states: BitSet1D,
 
     /// The keys in `classes` are 3D bitsets on: [from_state][fuzz][to_state]
@@ -56,12 +93,32 @@ pub struct PhraseMatcher {
     word_classes: Vec<usize>,
 }
 
-/// TODO
+/// Inside `PhraseMatcher`, `Word`s are sorted into these equivalency classes.
+///
+/// These classes group words which have the equivalent behavior on the
+/// expression's NFA.
+///
+/// Ex: For expression `".{5}"`, all 5-letter words would be equivalent
+///
+/// Class 0 is reserved for the "dead" class - the words which cannot possibly
+/// be part of a phrase match because they have an empty dst state set, regardless
+/// of starting state or fuzz.
 #[derive(Debug, Clone, Default)]
 struct WordClass {
-    //words_per_tranche: Vec<usize>,
+    /// Number of words in this class. (If 0, this class can be elided)
     words_count: usize,
+
+    /// Minimum `Tranche` value over all words in this class.
     min_tranche: Tranche,
+}
+
+/// See `QueryEvaluator` for a description of the IDDFS search.
+/// TODO
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct SearchPhase {
+    pub depth: PhraseDepth,
+    pub tranche: Tranche,
+    pub total_size: u64,
 }
 
 // ---
@@ -85,10 +142,15 @@ impl<'word> WordMatcher<'word> {
         }
     }
 
-    pub fn iter<'it>(&'it mut self, wordlist: &'it [&'word Word]) -> WordMatcherIter<'word, 'it> {
+    pub fn iter<'it>(
+        &'it mut self,
+        wordlist: &'it [&'word Word],
+        deadline: Option<Instant>,
+    ) -> WordMatcherIter<'word, 'it> {
         WordMatcherIter {
             word_matcher: self,
             wordlist,
+            deadline,
         }
     }
 
@@ -496,12 +558,6 @@ impl<'word> WordMatcher<'word> {
             self.phrase_matcher.word_classes.len(),
             self.alive_wordlist.len()
         );
-        if new_classes.len() == 2 {
-            println!(
-                "Potential optimization: phrase_matcher could be elided for {}",
-                self.phrase_matcher.expression.text
-            );
-        }
 
         let mut new_alive_wordlist = vec![];
         let mut new_word_classes = vec![];
@@ -542,7 +598,8 @@ impl<'word> Iterator for WordMatcherIter<'word, '_> {
     type Item = &'word Word;
 
     fn next(&mut self) -> Option<&'word Word> {
-        self.word_matcher.next_single_word(self.wordlist, None)
+        self.word_matcher
+            .next_single_word(self.wordlist, self.deadline)
     }
 }
 
@@ -663,7 +720,6 @@ impl PhraseMatcher {
                 }
             }
 
-            //println!("w={}, states: {:?}", w, next_states_fuzz_dst);
             for (t, &tranche) in tranches.iter().enumerate() {
                 //if next_states_fuzz_dst.slice2d(t).is_empty() {
                 //    search_phases.retain(|p| p.depth < w || p.tranche != tranche);

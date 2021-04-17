@@ -1,48 +1,53 @@
 # Noodle
 
-Tools for solving wordplay puzzles
+Tools for solving wordplay puzzles. 
+Heavily inspired by [tools.qhex.org](https://tools.qhex.org), [Nutrimatic](https://nutrimatic.org), and [Qat](https://www.quinapalus.com/qat.html).
 
-Heavily inspired by https://tools.qhex.org
+Noodle has the following key features that differentiate it from basic regex/anagram tools:
+
+- Evaluate **complex anagram constraints**
+    - "(anagram of `pasta`, except one letter) followed by `led`": `stapled`.
+- Generate **phrases** from the input wordlist which match the query
+    - `a..mong.u.s.ntencewithmul.iplewords`: `a humongous sentence with multiple words`
+- **Fuzzy search**, to find phrases which *almost* match the constraints
+    - "phrases within edit distance 2 of `breadfast`": `breakfast(s)`, `broadcast`, `bead east`...
+- **Sorted results** where matches with common/long words are prioritized
+- **Responsive**, showing matches as they are found, even on long queries
+
 
 ## Building & Running
 
 ```
-$ make PYTHON=python3
-$ python3 noodle_app.py
+$ cargo run --release --bin noodle-app
 ```
 
-This launches the Noodle server bound to http://localhost:8080
+This launches the Noodle server bound to http://localhost:8082
 
-## Contents
-
-- `listgen/` - scripts for building word lists (e.g. processing Wikipedia dumps)
-- `src/` - primary `libnoodle` source code, this is the primary "engine"
-- `static/` - static files for the web frontend
-    - `nx.h` - _"Noodle Expressions"_, an expression language based on _regular expressions_. The `nx` engine can do fuzzy matches & multi-word matches.
-- `noodle_app.py` - webserver that hosts frontend for performing Noodle queries. This is the primary entry point.
-- `noodle.py` - high-level Python wrapper around `libnoodle` C API
-- `noodle-gdb.py` - script to aid debugging `libnoodle` programs from `gdb`
 
 ## Noodle Queries
 
-See [Noodle Help](static/help.md).
+See [Noodle Help](static/help.md). (TODO)
 
 ## To Do
 
-- Document theory of operation
+- Document theory of operation (See `architecture.md`)
     - NX basics, tradeoffs (NFA, small alphabet)
     - Fuzzy matches
     - Multi-word matches
     - Multi-NX matches
     - Sugar (anagrams)
-- Expand `expand_expression()` in Python
-    - Handle all qhex operations in `<...>` brackets (subanagram, transadd, etc.)
-        - bank/superbank/subbank (`<...:+>`)
-        - add/delete/change (`(...:+1)`)
-        - substring (`(...:~)`)
+- Select wordlist
+- Use wordlist from Wikipedia, like Nutrimatic, with rough frequency guides
+- Pre/post filters (regex)
 - "Extract"/re-write rules for matching "inner" words, etc. ("cross-filtering" on qhex)
-- "Inverse" NX expressions? ("does not match") -- is this easy with NFAs?
-- Fuzzy matching around spaces is a bit weird
-    - Internally `"hello world"` becomes `"_hello__world_"` and spaces are collapsed together. This makes `"helloworld"` be edit distance **2** away instead of 1.
-    - Collapsing spaces also leads to `"_hell_no_"` matching `"shelling"` with edit distance 3
-    - Only seems to be an issue for internal spaces; in practice it can be constrained with an additional strict filter
+- "Inverse" NX expressions? ("does not match") -- (this is hard with NFAs)
+- Fuzzy matching + anagrams are weak; add post filter
+- Python library
+- CLI tool
+
+## License
+
+Released under the [MIT License](LICENSE).
+
+Copyright (c) 2020-2021 Zach Banks
+

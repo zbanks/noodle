@@ -10,8 +10,15 @@ use std::time::Instant;
 pub struct QueryEvaluator<'word> {
     phase: QueryPhase<'word>,
 
+    /// The initial limit on search depth (e.g. max number of words in a phrase)
+    /// This limit is used to populate the `QueryPhase::Phrase.search_queue` list,
     search_depth_limit: PhraseDepth,
+
+    /// Maximum number of results to return.
+    /// Once reached, the evaluator moves to `QueryPhase::Done`
     results_limit: Option<usize>,
+
+    /// Number of results returned so far, used to enforce `results_limit`
     results_count: usize,
 }
 
@@ -20,12 +27,14 @@ pub struct QueryEvaluator<'word> {
 ///  - Phrase matches
 ///  - Done
 enum QueryPhase<'word> {
+    /// Phase 1, single-word matches
     Word {
         matchers: Vec<WordMatcher<'word>>,
 
         /// The input wordlist (unfiltered)
         wordlist: &'word [&'word Word],
     },
+    /// Phase 2, multi-word phrases
     Phrase {
         matchers: Vec<PhraseMatcher>,
 
@@ -43,8 +52,12 @@ enum QueryPhase<'word> {
         search_layers: Vec<SearchLayer>,
         layer_index: PhraseDepth,
         phase_had_partial_match: bool,
+
+        /// Initial (unitless) estimate for time to perform the phrase search phase,
+        /// based on the size/value of the `search_queue`. (See `search_estimate`)
         initial_search_estimate: u32,
     },
+    /// Phase 3, done!
     Done,
 }
 
@@ -208,7 +221,7 @@ impl<'word> QueryEvaluator<'word> {
                     let mut wordlist = &first_matcher[0].alive_wordlist;
                     let mut all_match = true;
                     for matcher in remaining_matchers.iter_mut() {
-                        let last_word = matcher.iter(wordlist).last();
+                        let last_word = matcher.iter(wordlist, None).last();
                         all_match = all_match && (last_word == Some(word));
                         wordlist = &matcher.alive_wordlist;
                     }
@@ -237,7 +250,7 @@ impl<'word> QueryEvaluator<'word> {
                 let mut alive_wordlist = {
                     let mut wordlist = &first_matcher[0].alive_wordlist;
                     for matcher in remaining_matchers.iter_mut() {
-                        let _ = matcher.iter(wordlist).count();
+                        let _ = matcher.iter(wordlist, None).count();
                         wordlist = &matcher.alive_wordlist;
                     }
 
@@ -544,7 +557,6 @@ impl<'word> QueryEvaluator<'word> {
                                 if *layer_index == 0 {
                                     let search_phase = search_queue.remove(0);
                                     if !*phase_had_partial_match {
-                                        let prev = search_queue.len();
                                         search_queue.retain(|p| {
                                             p.tranche > search_phase.tranche
                                                 || p.depth < search_phase.depth
