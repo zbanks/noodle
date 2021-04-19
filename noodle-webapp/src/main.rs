@@ -5,6 +5,8 @@ use noodle::{load_wordlist, parser, QueryEvaluator, QueryResponse, Word};
 use serde::Serialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
+use std::net::IpAddr;
+use std::str::FromStr;
 use warp::ws::Message;
 use warp::Filter;
 
@@ -13,8 +15,11 @@ extern crate lazy_static;
 
 lazy_static! {
     static ref WORDS: Vec<Word> = {
+        let args: Vec<_> = std::env::args().collect();
+        let wordlist_filename = args.get(1).cloned().unwrap_or("/usr/share/dict/words".to_string());
+
         let start = Instant::now();
-        let words = load_wordlist("/usr/share/dict/words").unwrap();
+        let words = load_wordlist(wordlist_filename).unwrap();
         println!(" === Time to load wordlist: {:?} ===", start.elapsed());
         words
     };
@@ -221,7 +226,7 @@ async fn main() {
     // Static files
     let index = warp::fs::file("index.html")
         .or(warp::fs::file("static/index.html"))
-        .or(warp::fs::file("noodle-app/static/index.html"));
+        .or(warp::fs::file("noodle-webapp/static/index.html"));
 
     // Websockets interface
     let ws = warp::path("ws")
@@ -241,5 +246,6 @@ async fn main() {
         .map(|query_str: bytes::Bytes| run_query_sync(std::str::from_utf8(&query_str).unwrap()));
 
     let routes = get_query.or(post_query).or(ws).or(index);
-    warp::serve(routes).run(([127, 0, 0, 1], 8082)).await;
+    let addr = IpAddr::from_str("::0").unwrap();
+    warp::serve(routes).run((addr, 8082)).await;
 }

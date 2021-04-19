@@ -55,6 +55,17 @@ $ cargo run --release --bin noodle-webapp
 This launches the Noodle server bound to http://localhost:8082
 
 
+### Deploy to fly.io
+
+```
+$ flyctl launch
+```
+
+This will create & launch a [fly.io](https://fly.io/docs/introduction/) application (named `noodle`).
+
+(Although fly.io is a bit overkill as a hosting provider, they have a generous & easy-to-use free tier.)
+
+
 ## Noodle Queries
 
 See [Noodle Help](static/help.md). (TODO)

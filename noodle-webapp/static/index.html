@@ -182,7 +182,8 @@
                 var inputText = "#dict " + wordlist.value + "\n" + input.value;
                 window.location.hash = "#" + encodeURI(input.value);
 
-                var ws = new WebSocket("ws://" + window.location.host + "/ws");
+                var protocol = window.location.protocol == "https:" ? "wss:" : "ws:";
+                var ws = new WebSocket(protocol + "//" + window.location.host + "/ws");
                 window.ws = ws;
                 ws.onopen = function(ev) {
                     statusDiv.innerText = "Connected to Noodle server...";
