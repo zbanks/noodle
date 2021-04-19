@@ -1,4 +1,4 @@
-use crate::bitset::{BitSet1D, BitSet3D, BitSetRef1D, BitSetRefMut1D};
+use crate::bitset::{BitSet1D, BitSet3D, BitSetRef1D, BitSetRef2D, BitSetRefMut1D, BitSetRefMut2D};
 use crate::parser;
 use crate::words::{Char, CharBitset};
 use std::fmt;
@@ -410,13 +410,76 @@ impl Expression {
         self.states[state_index].epsilon_states_bitset()
     }
 
+    /// TODO
+    fn advance_table_one_state(
+        &self,
+        char_bitset: CharBitset,
+        prev_table_fuzz_dst: BitSetRef2D,
+        mut next_table_fuzz_dst: BitSetRefMut2D,
+    ) -> bool {
+        let mut all_fuzz_are_empty = true;
+        // RUNTIME: O(fuzz * states^2)
+        for fuzz_index in 0..=self.fuzz {
+            let state_transitions = prev_table_fuzz_dst.slice(fuzz_index);
+            let mut next_state_transitions = next_table_fuzz_dst.slice_mut(fuzz_index);
+
+            // RUNTIME: O(states^2)
+            if state_transitions.is_empty() {
+                next_state_transitions.clear();
+            } else {
+                next_state_transitions.copy_from(
+                    self.char_transitions(char_bitset, state_transitions)
+                        .slice(()),
+                );
+                all_fuzz_are_empty = false;
+            }
+        }
+        if all_fuzz_are_empty {
+            return true;
+        }
+
+        // For a fuzzy match, expand `next_state_table[fi+1]` by adding all states
+        // reachable from `state_table[f]` *but* with a 1-character change to `chars`
+        // RUNTIME: O(fuzz * states^2)
+        let mut fuzz_superset = BitSet1D::new((), self.states.len());
+        for fuzz_index in 0..self.fuzz {
+            let state_transitions = prev_table_fuzz_dst.slice(fuzz_index);
+            let mut fuzzed_next_state_transitions = next_table_fuzz_dst.slice_mut(fuzz_index + 1);
+
+            if state_transitions.is_empty() {
+                continue;
+            }
+
+            // Deletion
+            fuzzed_next_state_transitions.union_with(state_transitions);
+
+            // Change
+            let change_set_group = self.char_transitions(CharBitset::LETTERS, state_transitions);
+            let change_set = change_set_group.slice(());
+            fuzzed_next_state_transitions.union_with(change_set);
+
+            // Insertion
+            let insertion_set_group = self.char_transitions(char_bitset, change_set);
+            let insertion_set = insertion_set_group.slice(());
+            fuzzed_next_state_transitions.union_with(insertion_set);
+
+            // Optimization: discard the states we can get to with less fuzz
+            fuzzed_next_state_transitions.difference_with(fuzz_superset.borrow());
+            fuzz_superset
+                .borrow_mut()
+                .union_with(fuzzed_next_state_transitions.reborrow());
+        }
+
+        false
+    }
+
     /// Populate a state transition table for a given word
     ///
-    /// The transition table has dimensions: `[char][from_state][fuzz][to_state]`,
+    /// The transition table has dimensions: `[char][src_state][fuzz][dst_state]`,
     /// with the given bit set if the slice `word[..char]` can transition starting
-    /// from `from_state` to `to_state` with at most `fuzz` fuzz
+    /// from `src_state` to `dst_state` with at most `fuzz` fuzz
     ///
-    /// If `[c][from][fuzz][to]` is set, `[c][from][fuzz+1][to]` is *always unset*,
+    /// If `[c][src][fuzz][dst]` is set, `[c][src][fuzz+1][dst]` is *always unset*,
     /// to optimize future searches.
     ///
     /// This function does not initialize the transition table. When starting a word,
@@ -428,87 +491,43 @@ impl Expression {
     pub fn fill_transition_table(
         &self,
         chars: &[Char],
-        transition_table: &mut [BitSet3D],
+        only_initial_state: bool,
+        table_char_src_fuzz_dst: &mut [BitSet3D],
     ) -> usize {
-        debug_assert!(transition_table.len() > chars.len());
+        debug_assert!(table_char_src_fuzz_dst.len() > chars.len());
 
         // RUNTIME: O(chars * fuzz * states^3)
         for (char_index, &chr) in chars.iter().enumerate() {
-            let char_bitset = CharBitset::from(chr);
-            let mut all_states_are_empty = true;
-
-            let (lower_table, upper_table) = transition_table.split_at_mut(char_index + 1);
+            let (lower_table, upper_table) = table_char_src_fuzz_dst.split_at_mut(char_index + 1);
+            let prev_table_src_fuzz_dst = &lower_table[char_index];
+            let next_table_src_fuzz_dst = &mut upper_table[0];
 
             if (self.ignore_word_boundaries && chr == Char::WORD_END)
                 || (self.ignore_punctuation && chr == Char::PUNCTUATION)
             {
-                upper_table[0]
+                next_table_src_fuzz_dst
                     .borrow_mut()
-                    .copy_from(lower_table[char_index].borrow());
+                    .copy_from(prev_table_src_fuzz_dst.borrow());
                 continue;
             }
 
             // Consume 1 character from the buffer and compute the set of possible resulting states
             // RUNTIME: O(fuzz * states^3)
-            for state_index in 0..self.states.len() {
-                let mut all_fuzz_are_empty = true;
-                // RUNTIME: O(fuzz * states^2)
-                for fuzz_index in 0..=self.fuzz {
-                    let state_transitions =
-                        lower_table[char_index].slice((state_index, fuzz_index));
-                    let mut next_state_transitions =
-                        upper_table[0].slice_mut((state_index, fuzz_index));
+            let mut all_states_are_empty = true;
+            let char_bitset = CharBitset::from(chr);
+            let state_range = if only_initial_state {
+                0..1
+            } else {
+                0..self.states.len()
+            };
 
-                    // RUNTIME: O(states^2)
-                    if state_transitions.is_empty() {
-                        next_state_transitions.clear();
-                    } else {
-                        next_state_transitions.copy_from(
-                            self.char_transitions(char_bitset, state_transitions)
-                                .slice(()),
-                        );
-                        all_fuzz_are_empty = false;
-                    }
-                }
-                if all_fuzz_are_empty {
-                    continue;
-                }
-                all_states_are_empty = false;
-
-                // For a fuzzy match, expand `next_state_table[fi+1]` by adding all states
-                // reachable from `state_table[f]` *but* with a 1-character change to `chars`
-                // RUNTIME: O(fuzz * states^2)
-                let mut fuzz_superset = BitSet1D::new((), self.states.len());
-                for fuzz_index in 0..self.fuzz {
-                    let state_transitions =
-                        lower_table[char_index].slice((state_index, fuzz_index));
-                    let mut fuzzed_next_state_transitions =
-                        upper_table[0].slice_mut((state_index, fuzz_index + 1));
-
-                    if state_transitions.is_empty() {
-                        continue;
-                    }
-
-                    // Deletion
-                    fuzzed_next_state_transitions.union_with(state_transitions);
-
-                    // Change
-                    let change_set_group =
-                        self.char_transitions(CharBitset::LETTERS, state_transitions);
-                    let change_set = change_set_group.slice(());
-                    fuzzed_next_state_transitions.union_with(change_set);
-
-                    // Insertion
-                    let insertion_set_group = self.char_transitions(char_bitset, change_set);
-                    let insertion_set = insertion_set_group.slice(());
-                    fuzzed_next_state_transitions.union_with(insertion_set);
-
-                    // Optimization: discard the states we can get to with less fuzz
-                    fuzzed_next_state_transitions.difference_with(fuzz_superset.borrow());
-                    fuzz_superset
-                        .borrow_mut()
-                        .union_with(fuzzed_next_state_transitions.reborrow());
-                }
+            for state_index in state_range {
+                let all_empty = self.advance_table_one_state(
+                    char_bitset,
+                    prev_table_src_fuzz_dst.slice2d(state_index),
+                    next_table_src_fuzz_dst.slice2d_mut(state_index),
+                );
+                all_states_are_empty = all_states_are_empty && all_empty;
             }
             if all_states_are_empty {
                 return char_index;

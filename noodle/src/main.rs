@@ -4,6 +4,7 @@ use std::time;
 fn main() {
     let start = time::Instant::now();
     let words = load_wordlist("/usr/share/dict/words").unwrap();
+    //let words = load_wordlist("/home/zbanks/noodle/consolidated.txt").unwrap();
     let mut wordlist: Vec<&Word> = words.iter().collect();
     wordlist.sort();
     println!(" === Time to load wordlist: {:?} ===", start.elapsed());

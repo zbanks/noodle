@@ -22,8 +22,9 @@ pub struct QueryEvaluator<'word> {
     results_count: usize,
 }
 
-/// Evaluating a query goes through three separate phases:
-///  - Single word matches (while simultaneously populating the PhraseMatcher datastructure)
+/// Evaluating a query goes through four separate phases:
+///  - Single word matches
+///  - Preparing for phrase matches
 ///  - Phrase matches
 ///  - Done
 enum QueryPhase<'word> {
@@ -33,8 +34,18 @@ enum QueryPhase<'word> {
 
         /// The input wordlist (unfiltered)
         wordlist: &'word [&'word Word],
+
+        /// Current progress through the input wordlist
+        word_index: usize,
     },
-    /// Phase 2, multi-word phrases
+    /// Phase 1, prepare for multi-word phrases
+    PreparePhrase {
+        matchers: Vec<WordMatcher<'word>>,
+
+        /// The input wordlist (unfiltered)
+        wordlist: &'word [&'word Word],
+    },
+    /// Phase 3, multi-word phrases
     Phrase {
         matchers: Vec<PhraseMatcher>,
 
@@ -57,7 +68,7 @@ enum QueryPhase<'word> {
         /// based on the size/value of the `search_queue`. (See `search_estimate`)
         initial_search_estimate: u32,
     },
-    /// Phase 3, done!
+    /// Phase 4, done!
     Done,
 }
 
@@ -124,6 +135,7 @@ impl<'word> QueryEvaluator<'word> {
             phase: QueryPhase::Word {
                 matchers: word_matchers,
                 wordlist: input_wordlist,
+                word_index: 0,
             },
             search_depth_limit,
             results_limit,
@@ -174,6 +186,9 @@ impl<'word> QueryEvaluator<'word> {
     pub fn expressions(&self) -> Vec<&Expression> {
         match &self.phase {
             QueryPhase::Word { matchers, .. } => matchers.iter().map(|m| m.expression()).collect(),
+            QueryPhase::PreparePhrase { matchers, .. } => {
+                matchers.iter().map(|m| m.expression()).collect()
+            }
             QueryPhase::Phrase { matchers, .. } => matchers.iter().map(|m| &m.expression).collect(),
             QueryPhase::Done => vec![],
         }
@@ -181,7 +196,19 @@ impl<'word> QueryEvaluator<'word> {
 
     pub fn progress(&self) -> String {
         match &self.phase {
-            QueryPhase::Word { matchers, wordlist } => matchers[0].progress(wordlist),
+            QueryPhase::Word {
+                matchers: _,
+                wordlist,
+                word_index,
+            } => {
+                format!(
+                    "Phase 1: {}/{} ({}%)",
+                    word_index,
+                    wordlist.len(),
+                    100 * word_index / wordlist.len()
+                )
+            }
+            QueryPhase::PreparePhrase { matchers, wordlist } => matchers[0].progress(wordlist),
             QueryPhase::Phrase {
                 search_layers,
                 search_queue,
@@ -210,7 +237,9 @@ impl<'word> QueryEvaluator<'word> {
     }
 
     pub fn next_within_deadline(&mut self, deadline: Option<Instant>) -> QueryResponse {
-        if self.results_limit.is_some() && self.results_count >= self.results_limit.unwrap() && !matches!(self.phase, QueryPhase::Done)
+        if self.results_limit.is_some()
+            && self.results_count >= self.results_limit.unwrap()
+            && !matches!(self.phase, QueryPhase::Done)
         {
             self.phase = QueryPhase::Done;
             return QueryResponse::Complete(format!(
@@ -220,26 +249,68 @@ impl<'word> QueryEvaluator<'word> {
         }
 
         match &mut self.phase {
-            QueryPhase::Word { matchers, wordlist } => {
+            QueryPhase::Word {
+                matchers,
+                wordlist,
+                word_index,
+            } => {
+                while *word_index < wordlist.len() {
+                    let word = wordlist[*word_index];
+                    *word_index += 1;
+
+                    let mut is_match = true;
+                    for matcher in matchers.iter_mut() {
+                        if !matcher.is_word_match(word) {
+                            is_match = false;
+                            break;
+                        }
+                    }
+                    if !is_match {
+                        continue;
+                    }
+
+                    self.results_count += 1;
+                    return QueryResponse::Match(vec![word.clone()]);
+                }
+
+                // Move `matchers` & `wordlist` into the new `QueryPhase::PreparePhrase`
+                let next_phase = QueryPhase::PreparePhrase {
+                    matchers: vec![],
+                    wordlist,
+                };
+                let prev_phase = std::mem::replace(&mut self.phase, next_phase);
+                if let QueryPhase::Word { matchers, .. } = prev_phase {
+                    if let QueryPhase::PreparePhrase {
+                        matchers: new_matchers,
+                        ..
+                    } = &mut self.phase
+                    {
+                        *new_matchers = matchers;
+                    } else {
+                        unreachable!();
+                    }
+                } else {
+                    unreachable!();
+                }
+
+                println!("finished single-word phase");
+                return QueryResponse::Logs(vec!["Finished single-word phase".to_string()]);
+            }
+            QueryPhase::PreparePhrase { matchers, wordlist } => {
                 // Check for single-word matches
                 let (first_matcher, remaining_matchers) = matchers.split_at_mut(1);
 
                 // Iterate over every word which satisfies the first matcher...
-                while let Some(word) = first_matcher[0].next_single_word(wordlist, deadline) {
+                while first_matcher[0]
+                    .next_single_word(wordlist, deadline)
+                    .is_some()
+                {
                     // ...then have all of the remaining matchers consume the (growing) `alive_wordlist`
                     // The `alive_wordlist` of matcher `i` is fed into matcher `i+1`
                     let mut wordlist = &first_matcher[0].alive_wordlist;
-                    let mut all_match = true;
                     for matcher in remaining_matchers.iter_mut() {
-                        let last_word = matcher.iter(wordlist, None).last();
-                        all_match = all_match && (last_word == Some(word));
+                        let _ = matcher.iter(wordlist, None).last();
                         wordlist = &matcher.alive_wordlist;
-                    }
-
-                    // A single word is match if it is returned by every matcher's iterator
-                    if all_match {
-                        self.results_count += 1;
-                        return QueryResponse::Match(vec![word.clone()]);
                     }
                 }
                 if deadline.is_some() && Some(Instant::now()) > deadline {

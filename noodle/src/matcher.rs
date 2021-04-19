@@ -51,6 +51,7 @@ pub struct WordMatcher<'word> {
     // `table_char_src_fuzz_dst` are valid, and correspond to the
     // possible state transitions from evaluating the `Char`s in this array.
     table_chars: &'word [Char],
+    table_has_all_src_states: bool,
 
     // Tracks progress through evalutating the input wordlist.
     // Starts at `0`, and goes up to `input_wordlist.len()`.
@@ -139,6 +140,7 @@ impl<'word> WordMatcher<'word> {
             alive_wordlist: vec![],
             table_char_src_fuzz_dst,
             table_chars: &[],
+            table_has_all_src_states: false,
         }
     }
 
@@ -156,7 +158,7 @@ impl<'word> WordMatcher<'word> {
 
     pub fn progress(&self, wordlist: &[&'word Word]) -> String {
         format!(
-            "Single-word matches: {}/{} ({}%)",
+            "Preparing for phrases: {}/{} ({}%)",
             self.word_index,
             wordlist.len(),
             100 * self.word_index / wordlist.len()
@@ -172,9 +174,63 @@ impl<'word> WordMatcher<'word> {
     }
 
     /// TODO
-    //pub fn is_word_match(&self, word: &'word Word) -> bool {
-    //    false
-    //}
+    pub fn is_word_match(&mut self, word: &'word Word) -> bool {
+        let states_len = self.phrase_matcher.states_len;
+
+        // Find the common prefix with the last word we processed
+        let word_len = word.chars.len();
+        let mut prefix_len: usize = 0;
+        while prefix_len < word_len
+            && prefix_len < self.table_chars.len()
+            && word.chars[prefix_len] == self.table_chars[prefix_len]
+        {
+            prefix_len += 1;
+        }
+
+        // Populate the transition table for the new word, re-using the previous values for the
+        // common prefix
+        // (Here, "prefixed" refers to the *uncommon suffix*)
+        let prefixed_chars = &word.chars[prefix_len..];
+        let prefixed_table = &mut self.table_char_src_fuzz_dst[prefix_len..];
+
+        // If there is no common prefix, clear the table & populate with initial state
+        if prefix_len == 0 {
+            prefixed_table[0].borrow_mut().clear();
+            for src in 0..states_len {
+                // After consuming 0 chars (and 0 fuzz), the only states reachable from state
+                // `src` are its epsilon transitions
+                prefixed_table[0]
+                    .slice_mut((src, 0))
+                    .union_with(self.phrase_matcher.expression.epsilon_states(src));
+            }
+        }
+
+        // Fill the table, but this can return early if the chars are not a match
+        // `partial_len` refers to how many chars are at least a partial match
+        let partial_len = prefix_len
+            + self.phrase_matcher.expression.fill_transition_table(
+                prefixed_chars,
+                false,
+                prefixed_table,
+            );
+
+        self.table_chars = &word.chars[0..partial_len];
+        self.table_has_all_src_states = false;
+        if partial_len < word_len {
+            return false;
+        }
+        assert_eq!(partial_len, word_len);
+
+        for f in 0..self.phrase_matcher.fuzz_limit {
+            if self.table_char_src_fuzz_dst[word_len]
+                .slice((0, f))
+                .contains(states_len - 1)
+            {
+                return true;
+            }
+        }
+        false
+    }
 
     /// Find the next word in `wordlist` that matches the target expression, or `None` if the
     /// `deadline` is exceeded.
@@ -211,6 +267,7 @@ impl<'word> WordMatcher<'word> {
             while prefix_len < word_len
                 && prefix_len < self.table_chars.len()
                 && word.chars[prefix_len] == self.table_chars[prefix_len]
+                && self.table_has_all_src_states
             {
                 prefix_len += 1;
             }
@@ -236,12 +293,14 @@ impl<'word> WordMatcher<'word> {
             // Fill the table, but this can return early if the chars are not a match
             // `partial_len` refers to how many chars are at least a partial match
             let partial_len = prefix_len
-                + self
-                    .phrase_matcher
-                    .expression
-                    .fill_transition_table(prefixed_chars, prefixed_table);
+                + self.phrase_matcher.expression.fill_transition_table(
+                    prefixed_chars,
+                    false,
+                    prefixed_table,
+                );
 
             self.table_chars = &word.chars[0..partial_len];
+            self.table_has_all_src_states = true;
             if partial_len < word_len {
                 continue;
             }
