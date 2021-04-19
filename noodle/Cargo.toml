@@ -5,6 +5,10 @@ authors = ["Zach Banks <zjbanks@gmail.com>"]
 edition = "2018"
 license = "MIT"
 
+[[bin]]
+name = "noodle-example"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0"
 indexmap = "1.6.2"

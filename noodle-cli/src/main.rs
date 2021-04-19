@@ -1,11 +1,11 @@
+use noodle::{load_wordlist, parser, QueryEvaluator, QueryResponse, Word};
 use std::path::PathBuf;
 use structopt::StructOpt;
-use noodle::{load_wordlist, parser, QueryEvaluator, QueryResponse, Word};
 
 const DEFAULT_WORDLIST_FILE: &str = "/usr/share/dict/words";
 
 #[derive(Debug, StructOpt)]
-#[structopt(name="noodle")]
+#[structopt(name = "noodle")]
 struct Opt {
     /// Input wordlist file
     #[structopt(short, long, parse(from_os_str), default_value=DEFAULT_WORDLIST_FILE)]
@@ -16,7 +16,7 @@ struct Opt {
     count: Option<usize>,
 
     /// Maximum number of words to combine to make a matching phrase
-    #[structopt(short = "m", long, default_value="10")]
+    #[structopt(short = "m", long, default_value = "10")]
     phrase_length: usize,
 
     /// Noodle query string
@@ -39,9 +39,16 @@ fn main() {
     for result in evaluator {
         match result {
             QueryResponse::Match(phrase) => {
-                println!("{}", phrase.into_iter().map(|w| w.text).collect::<Vec<_>>().join(" "));
-            },
-            _ => {},
+                println!(
+                    "{}",
+                    phrase
+                        .into_iter()
+                        .map(|w| w.text)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                );
+            }
+            _ => {}
         };
     }
 }
