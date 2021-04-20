@@ -158,14 +158,7 @@ pub struct Word {
 }
 
 impl Word {
-    pub fn new(text: &str) -> Self {
-        let mut tranche = match text.len() {
-            12..=1000 => 0,
-            4..=11 => 1,
-            _ => 2,
-        };
-        tranche += (!text.chars().all(|c| c.is_ascii_lowercase())) as Tranche;
-
+    pub fn new(text: &str, tranche: Tranche) -> Self {
         Word {
             text: text.into(),
             chars: text
@@ -197,18 +190,41 @@ where
     P: AsRef<std::path::Path>,
 {
     // TODO: Correctly propagate errors
+    // TODO: Include tranche values in the wordlist file, rather than making them up
     let file = std::fs::File::open(filename).unwrap();
     let lines = io::BufReader::new(file).lines();
+
+    const INITIAL_TRANCHE_SIZE: usize = 10000;
+    let mut tranche_size: usize = INITIAL_TRANCHE_SIZE;
+    let mut tranche_count: usize = 0;
+    let mut tranche: Tranche = 0;
+
     let mut wordlist: Vec<_> = lines
         .filter_map(|line| line.ok())
         .filter_map(|line| {
             if line.len() > 1 || line == "I" || line == "a" {
-                Some(Word::new(&line))
+                // Bump words which aren't strictly ASCII lowercase into the next tranche
+                let t = tranche + (!line.chars().all(|c| c.is_ascii_lowercase())) as Tranche;
+
+                tranche_count += 1;
+                if tranche_count > tranche_size {
+                    // Make each tranche 150% the size of the previous one
+                    tranche_size += tranche_size / 2;
+                    tranche_count = 0;
+                    tranche += 1;
+                }
+
+                Some(Word::new(&line, t))
             } else {
                 None
             }
         })
         .collect();
     wordlist.sort();
+    println!(
+        "Loaded {} words with {} tranches",
+        wordlist.len(),
+        tranche + 1
+    );
     Ok(wordlist)
 }

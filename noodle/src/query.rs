@@ -210,7 +210,9 @@ impl<'word> QueryEvaluator<'word> {
     }
 
     pub fn next_within_deadline(&mut self, deadline: Option<Instant>) -> QueryResponse {
-        if self.results_limit.is_some() && self.results_count >= self.results_limit.unwrap() && !matches!(self.phase, QueryPhase::Done)
+        if self.results_limit.is_some()
+            && self.results_count >= self.results_limit.unwrap()
+            && !matches!(self.phase, QueryPhase::Done)
         {
             self.phase = QueryPhase::Done;
             return QueryResponse::Complete(format!(

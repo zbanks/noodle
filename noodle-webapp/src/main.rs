@@ -3,10 +3,10 @@ use futures::task::Poll;
 use futures::{future, poll, stream, SinkExt, Stream, StreamExt};
 use noodle::{load_wordlist, parser, QueryEvaluator, QueryResponse, Word};
 use serde::Serialize;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
 use std::net::IpAddr;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 use warp::ws::Message;
 use warp::Filter;
 
