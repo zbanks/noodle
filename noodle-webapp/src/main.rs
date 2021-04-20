@@ -83,7 +83,10 @@ fn run_query_sync(query_str: &str, plaintext: bool) -> http::Result<http::Respon
     };
     let query_ast = parser::QueryAst::new_from_str(query_str);
     let body = match query_ast {
-        Ok(query_ast) => {
+        Ok(mut query_ast) => {
+            if plaintext && query_ast.options.results_limit.is_none() {
+                query_ast.options.results_limit = Some(15);
+            }
             let evaluator = QueryEvaluator::from_ast(&query_ast, &WORDLIST).filter_map(move |m| {
                 if let QueryResponse::Match(p) = m {
                     if plaintext {
@@ -96,7 +99,8 @@ fn run_query_sync(query_str: &str, plaintext: bool) -> http::Result<http::Respon
                     None
                 }
             });
-            let response_stream = stream::iter(evaluator.map(Ok));
+            let response_stream = stream::iter(evaluator.map(Ok))
+                .chain(stream::once(future::ready(Err("".to_string()))));
 
             let timeout_stream = stream::once(tokio::time::sleep(timeout))
                 .map(move |_| Err(format!("# Timeout after {:?}", timeout)));

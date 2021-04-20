@@ -68,7 +68,7 @@ This will create & launch a [fly.io](https://fly.io/docs/introduction/) applicat
 
 ## Noodle Queries
 
-See [Noodle Help](static/help.md). (TODO)
+See [Noodle Help](noodle-webapp/static/help.md). (TODO)
 
 ## To Do
 
@@ -85,7 +85,6 @@ See [Noodle Help](static/help.md). (TODO)
 - "Inverse" NX expressions? ("does not match") -- (this is hard with NFAs)
 - Fuzzy matching + anagrams are weak; add post filter
 - Python library
-- CLI tool
 
 ## License
 

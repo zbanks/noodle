@@ -165,7 +165,7 @@
 <pre><code>=IMPORTDATA(CONCAT(&quot;https://noodle.fly.dev/query/&quot;, ENCODEURL(&quot;yourqueryhere&quot;)))
 </code></pre>
 <p>You can wrap it in <code>TRANSPOSE(...)</code> to have it fill out horizontally instead of vertically.</p>
-<p>For <code>GET</code> requests like this, headers/progress are suppressed and the default results limit is lowered to 15 (this can be changed with <code>#limit</code>).</p>
+<p>For <code>GET</code> requests like this, the timeout is lowered to 10 seconds, and default results limit is lowered to 15 (this can be changed with <code>#limit</code>).</p>
 <!-- end help -->
             </div>
         </div>
