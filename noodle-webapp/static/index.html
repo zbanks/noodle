@@ -96,9 +96,11 @@
                         <li><a class="example">&lt;smiles&gt;; .*ss.*</a></li>
                         <li><a class="example">ahumongoussentencewithmultiplewords</a></li>
                         <li><a class="example">ahumongoussentincewithmultiplewords !' !1</a></li>
-                        <li><a class="example">3 3 8 7; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:?) !'</a></li>
+                        <li><a class="example">3 3 8 7; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:-) !'</a></li>
                         <li><a class="example">hen !1; hay !1</a></li>
                         <li><a class="example">breadfast !2</a></li>
+                        <li><a class="example">.{8}pi.{6} !_</a></li>
+                        <li><a class="example">.*cat.*; (string:+); 10</a></li>
                     </ul>
                 </div>
             </div>
@@ -141,7 +143,8 @@
 <li><code>&lt;abcd+3&gt;</code> -- <strong>transadd</strong> of <code>3</code> to <code>abcd</code>: rearranging <em>all</em> of the given letters <em>plus</em> <code>N</code> wildcards</li>
 <li><code>&lt;abcd-&gt;</code> -- <strong>subanagram</strong> of <code>abcd</code>: rearranging <em>at most</em> the given letters</li>
 <li><code>&lt;abcd-1&gt;</code> -- <strong>transdelete</strong> of <code>3</code> to <code>abcd</code>: rerranging <em>all but <code>N</code></em> of the given letters</li>
-<li><code>(abcd:?)</code> -- <strong>partial</strong> of <code>abcd</code>: contained within a subset of the given letters, in the same order</li>
+<li><code>(abcd:-)</code> -- <strong>subset</strong> of <code>abcd</code>: contained within a <em>subset</em> of the given letters, in the same order</li>
+<li><code>(abcd:+)</code> -- <strong>superset</strong> of <code>abcd</code>: contains the <em>superset</em> of the given letters, in the same order</li>
 </ul>
 <p>Anagram constraints are not compatible with fuzzy matching, and may result in false positives (but not false negatives!).</p>
 <h3 id="enumerations">Enumerations</h3>
@@ -154,7 +157,7 @@
 <p>Fuzzy matching can make queries take much longer, so it works best when there are additional constraints.</p>
 <h4 id="fuzzy-caveats">Fuzzy Caveats</h4>
 <p>If there are multiple constraints with fuzzy matching, the edits between expressions may not be consistent. For example, <code>&quot;hey&quot;</code> will match the query <code>&quot;hen !1; hay !1&quot;</code> even though the edits <em>to get to</em> &quot;hen&quot; or &quot;hay&quot; are different.</p>
-<p>Anagram-like constraints (&quot;<code>&lt;...&gt;</code>&quot;) are incompatible with fuzzy matching, and may produce false positives.</p>
+<p>Anagram-like constraints (&quot;<code>&lt;…&gt;</code>&quot;) are incompatible with fuzzy matching, and may produce false positives.</p>
 <h3 id="directives">Directives</h3>
 <p>There are a few special directives for modifying how the whole query operates. They all start with <code>#</code>:</p>
 <ul class="incremental">
@@ -177,7 +180,6 @@
 <p>You can separate mutli-line queries with semicolons (<code>;</code>) instead of newlines.</p>
 <p>For <code>GET</code> requests like this, the timeout is lowered, default results limit is lowered to 15 (this can be changed with <code>#limit</code>).</p>
 <!-- end help -->
-
             </div>
         </div>
         <script type="text/javascript">

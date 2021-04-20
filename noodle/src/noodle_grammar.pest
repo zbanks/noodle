@@ -25,7 +25,8 @@ superanagram = { "<" ~ anagram_body ~ "+>" }
 subanagram = { "<" ~ anagram_body ~ "->" }
 transadd = { "<" ~ anagram_body ~ "+" ~ number ~ ">" }
 transdelete = { "<" ~ anagram_body ~ "-" ~ number ~ ">" }
-partial_group = { "(" ~ term+ ~ ":?)" }
+subset_group = { "(" ~ term+ ~ ":-)" }
+superset_group = { "(" ~ term+ ~ ":+)" }
 
 repeat_optional = { term ~ "?" }
 repeat_any = { term ~ "*" }
@@ -46,7 +47,8 @@ term = _{
     | subanagram
     | transadd
     | transdelete
-    | partial_group
+    | subset_group
+    | superset_group
     | number
     | character
 }
@@ -69,7 +71,7 @@ option = _{ option_word_boundaries | option_punctuation | option_fuzz }
 
 expression = { SOI ~ subexpression ~ (option)* ~ EOI }
 
-macro_name = { ASCII_ALPHA ~ (ASCII_ALPHA | ASCII_DIGIT | "_")+ }
+macro_name = { ASCII_ALPHA ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
 macro_value = { (' '..'~')* } // Nearly any ASCII character
 macro_define = { SOI ~ macro_name ~ "=" ~ macro_value ~ EOI }
 

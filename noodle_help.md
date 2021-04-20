@@ -45,7 +45,8 @@ Noodle has additional support for anagram-like constriants with angle bracket sy
 - `<abcd+3>` -- **transadd** of `3` to `abcd`: rearranging *all* of the given letters *plus* `N` wildcards
 - `<abcd->` -- **subanagram** of `abcd`: rearranging *at most* the given letters
 - `<abcd-1>` -- **transdelete** of `3` to `abcd`: rerranging *all but `N`* of the given letters
-- `(abcd:?)` -- **partial** of `abcd`: contained within a subset of the given letters, in the same order
+- `(abcd:-)` -- **subset** of `abcd`: contained within a *subset* of the given letters, in the same order
+- `(abcd:+)` -- **superset** of `abcd`: contains the *superset* of the given letters, in the same order
 
 Anagram constraints are not compatible with fuzzy matching, and may result in false positives (but not false negatives!).
 
@@ -69,7 +70,7 @@ Fuzzy matching can make queries take much longer, so it works best when there ar
 
 If there are multiple constraints with fuzzy matching, the edits between expressions may not be consistent. For example, `"hey"` will match the query `"hen !1; hay !1"` even though the edits *to get to* "hen" or "hay" are different.
 
-Anagram-like constraints ("`<...>`") are incompatible with fuzzy matching, and may produce false positives.
+Anagram-like constraints ("`<…>`") are incompatible with fuzzy matching, and may produce false positives.
 
 ### Directives
 

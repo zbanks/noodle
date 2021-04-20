@@ -126,6 +126,8 @@ impl fmt::Debug for CharBitset {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if *self == Self::LETTERS {
             return write!(f, ".");
+        } else if *self == Self::ALL {
+            return write!(f, "[a-z_']");
         }
         let ones = self.0.count_ones();
         if ones == 0 {

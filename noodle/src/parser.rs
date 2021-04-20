@@ -503,7 +503,7 @@ fn parse_term(pair: Pair<Rule>) -> Option<Ast> {
             }
             Some(Ast::CharClass(bitset))
         }
-        Rule::partial_group => Some(Ast::Sequence(
+        Rule::subset_group => Some(Ast::Sequence(
             pair.into_inner()
                 .filter_map(parse_term)
                 .map(|c| Ast::Repetition {
@@ -511,6 +511,27 @@ fn parse_term(pair: Pair<Rule>) -> Option<Ast> {
                     min: 0,
                     max: Some(1),
                 })
+                .collect(),
+        )),
+        Rule::superset_group => Some(Ast::Sequence(
+            pair.into_inner()
+                .filter_map(parse_term)
+                .flat_map(|c| {
+                    vec![
+                        c,
+                        Ast::Repetition {
+                            term: Box::new(Ast::CharClass(CharBitset::ALL)),
+                            min: 0,
+                            max: None,
+                        },
+                    ]
+                    .into_iter()
+                })
+                .chain(std::iter::once(Ast::Repetition {
+                    term: Box::new(Ast::CharClass(CharBitset::ALL)),
+                    min: 0,
+                    max: None,
+                }))
                 .collect(),
         )),
         Rule::group => Some(Ast::Sequence(
