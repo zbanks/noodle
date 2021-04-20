@@ -68,7 +68,7 @@ This will create & launch a [fly.io](https://fly.io/docs/introduction/) applicat
 
 ## Noodle Queries
 
-See [Noodle Help](noodle-webapp/static/help.md). (TODO)
+See [Noodle Help](noodle_help.md).
 
 ## To Do
 

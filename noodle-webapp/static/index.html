@@ -1,6 +1,7 @@
 <!doctype html>
-<html>
+<html lang="en">
     <head>
+        <meta charset="utf-8"/>
         <title>Noodle</title>
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -111,9 +112,8 @@
             </div>
             <div class="column">
                 <h2>Help</h2>
-<!-- generated from `pandoc help.md` -->
-
-<h3>Basics</h3>
+<!-- generated from `pandoc noodle_help.md` -->
+<h3 id="basics">Basics</h3>
 <p>Specify filters in the input textbox. Each line is treated as a <em>noodle expression</em>. You can specify multiple expressions, and only results that match <em>all</em> expressions are returned.</p>
 <p>The query runs until one of the following:</p>
 <ul class="incremental">
@@ -122,13 +122,18 @@
 <li><strong>300 seconds</strong> have passed</li>
 <li>The <code>Stop</code> button is pressed</li>
 </ul>
-<h3>Regex features</h3>
-<p>Noodle supports the following regualar expression syntax: <code>[...]</code>, <code>[^...]</code>, <code>.</code>, <code>*</code>, <code>+</code>, <code>?</code>, <code>(...)</code>, <code>|</code>, <code>{...}</code>.</p>
+<h4 id="learn-more">Learn More</h4>
+<p>Noodle is open-source and released under the MIT license.</p>
+<p>Visit <a href="https://github.com/zbanks/noodle">GitHub</a> to fork the code or submit bugs. There is also a command-line version available for running offline/locally.</p>
+<h2 id="noodle-expressions">Noodle Expressions</h2>
+<h3 id="regular-expressions">Regular Expressions</h3>
+<p>Noodle supports the following regular expression syntax: <code>[…]</code>, <code>[^…]</code>, <code>.</code>, <code>*</code>, <code>+</code>, <code>?</code>, <code>(…)</code>, <code>|</code>, <code>{…}</code>.</p>
 <p>Before matching, words are converted to lowercase and stripped of whitespace and non-alphabetical symbols (punctuation, numbers).</p>
-<p>To explicitly match spaces, include &quot;<code>!_</code>&quot; at the end of the expression. When enabled, the matched phrase is surrounded by spaces, and space characters can be explicitly matched with the &quot;<code>_</code>&quot; character.</p>
+<p>To explicitly match spaces, include &quot;<code>!_</code>&quot; at the end of the expression. When enabled, spaces can be explicitly matched with the &quot;<code>_</code>&quot; character.</p>
 <p>To explicitly match other symbols, include &quot;<code>!'</code>&quot; at the end of the expression. When enabled, these symbols can be matched with the &quot;<code>'</code>&quot; character.</p>
 <p>Regardless of setting, and unlike normal regular expressions, the period (&quot;<code>.</code>&quot;) is only equivalent to &quot;<code>[a-z]</code>&quot;. To match <em>any</em> symbol, use &quot;<code>[a-z'_]</code>&quot;.</p>
-<h3>Anagram constraints</h3>
+<p>Noodle expressions do not support backreferences (e.g. &quot;<code>\1</code>&quot;). Additionally, because the input is pre-processed to have a limited alphabet, noodle expressions do not support escape characters, or character classes like &quot;<code>[:alpha:]</code>&quot;.</p>
+<h3 id="anagram-constraints">Anagram constraints</h3>
 <p>Noodle has additional support for anagram-like constriants with angle bracket syntax: <code>&lt;...&gt;</code></p>
 <ul class="incremental">
 <li><code>&lt;abcd&gt;</code> -- <strong>anagram</strong> of <code>abcd</code>: rearranging the given letters</li>
@@ -138,35 +143,41 @@
 <li><code>&lt;abcd-1&gt;</code> -- <strong>transdelete</strong> of <code>3</code> to <code>abcd</code>: rerranging <em>all but <code>N</code></em> of the given letters</li>
 <li><code>(abcd:?)</code> -- <strong>partial</strong> of <code>abcd</code>: contained within a subset of the given letters, in the same order</li>
 </ul>
-<p>Anagram constraints are not compatible with fuzzy matching</p>
-<h3>Fuzzy matching</h3>
+<p>Anagram constraints are not compatible with fuzzy matching, and may result in false positives (but not false negatives!).</p>
+<h3 id="enumerations">Enumerations</h3>
+<p>Bare numbers are a shortcut to define an <em>enumeration</em>.</p>
+<p>The expression <code>3 3 8 7</code> looks for a 4-word phrase, consisting of two 3-letter words, followed by an 8-letter word, then a 7-letter word.</p>
+<h3 id="fuzzy-matching">Fuzzy matching</h3>
 <p>Noodle supports performing <em>fuzzy matching</em> for certain expressions.</p>
 <p>This will find words &amp; phrases that would match within a given <a href="https://en.wikipedia.org/wiki/Levenshtein_distance">edit distance</a> of the expression.</p>
 <p>To allow matches within edit distance 2, include &quot;<code>!2</code>&quot; at the end of the expression.</p>
 <p>Fuzzy matching can make queries take much longer, so it works best when there are additional constraints.</p>
-<h4>Fuzzy Caveats</h4>
-<p>Fuzzy matching will treat internal spaces in phrases as <em>two</em> spaces, leading to a few false positives.</p>
+<h4 id="fuzzy-caveats">Fuzzy Caveats</h4>
 <p>If there are multiple constraints with fuzzy matching, the edits between expressions may not be consistent. For example, <code>&quot;hey&quot;</code> will match the query <code>&quot;hen !1; hay !1&quot;</code> even though the edits <em>to get to</em> &quot;hen&quot; or &quot;hay&quot; are different.</p>
-<p>Anagram-like constraints (&quot;<code>&lt;...&gt;</code>&quot;) may produce false positives when combined with fuzzy matching.</p>
-<h3>Keyboard shortcuts</h3>
+<p>Anagram-like constraints (&quot;<code>&lt;...&gt;</code>&quot;) are incompatible with fuzzy matching, and may produce false positives.</p>
+<h3 id="directives">Directives</h3>
+<p>There are a few special directives for modifying how the whole query operates. They all start with <code>#</code>:</p>
+<ul class="incremental">
+<li><code>#limit &lt;N&gt;</code> -- set the maximum number of results to return. (Example: &quot;<code>#limit 5000</code>&quot;)</li>
+<li><code>#words &lt;N&gt;</code> -- set the maximum number of words to try to combine into a phrase. &quot;<code>#words 1</code>&quot; completely disables phrase matching.</li>
+</ul>
+<!--
+- `#list <default|small|...>` -- set the input wordlist to use (equivalent to the dropdown)
+- `#quiet` -- do not print header/progress information.
+-->
+<h2 id="ui-tips">UI Tips</h2>
+<h3 id="keyboard-shortcuts">Keyboard shortcuts</h3>
 <ul class="incremental">
 <li><code>Ctrl-Enter</code> -- submit query</li>
 </ul>
-<h3>Directives</h3>
-<p>There are a few special directives for modifying how the whole query operates. They all start with <code>#</code>:</p>
-<ul class="incremental">
-<li><code>#limit &lt;N&gt;</code> -- set the maximum number of results to return</li>
-<!-- <li><code>#dict &lt;default|small|...&gt;</code> -- set the input wordlist to use (equivalent to the dropdown)</li> -->
-<li><code>#words &lt;N&gt;</code> -- set the maximum number of words to try to combine into a phrase. <code>#words 1</code> completely bypasses phrase matching.</li>
-<!-- <li><code>#quiet</code> -- do not print header/progress information.</li> -->
-</ul>
-<h3>Google Sheets Integration</h3>
+<h3 id="google-sheets-integration">Google Sheets Integration</h3>
 <p>You can query Noodle directly from Google Sheets! Here's an example formula:</p>
-<pre><code>=IMPORTDATA(CONCAT(&quot;https://noodle.fly.dev/query/&quot;, ENCODEURL(&quot;yourqueryhere&quot;)))
-</code></pre>
+<pre><code>=IMPORTDATA(CONCAT(&quot;https://noodle.fly.dev/query/&quot;, ENCODEURL(&quot;yourqueryhere&quot;)))</code></pre>
 <p>You can wrap it in <code>TRANSPOSE(...)</code> to have it fill out horizontally instead of vertically.</p>
-<p>For <code>GET</code> requests like this, the timeout is lowered to 10 seconds, and default results limit is lowered to 15 (this can be changed with <code>#limit</code>).</p>
+<p>You can separate mutli-line queries with semicolons (<code>;</code>) instead of newlines.</p>
+<p>For <code>GET</code> requests like this, the timeout is lowered, default results limit is lowered to 15 (this can be changed with <code>#limit</code>).</p>
 <!-- end help -->
+
             </div>
         </div>
         <script type="text/javascript">
