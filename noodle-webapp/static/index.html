@@ -23,7 +23,7 @@
                 white-space: pre-wrap;
 
                 margin-top: 10px;
-                margin-bottom: 10px;
+                margin-bottom: 20px;
             }
             #log {
                 font-family: Monospace;
@@ -78,6 +78,14 @@
                     </span>
                     -->
                 </div>
+                <div>
+                    Sort Output
+                    <input type="checkbox" id="sort"></input>
+                    <span style="margin-right: 10px"></span>
+                    Filter Output
+                    <input type="checkbox" id="enable-filter"></input>
+                    <input type="text" id="filter"></input>
+                </div>
                 <div class="examples">
                     <h2>Examples</h2>
                     <ul>
@@ -97,6 +105,8 @@
                 <h2>Output</h2>
                 <div id="status"></div>
                 <div id="output"></div>
+
+                <h2>Debug Logs</h2>
                 <div id="log"></div>
             </div>
             <div class="column">
@@ -109,7 +119,7 @@
 <ul class="incremental">
 <li>The input wordlist is exhausted, combining up to <strong>10 words</strong> into a phrase</li>
 <li><strong>300 results</strong> are returned</li>
-<li><strong>120 seconds</strong> have passed</li>
+<li><strong>300 seconds</strong> have passed</li>
 <li>The <code>Stop</code> button is pressed</li>
 </ul>
 <h3>Regex features</h3>
@@ -146,13 +156,13 @@
 <p>There are a few special directives for modifying how the whole query operates. They all start with <code>#</code>:</p>
 <ul class="incremental">
 <li><code>#limit &lt;N&gt;</code> -- set the maximum number of results to return</li>
-<li><code>#dict &lt;default|small|...&gt;</code> -- set the input wordlist to use (equivalent to the dropdown)</li>
+<!-- <li><code>#dict &lt;default|small|...&gt;</code> -- set the input wordlist to use (equivalent to the dropdown)</li> -->
 <li><code>#words &lt;N&gt;</code> -- set the maximum number of words to try to combine into a phrase. <code>#words 1</code> completely bypasses phrase matching.</li>
-<li><code>#quiet</code> -- do not print header/progress information.</li>
+<!-- <li><code>#quiet</code> -- do not print header/progress information.</li> -->
 </ul>
 <h3>Google Sheets Integration</h3>
 <p>You can query Noodle directly from Google Sheets! Here's an example formula:</p>
-<pre><code>=IMPORTDATA(CONCAT(&quot;https://zbanks.ddns.net/noodle?&quot;, ENCODEURL(&quot;yourqueryhere&quot;)))
+<pre><code>=IMPORTDATA(CONCAT(&quot;https://noodle.fly.dev/query/&quot;, ENCODEURL(&quot;yourqueryhere&quot;)))
 </code></pre>
 <p>You can wrap it in <code>TRANSPOSE(...)</code> to have it fill out horizontally instead of vertically.</p>
 <p>For <code>GET</code> requests like this, headers/progress are suppressed and the default results limit is lowered to 15 (this can be changed with <code>#limit</code>).</p>
@@ -167,9 +177,33 @@
             var logDiv = document.querySelector("#log");
             var input = document.querySelector("#input");
             var wordlist = document.querySelector("#wordlist");
+            var enableFilter = document.querySelector("#enable-filter");
+            var filter = document.querySelector("#filter");
+            var sort = document.querySelector("#sort");
 
             input.value = decodeURI(window.location.hash.substring(1));
+            window.matches = "";
 
+            function rebuildOutput() {
+                if (sort.checked) {
+                    window.matches.sort(function (a, b) { return a.netScore - b.netScore; });
+                } else {
+                    window.matches.sort(function (a, b) { return a.originalOrder - b.originalOrder; });
+                }
+                var filter_regex = null;
+                if (enableFilter.checked) {
+                    filter_regex = new RegExp(filter.value);
+                }
+                outputDiv.innerHTML = "";
+                for (var i = 0; i < window.matches.length; i++) {
+                    if (filter_regex !== null) {
+                        if (!window.matches[i].fullText.match(filter_regex)) {
+                            continue;
+                        }
+                    }
+                    outputDiv.appendChild(window.matches[i].block);
+                }
+            }
             function stop() {
                 if (window.ws) {
                     window.ws.onclose = null;
@@ -182,6 +216,7 @@
                 outputDiv.innerHTML = "";
                 statusDiv.innerText = "Connecting to Noodle server...";
                 logDiv.innerText = "";
+                window.matches = [];
 
                 var inputText = "#dict " + wordlist.value + "\n" + input.value;
                 window.location.hash = "#" + encodeURI(input.value);
@@ -206,11 +241,22 @@
                         block.innerText = data.log.message;
                         logDiv.appendChild(block);
                     } else if (data.match) {
-                        let block = document.createElement("div");
-                        for (var i = 0; i < data.match.phrase.length; i++) {
-                            block.innerText += data.match.phrase[i].text + " ";
+                        let match = data.match;
+                        match.fullText = "";
+                        match.originalOrder = window.matches.length;
+                        match.netScore = 0;
+                        for (var i = 0; i < match.phrase.length; i++) {
+                            match.fullText += match.phrase[i].text + " ";
+                            match.netScore += Math.pow(match.phrase[i].score, 0.5);
                         }
-                        outputDiv.appendChild(block);
+                        match.block = document.createElement("div");
+                        match.block.innerText = match.fullText;
+                        window.matches.push(match);
+
+                        if (!enableFilter.checked || match.fullText.match(new RegExp(filter.value))) {
+                            outputDiv.appendChild(match.block);
+                            sort.checked = false;
+                        }
                     }
                 }
             }
@@ -229,6 +275,12 @@
                     input.value = query;
                     submit();
                 });
+            });
+            sort.addEventListener("input", rebuildOutput);
+            enableFilter.addEventListener("input", rebuildOutput);
+            filter.addEventListener("input", function() {
+                enableFilter.checked = true;
+                rebuildOutput();
             });
         </script>
     </body>

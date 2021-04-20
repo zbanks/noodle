@@ -32,6 +32,7 @@ lazy_static! {
     static ref ACTIVE_QUERIES: AtomicUsize = AtomicUsize::new(0_usize);
 }
 static TIMEOUT: Duration = Duration::from_secs(300);
+static TIMEOUT_PLAINTEXT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -65,7 +66,7 @@ fn flatten_phrase(phrase: Vec<Word>) -> String {
 }
 
 /// Plain HTTP interface, for use with cURL or GSheets IMPORTDATA
-fn run_query_sync(query_str: &str) -> http::Result<http::Response<hyper::Body>> {
+fn run_query_sync(query_str: &str, plaintext: bool) -> http::Result<http::Response<hyper::Body>> {
     // TODO: hyper's implementation of "transfer-encoding: chunked" buffers the results of the
     // iterator, and only flushes every ~24 or so items (as 24 separate chunks, at once).
     // (The flushing is not on a timeout, nor on total data size afaict)
@@ -75,22 +76,30 @@ fn run_query_sync(query_str: &str) -> http::Result<http::Response<hyper::Body>> 
     //
     // TODO: I don't like that this has a lot of the same code as run_websocket,
     // but it's a pain to abstract out streams due to their long types
+    let timeout = if plaintext {
+        TIMEOUT_PLAINTEXT
+    } else {
+        TIMEOUT
+    };
     let query_ast = parser::QueryAst::new_from_str(query_str);
     let body = match query_ast {
         Ok(query_ast) => {
-            let evaluator = QueryEvaluator::from_ast(&query_ast, &WORDLIST)
-                .filter_map(|m| {
-                    if let QueryResponse::Match(p) = m {
-                        Some(p)
+            let evaluator = QueryEvaluator::from_ast(&query_ast, &WORDLIST).filter_map(move |m| {
+                if let QueryResponse::Match(p) = m {
+                    if plaintext {
+                        let words: Vec<_> = p.iter().map(|w| w.text.clone()).collect();
+                        Some(words.join(" "))
                     } else {
-                        None
+                        Some(flatten_phrase(p))
                     }
-                })
-                .map(flatten_phrase);
+                } else {
+                    None
+                }
+            });
             let response_stream = stream::iter(evaluator.map(Ok));
 
-            let timeout_stream = stream::once(tokio::time::sleep(TIMEOUT))
-                .map(|_| Err(format!("# Timeout after {:?}", TIMEOUT)));
+            let timeout_stream = stream::once(tokio::time::sleep(timeout))
+                .map(move |_| Err(format!("# Timeout after {:?}", timeout)));
 
             // TODO: The string building code here is pretty bad
             let result_stream = stream_until_error(stream::select(response_stream, timeout_stream))
@@ -236,14 +245,16 @@ async fn main() {
     // Plain HTTP interface for cURL, GSheets, etc. Available through GET params or POST body
     let get_query = warp::get()
         .and(warp::path("query"))
-        .and(warp::path::param::<String>())
-        .map(|q: String| run_query_sync(&q));
+        .and(warp::path::param())
+        .map(|q: String| run_query_sync(&q, true));
 
     let post_query = warp::post()
         .and(warp::path("query"))
         .and(warp::body::content_length_limit(64 * 1024)) // 64kB
         .and(warp::body::bytes())
-        .map(|query_str: bytes::Bytes| run_query_sync(std::str::from_utf8(&query_str).unwrap()));
+        .map(|query_str: bytes::Bytes| {
+            run_query_sync(std::str::from_utf8(&query_str).unwrap(), false)
+        });
 
     let routes = get_query.or(post_query).or(ws).or(index);
     let addr = IpAddr::from_str("::0").unwrap();

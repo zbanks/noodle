@@ -158,7 +158,7 @@ pub struct Word {
 }
 
 impl Word {
-    pub fn new(text: &str, tranche: Tranche) -> Self {
+    pub fn new(text: &str, tranche: Tranche, score: u32) -> Self {
         Word {
             text: text.into(),
             chars: text
@@ -168,7 +168,7 @@ impl Word {
                 .chain(std::iter::once(Char::WORD_END))
                 .collect(),
             tranche,
-            score: (tranche as u32 + 1) << 16,
+            score,
         }
     }
 }
@@ -198,6 +198,7 @@ where
     let mut tranche_size: usize = INITIAL_TRANCHE_SIZE;
     let mut tranche_count: usize = 0;
     let mut tranche: Tranche = 0;
+    let mut word_count: usize = 0;
 
     let mut wordlist: Vec<_> = lines
         .filter_map(|line| line.ok())
@@ -206,6 +207,7 @@ where
                 // Bump words which aren't strictly ASCII lowercase into the next tranche
                 let t = tranche + (!line.chars().all(|c| c.is_ascii_lowercase())) as Tranche;
 
+                word_count += 1;
                 tranche_count += 1;
                 if tranche_count > tranche_size {
                     // Make each tranche 150% the size of the previous one
@@ -214,7 +216,8 @@ where
                     tranche += 1;
                 }
 
-                Some(Word::new(&line, t))
+                let score = word_count as u32;
+                Some(Word::new(&line, t, score))
             } else {
                 None
             }
