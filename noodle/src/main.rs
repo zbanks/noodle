@@ -20,7 +20,7 @@ fn main() {
         ("ahumongoussentencewithmultiplewords", 10..=10, 40),
         ("ahumongoussentincewithmultiplewords !' !1", 265..=275, 800),
         (
-            "3 3 8 7; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:?) !'",
+            "3 3 8 7; (LOOHNEWHOOPCRLOVAIDYTILEAUQWOSLLPEASSOEHNCS:-) !'",
             24..=24,
             690,
         ),

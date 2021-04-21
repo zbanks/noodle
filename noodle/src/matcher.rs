@@ -421,6 +421,12 @@ impl<'word> WordMatcher<'word> {
         };
         let alive_states_ref = alive_states.borrow();
 
+        // If the success state isn't reachable, then bail early
+        if !alive_states_ref.contains(states_len - 1) {
+            self.alive_wordlist = vec![];
+            return true;
+        }
+
         // Identify redundant states, which are alive states that are equivalent
         // within the given wordlist.
         //

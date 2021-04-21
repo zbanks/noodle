@@ -231,6 +231,9 @@
                 logDiv.innerText = "";
                 window.matches = [];
 
+                sort.checked = false;
+                enableFilter.checked = false;
+
                 var inputText = "#dict " + wordlist.value + "\n" + input.value;
                 window.location.hash = "#" + encodeURI(input.value);
 

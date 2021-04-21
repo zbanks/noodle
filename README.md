@@ -85,6 +85,9 @@ See [Noodle Help](noodle_help.md).
 - "Inverse" NX expressions? ("does not match") -- (this is hard with NFAs)
 - Fuzzy matching + anagrams are weak; add post filter
 - Python library
+- Other ways of sorting the output in the UI (e.g. by length, alphabetical, etc.)
+- UI affordances for `#` options
+- Add support for `(...:-n)`/`(...:+n)` syntax
 
 ## License
 
