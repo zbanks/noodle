@@ -25,8 +25,9 @@ superanagram = { "<" ~ anagram_body ~ "+>" }
 subanagram = { "<" ~ anagram_body ~ "->" }
 transadd = { "<" ~ anagram_body ~ "+" ~ number ~ ">" }
 transdelete = { "<" ~ anagram_body ~ "-" ~ number ~ ">" }
-subset_group = { "(" ~ term+ ~ ":-)" }
-superset_group = { "(" ~ term+ ~ ":+)" }
+substring = { "(" ~ term+ ~ ":^)" }
+subset = { "(" ~ term+ ~ ":-)" }
+superset = { "(" ~ term+ ~ ":+)" }
 
 repeat_optional = { term ~ "?" }
 repeat_any = { term ~ "*" }
@@ -47,8 +48,9 @@ term = _{
     | subanagram
     | transadd
     | transdelete
-    | subset_group
-    | superset_group
+    | substring
+    | subset
+    | superset
     | number
     | character
 }

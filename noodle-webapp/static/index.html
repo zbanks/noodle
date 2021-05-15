@@ -101,6 +101,7 @@
                         <li><a class="example">breadfast !2</a></li>
                         <li><a class="example">.{8}pi.{6} !_</a></li>
                         <li><a class="example">.*cat.*; (string:+); 10</a></li>
+                        <li><a class="example">(hello world:^)</a></li>
                     </ul>
                 </div>
             </div>
@@ -143,8 +144,9 @@
 <li><code>&lt;abcd+3&gt;</code> -- <strong>transadd</strong> of <code>3</code> to <code>abcd</code>: rearranging <em>all</em> of the given letters <em>plus</em> <code>N</code> wildcards</li>
 <li><code>&lt;abcd-&gt;</code> -- <strong>subanagram</strong> of <code>abcd</code>: rearranging <em>at most</em> the given letters</li>
 <li><code>&lt;abcd-1&gt;</code> -- <strong>transdelete</strong> of <code>3</code> to <code>abcd</code>: rerranging <em>all but <code>N</code></em> of the given letters</li>
-<li><code>(abcd:-)</code> -- <strong>subset</strong> of <code>abcd</code>: contained within a <em>subset</em> of the given letters, in the same order</li>
-<li><code>(abcd:+)</code> -- <strong>superset</strong> of <code>abcd</code>: contains the <em>superset</em> of the given letters, in the same order</li>
+<li><code>(abcd:-)</code> -- <strong>subset</strong> of <code>abcd</code>: contained within a <em>subset</em> of the given expression, in the same order</li>
+<li><code>(abcd:+)</code> -- <strong>superset</strong> of <code>abcd</code>: contains the <em>superset</em> of the given expression, in the same order</li>
+<li><code>(abcd:^)</code> -- <strong>substring</strong> of <code>abcd</code>: contained within the given expression (consecutively)</li>
 </ul>
 <p>Anagram constraints are not compatible with fuzzy matching, and may result in false positives (but not false negatives!).</p>
 <h3 id="enumerations">Enumerations</h3>

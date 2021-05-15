@@ -51,6 +51,7 @@ pub enum Ast {
     CharClass(CharBitset),
     Alternatives(Vec<Self>),
     Sequence(Vec<Self>),
+    Substring(Vec<Self>),
     Repetition {
         term: Box<Self>,
         min: usize,
@@ -197,7 +198,7 @@ impl QueryAst {
         {
             match node {
                 Ast::CharClass(_) => (),
-                Ast::Alternatives(nodes) | Ast::Sequence(nodes) => {
+                Ast::Alternatives(nodes) | Ast::Sequence(nodes) | Ast::Substring(nodes) => {
                     nodes.iter_mut().for_each(|n| visit(n, action))
                 }
                 Ast::Repetition {
@@ -392,6 +393,15 @@ impl fmt::Display for Ast {
                     write!(f, ")")?;
                 }
             }
+            Ast::Substring(nodes) => {
+                if nodes.len() > 1 {
+                    write!(f, "(")?;
+                }
+                nodes.iter().try_for_each(|n| write!(f, "{}", n))?;
+                if nodes.len() > 1 {
+                    write!(f, ":^)")?;
+                }
+            }
             Ast::Repetition {
                 term,
                 min: 0,
@@ -503,7 +513,7 @@ fn parse_term(pair: Pair<Rule>) -> Option<Ast> {
             }
             Some(Ast::CharClass(bitset))
         }
-        Rule::subset_group => Some(Ast::Sequence(
+        Rule::subset => Some(Ast::Sequence(
             pair.into_inner()
                 .filter_map(parse_term)
                 .map(|c| Ast::Repetition {
@@ -513,7 +523,7 @@ fn parse_term(pair: Pair<Rule>) -> Option<Ast> {
                 })
                 .collect(),
         )),
-        Rule::superset_group => Some(Ast::Sequence(
+        Rule::superset => Some(Ast::Sequence(
             pair.into_inner()
                 .filter_map(parse_term)
                 .flat_map(|c| {
@@ -533,6 +543,9 @@ fn parse_term(pair: Pair<Rule>) -> Option<Ast> {
                     max: None,
                 }))
                 .collect(),
+        )),
+        Rule::substring => Some(Ast::Substring(
+            pair.into_inner().filter_map(parse_term).collect(),
         )),
         Rule::group => Some(Ast::Sequence(
             pair.into_inner().filter_map(parse_term).collect(),
@@ -649,8 +662,9 @@ fn detect_options(ast: &Ast, options: &mut ExpressionOptions) {
                 options.explicit_punctuation = Some(true);
             }
         }
-        Ast::Alternatives(nodes) => nodes.iter().for_each(|n| detect_options(n, options)),
-        Ast::Sequence(nodes) => nodes.iter().for_each(|n| detect_options(n, options)),
+        Ast::Alternatives(nodes) | Ast::Sequence(nodes) | Ast::Substring(nodes) => {
+            nodes.iter().for_each(|n| detect_options(n, options))
+        }
         Ast::Repetition {
             term,
             min: _,

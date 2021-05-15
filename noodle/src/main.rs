@@ -31,6 +31,7 @@ fn main() {
         //),
         ("hen !1; hay !1", 2..=2, 11),
         ("breadfast !2", 300..=10000, 70),
+        ("(hello world hello world :^)", 63..=63, 28),
     ];
     let mut times = vec![];
     for (query_str, expected_range, _) in queries.iter() {

@@ -116,6 +116,36 @@ impl Expression {
                     Self::build_states(term, states);
                 }
             }
+            parser::Ast::Substring(terms) => {
+                states.push(State::new());
+                let mut end_indexes = vec![];
+                for term in terms {
+                    let next_index = states.len();
+                    states[initial_len]
+                        .epsilon_states_bitset_mut()
+                        .insert(next_index);
+                    Self::build_states(term, states);
+                    end_indexes.push(states.len() - 1);
+                }
+                let next_index = states.len();
+                for end_index in end_indexes {
+                    // Add the true success state to the terminal states
+                    let mut epsilon_states = states[end_index].epsilon_states_bitset_mut();
+                    if epsilon_states.contains(end_index + 1) {
+                        epsilon_states.insert(next_index);
+                    }
+                    // Rather than have the `char_bitset` edge point to two states,
+                    // we add a epsilon transition onto the `next_state`
+                    if states[end_index].char_bitset != CharBitset::EMPTY {
+                        let next_state = states[end_index].next_state;
+                        if next_state != next_index {
+                            states[next_state]
+                                .epsilon_states_bitset_mut()
+                                .insert(next_index);
+                        }
+                    }
+                }
+            }
             parser::Ast::Repetition {
                 term: _,
                 min: 0,
