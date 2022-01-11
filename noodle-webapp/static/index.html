@@ -11,7 +11,7 @@
             body {
             }
             textarea {
-                width: min(600px, 90%);
+                width: min(600px, 100%);
                 height: 300px;
                 font-family: Monospace;
                 font-size: 1.4rem;
@@ -44,7 +44,14 @@
             }
             .column {
                 width: max(30%, 300px);
-                margin: 10px;
+                margin-left: 15px;
+                margin-right: 15px;
+            }
+            .column:first-child {
+                margin-left: 5px;
+            }
+            .column:last-child {
+                margin-right: 5px;
             }
             .examples {
                 margin-top: 40px;
@@ -61,7 +68,7 @@
                 text-decoration: underline;
             }
             a.ext {
-                font-size: 0.8em;
+                font-size: 0.7em;
                 -webkit-touch-callout: none;
                 -webkit-user-select: none;
                 -khtml-user-select: none;
@@ -69,14 +76,14 @@
                 -ms-user-select: none;
                 user-select: none;
                 text-decoration: underline;
-                margin-left: 0.2em;
+                margin-left: 0.1em;
                 color: #13C;
             }
             a.ext:visited {
                 color: #205;
             }
             div.match span {
-                margin-left: 1.2em;
+                margin-left: 0.8em;
             }
             li code {
                 word-wrap: break-word;
@@ -111,8 +118,8 @@
                     -->
                     <span style="margin-left: 2em"></span>
                     Max Phrase Length:
-                    <select id="phrase-length">
-                        <option>1</option>
+                    <select id="max-phrase-length">
+                        <option selected>1</option>
                         <option>2</option>
                         <option>3</option>
                         <option>4</option>
@@ -122,6 +129,20 @@
                         <option>8</option>
                         <option>9</option>
                         <option>10</option>
+                    </select>
+
+                    <span style="margin-left: 2em"></span>
+                    Max Results:
+                    <select id="max-results">
+                        <option>1</option>
+                        <option>3</option>
+                        <option>10</option>
+                        <option>30</option>
+                        <option selected>100</option>
+                        <option>300</option>
+                        <option>1000</option>
+                        <option>3000</option>
+                        <option>10000</option>
                     </select>
                 </div>
                 <div style="margin-top: 1em;"></div>
@@ -221,7 +242,7 @@
 <p>The query runs until one of the following:</p>
 <ul class="incremental">
 <li>The input wordlist is exhausted, combining up to <strong>10 words</strong> into a phrase</li>
-<li><strong>300 results</strong> are returned</li>
+<li>The maximum number of <strong>results</strong> have been returned (default: <strong>100</strong>)</li>
 <li><strong>150 seconds</strong> have passed</li>
 <li>The <code>Stop</code> button is pressed</li>
 </ul>
@@ -260,12 +281,12 @@
 <h3 id="directives">Directives</h3>
 <p>There are a few special directives for modifying how the whole query operates. They all start with <code>#</code>:</p>
 <ul class="incremental">
-<li><code>#limit &lt;N&gt;</code> -- set the maximum number of results to return. (Example: &quot;<code>#limit 5000</code>&quot;)</li>
-</ul>
-<!--
+<li><code>#limit &lt;N&gt;</code> -- set the maximum number of results to return. (Example: &quot;<code>#limit 5000</code>&quot;) <!--
+- `#words <N>` -- set the maximum number of words to try to combine into a phrase. "`#words 1`" completely disables phrase matching.
 - `#list <default|small|...>` -- set the input wordlist to use (equivalent to the dropdown)
 - `#quiet` -- do not print header/progress information.
--->
+--></li>
+</ul>
 <h3 id="macros">Macros</h3>
 <p>Macros allow you to define a common subexpression, which can be useful when working with repeated letters from a letterbank.</p>
 <p>Macros are defined with <code>NAME=expression...</code> syntax on their own lines.</p>
@@ -286,6 +307,7 @@
 <li><code>c</code> -- <strong>copy</strong> the result to the clipboard</li>
 <li><code>g</code> -- look up the result on <strong>Google</strong></li>
 <li><code>w</code> -- look up the result on <strong>Wikipedia</strong></li>
+<li><code>x</code> -- look up the result as a clue on <strong>Crossword Solver</strong></li>
 </ul>
 <h3 id="google-sheets-integration">Google Sheets Integration</h3>
 <p>You can query Noodle directly from Google Sheets! Here's an example formula:</p>
@@ -325,7 +347,8 @@
             var logDiv = document.querySelector("#log");
             var input = document.querySelector("#input");
             var wordlist = document.querySelector("#wordlist");
-            var phraseLength = document.querySelector("#phrase-length");
+            var maxPhraseLength = document.querySelector("#max-phrase-length");
+            var maxResults = document.querySelector("#max-results");
             var enableFilter = document.querySelector("#enable-filter");
             var showDebug = document.querySelector("#show-debug");
             var debug = document.querySelector("#debug");
@@ -374,7 +397,8 @@
 
                 var inputText = "";
                 inputText += "#dict " + wordlist.value + "\n";
-                inputText += "#words " + phraseLength.value + "\n";
+                inputText += "#words " + maxPhraseLength.value + "\n";
+                inputText += "#limit " + maxResults.value + "\n";
                 inputText += input.value;
                 window.location.hash = "#" + encodeURI(input.value);
 
@@ -410,6 +434,10 @@
                         match.block = document.createElement("div");
                         match.block.match = match;
                         match.block.className = "match";
+                        window.matches.push(match);
+
+                        match.span = document.createElement("span");
+                        match.span.innerText = match.fullText;
 
                         let copy = document.createElement("a");
                         copy.innerText = "c";
@@ -418,26 +446,30 @@
                         copy.addEventListener("click", function() {
                             navigator.clipboard.writeText(match.fullText);
                         });
-                        match.block.appendChild(copy);
 
                         let google = document.createElement("a");
                         google.innerText = "g";
                         google.className = "ext";
                         google.href = "https://google.com/search?q=define:+" + encodeURI(match.fullText);
                         google.target = "_blank";
-                        match.block.appendChild(google);
 
                         let wiki = document.createElement("a");
                         wiki.innerText = "w";
                         wiki.className = "ext";
                         wiki.href = "https://en.wikipedia.org/w/index.php?ns0=1&search=" + encodeURI(match.fullText);
                         wiki.target = "_blank";
-                        match.block.appendChild(wiki);
 
-                        match.span = document.createElement("span");
-                        match.span.innerText = match.fullText;
+                        let cxio = document.createElement("a");
+                        cxio.innerText = "x";
+                        cxio.className = "ext";
+                        cxio.href = "https://crossword-solver.io/clue/" + encodeURI(match.fullText);
+                        cxio.target = "_blank";
+
+                        match.block.appendChild(copy);
+                        match.block.appendChild(google);
+                        match.block.appendChild(wiki);
+                        match.block.appendChild(cxio);
                         match.block.appendChild(match.span);
-                        window.matches.push(match);
 
                         if (!enableFilter.checked || match.fullText.match(new RegExp(filter.value))) {
                             outputDiv.appendChild(match.block);

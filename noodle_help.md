@@ -44,7 +44,7 @@ You can specify multiple expressions, and only results that match *all* expressi
 The query runs until one of the following:
 
 - The input wordlist is exhausted, combining up to **10 words** into a phrase
-- **300 results** are returned
+- The maximum number of **results** have been returned (default: **100**)
 - **150 seconds** have passed
 - The `Stop` button is pressed
 
@@ -141,6 +141,7 @@ Next to each result, there are 3 links to common actions:
 - `c` -- **copy** the result to the clipboard
 - `g` -- look up the result on **Google**
 - `w` -- look up the result on **Wikipedia**
+- `x` -- look up the result as a clue on **Crossword Solver**
 
 ### Google Sheets Integration
 
