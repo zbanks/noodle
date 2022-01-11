@@ -124,11 +124,25 @@ Macros are defined with `NAME=expression...` syntax on their own lines.
 
 Macros are substituted in later lines before parsing, using a naive find-replace in the order they are defined.
 
+#### Useful Macros
+
+- `STATE=(al|ak|az|ar|ca|co|ct|de|fl|ga|hi|id|il|in|ia|ks|ky|la|me|md|ma|mi|mn|ms|mo|mt|ne|nv|nh|nj|nm|ny|nc|nd|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|vt|va|wa|wv|wi|wy)`
+- `ELEMENT=(h|he|li|be|b|c|n|o|f|ne|na|mg|al|si|p|s|cl|ar|k|ca|sc|ti|v|cr|mn|fe|co|ni|cu|zn|ga|ge|as|se|br|kr|rb|sr|y|zr|nb|mo|tc|ru|rh|pd|ag|cd|in|sn|sb|te|i|xe|cs|ba|hf|ta|w|re|os|ir|pt|au|hg|tl|pb|bi|po|at|rn|fr|ra|rf|db|sg|bh|hs|mt|ds|rg|cn|uut|fl|uup|lv|uus|uuo|la|ce|pr|nd|pm|sm|eu|gd|tb|dy|ho|er|tm|yb|lu|ac|th|pa|u|np|pu|am|cm|bk|cf|es|fm|md|no|lr)`
+
+
 ## UI Tips
 
 ### Keyboard shortcuts
 
 - `Ctrl-Enter` -- submit query
+
+### Quick Links
+
+Next to each result, there are 3 links to common actions:
+
+- `c` -- **copy** the result to the clipboard
+- `g` -- look up the result on **Google**
+- `w` -- look up the result on **Wikipedia**
 
 ### Google Sheets Integration
 
