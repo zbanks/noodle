@@ -109,6 +109,20 @@
                         </select>
                     </span>
                     -->
+                    <span style="margin-left: 2em"></span>
+                    Max Phrase Length:
+                    <select id="phrase-length">
+                        <option>1</option>
+                        <option>2</option>
+                        <option>3</option>
+                        <option>4</option>
+                        <option>5</option>
+                        <option>6</option>
+                        <option>7</option>
+                        <option>8</option>
+                        <option>9</option>
+                        <option>10</option>
+                    </select>
                 </div>
                 <div style="margin-top: 1em;"></div>
                 <div>
@@ -195,7 +209,6 @@
 <li><code>!_</code> -- use <strong>explicit spaces</strong> for this line</li>
 <li><code>!'</code> -- use <strong>explicit punctuation</strong> for this line</li>
 <li><code>!1</code> -- use <strong>fuzzy search</strong> for this line, within an edit distance of 1</li>
-<li><code>#words 4</code> on its own line -- lower the <strong>phrase-length limit</strong> to 4</li>
 <li><code>#limit 1000</code> on its own line -- raise the <strong>result limit</strong> to 1000</li>
 <li><code>4 5</code> on its own line -- <strong>enumeration</strong>: match 4 letters, a space, then 5 letters</li>
 <li><code>VOWEL=[aeiou]</code> on its own line -- define a <a href="#macros"><strong>macro</strong></a> <code>VOWEL</code> to use in later lines</li>
@@ -248,7 +261,6 @@
 <p>There are a few special directives for modifying how the whole query operates. They all start with <code>#</code>:</p>
 <ul class="incremental">
 <li><code>#limit &lt;N&gt;</code> -- set the maximum number of results to return. (Example: &quot;<code>#limit 5000</code>&quot;)</li>
-<li><code>#words &lt;N&gt;</code> -- set the maximum number of words to try to combine into a phrase. &quot;<code>#words 1</code>&quot; completely disables phrase matching.</li>
 </ul>
 <!--
 - `#list <default|small|...>` -- set the input wordlist to use (equivalent to the dropdown)
@@ -313,6 +325,7 @@
             var logDiv = document.querySelector("#log");
             var input = document.querySelector("#input");
             var wordlist = document.querySelector("#wordlist");
+            var phraseLength = document.querySelector("#phrase-length");
             var enableFilter = document.querySelector("#enable-filter");
             var showDebug = document.querySelector("#show-debug");
             var debug = document.querySelector("#debug");
@@ -359,7 +372,10 @@
                 sort.checked = false;
                 enableFilter.checked = false;
 
-                var inputText = "#dict " + wordlist.value + "\n" + input.value;
+                var inputText = "";
+                inputText += "#dict " + wordlist.value + "\n";
+                inputText += "#words " + phraseLength.value + "\n";
+                inputText += input.value;
                 window.location.hash = "#" + encodeURI(input.value);
 
                 var protocol = window.location.protocol == "https:" ? "wss:" : "ws:";
@@ -443,6 +459,7 @@
                 a.href = "#" + encodeURI(query);
                 a.addEventListener("click", function() {
                     input.value = query;
+                    phraseLength.value = "10";
                     submit();
                 });
             });

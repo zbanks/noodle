@@ -27,7 +27,6 @@
 - `!_` -- use **explicit spaces** for this line
 - `!'` -- use **explicit punctuation** for this line
 - `!1` -- use **fuzzy search** for this line, within an edit distance of 1
-- `#words 4` on its own line -- lower the **phrase-length limit** to 4
 - `#limit 1000` on its own line -- raise the **result limit** to 1000
 - `4 5` on its own line -- **enumeration**: match 4 letters, a space, then 5 letters
 - `VOWEL=[aeiou]` on its own line -- define a [**macro**](#macros) `VOWEL` to use in later lines
@@ -109,9 +108,8 @@ There are a few special directives for modifying how the whole query operates.
 They all start with `#`:
 
 - `#limit <N>` -- set the maximum number of results to return. (Example: "`#limit 5000`")
-- `#words <N>` -- set the maximum number of words to try to combine into a phrase. "`#words 1`" completely disables phrase matching.
-
 <!--
+- `#words <N>` -- set the maximum number of words to try to combine into a phrase. "`#words 1`" completely disables phrase matching.
 - `#list <default|small|...>` -- set the input wordlist to use (equivalent to the dropdown)
 - `#quiet` -- do not print header/progress information.
 -->
