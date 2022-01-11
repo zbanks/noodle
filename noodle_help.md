@@ -1,7 +1,5 @@
 <!-- generated from `pandoc noodle_help.md` -->
-## Help
-
-### Quick Reference
+## Quick Reference
 
 - `a` or `A`  -- **the letter** `a` itself (case-insensitive)
 - `'` (apostrophe) -- **any punctuation**, such as an apostrophe, dash, or period.
@@ -17,6 +15,7 @@
 - `{,5}`  -- **at most five** copies of the previous symbol
 - `{3,5}`  -- **between three and five** (inclusive) copies of the previous symbol
 - `(abcd)` -- **group** of `abcd`, usually used with `*`, `+`, `?`, or `{…}`.
+- `(ab|cd|ef)` -- **either** `ab`, `cd`, or `ef`
 - `<ate>` -- **anagram** of `ate`: `ate`, `eat`, `eta`, `tea`
 - `<ate+>` -- **superanagram** of `ate`: `abate`, `acute`, `fated`, `neat`, …
 - `<ate+3>` -- **transadd** of `3` to `ate`: `abated`, `advent`, `basket`, …
@@ -31,6 +30,10 @@
 - `#words 4` on its own line -- lower the **phrase-length limit** to 4
 - `#limit 1000` on its own line -- raise the **result limit** to 1000
 - `4 5` on its own line -- **enumeration**: match 4 letters, a space, then 5 letters
+- `//`, `/*…*/` -- **comment**, ignore text (like in C, Javascript, etc.)
+- [UI Tips](#ui-tips)
+
+## Help
 
 ### Basics
 
@@ -44,12 +47,6 @@ The query runs until one of the following:
 - **300 results** are returned
 - **150 seconds** have passed
 - The `Stop` button is pressed
-
-#### Learn More
-
-Noodle is open-source and released under the MIT license.
-
-Visit [GitHub](https://github.com/zbanks/noodle) to fork the code or submit bugs. There is also a command-line version available for running offline/locally.
 
 ## Noodle Expressions
 
@@ -143,4 +140,10 @@ For `GET` requests like this, the timeout is lowered, default results limit is l
 The input wordlist can be downloaded [here](/wordlist).
 
 It is based on the Debian wordlist, Wikipedia, and Wiktionary.
+
+## Learn More
+
+Noodle is open-source and released under the MIT license.
+
+Visit [GitHub](https://github.com/zbanks/noodle) to fork the code or submit bugs. There is also a command-line version available for running offline/locally.
 <!-- end help -->

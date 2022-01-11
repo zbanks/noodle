@@ -125,8 +125,7 @@
             </div>
             <div class="column">
 <!-- generated from `pandoc noodle_help.md` -->
-<h2 id="help">Help</h2>
-<h3 id="quick-reference">Quick Reference</h3>
+<h2 id="quick-reference">Quick Reference</h2>
 <ul class="incremental">
 <li><code>a</code> or <code>A</code> -- <strong>the letter</strong> <code>a</code> itself (case-insensitive)</li>
 <li><code>'</code> (apostrophe) -- <strong>any punctuation</strong>, such as an apostrophe, dash, or period.</li>
@@ -142,6 +141,7 @@
 <li><code>{,5}</code> -- <strong>at most five</strong> copies of the previous symbol</li>
 <li><code>{3,5}</code> -- <strong>between three and five</strong> (inclusive) copies of the previous symbol</li>
 <li><code>(abcd)</code> -- <strong>group</strong> of <code>abcd</code>, usually used with <code>*</code>, <code>+</code>, <code>?</code>, or <code>{…}</code>.</li>
+<li><code>(ab|cd|ef)</code> -- <strong>either</strong> <code>ab</code>, <code>cd</code>, or <code>ef</code></li>
 <li><code>&lt;ate&gt;</code> -- <strong>anagram</strong> of <code>ate</code>: <code>ate</code>, <code>eat</code>, <code>eta</code>, <code>tea</code></li>
 <li><code>&lt;ate+&gt;</code> -- <strong>superanagram</strong> of <code>ate</code>: <code>abate</code>, <code>acute</code>, <code>fated</code>, <code>neat</code>, …</li>
 <li><code>&lt;ate+3&gt;</code> -- <strong>transadd</strong> of <code>3</code> to <code>ate</code>: <code>abated</code>, <code>advent</code>, <code>basket</code>, …</li>
@@ -156,7 +156,10 @@
 <li><code>#words 4</code> on its own line -- lower the <strong>phrase-length limit</strong> to 4</li>
 <li><code>#limit 1000</code> on its own line -- raise the <strong>result limit</strong> to 1000</li>
 <li><code>4 5</code> on its own line -- <strong>enumeration</strong>: match 4 letters, a space, then 5 letters</li>
+<li><code>//</code>, <code>/*…*/</code> -- <strong>comment</strong>, ignore text (like in C, Javascript, etc.)</li>
+<li><a href="#ui-tips">UI Tips</a></li>
 </ul>
+<h2 id="help">Help</h2>
 <h3 id="basics">Basics</h3>
 <p>Specify filters in the input textbox. Each line is treated as a <em>noodle expression</em>. You can specify multiple expressions, and only results that match <em>all</em> expressions are returned.</p>
 <p>The query runs until one of the following:</p>
@@ -166,9 +169,6 @@
 <li><strong>150 seconds</strong> have passed</li>
 <li>The <code>Stop</code> button is pressed</li>
 </ul>
-<h4 id="learn-more">Learn More</h4>
-<p>Noodle is open-source and released under the MIT license.</p>
-<p>Visit <a href="https://github.com/zbanks/noodle">GitHub</a> to fork the code or submit bugs. There is also a command-line version available for running offline/locally.</p>
 <h2 id="noodle-expressions">Noodle Expressions</h2>
 <h3 id="regular-expressions">Regular Expressions</h3>
 <p>Noodle supports the following regular expression syntax: <code>[…]</code>, <code>[^…]</code>, <code>.</code>, <code>*</code>, <code>+</code>, <code>?</code>, <code>(…)</code>, <code>|</code>, <code>{…}</code>.</p>
@@ -224,7 +224,10 @@
 <p>For <code>GET</code> requests like this, the timeout is lowered, default results limit is lowered to 15 (this can be changed with <code>#limit</code>).</p>
 <h3 id="wordlist">Wordlist</h3>
 <p>The input wordlist can be downloaded <a href="/wordlist">here</a>.</p>
-<!-- end help -->
+<p>It is based on the Debian wordlist, Wikipedia, and Wiktionary.</p>
+<h2 id="learn-more">Learn More</h2>
+<p>Noodle is open-source and released under the MIT license.</p>
+<p>Visit <a href="https://github.com/zbanks/noodle">GitHub</a> to fork the code or submit bugs. There is also a command-line version available for running offline/locally. <!-- end help --></p>
             </div>
         </div>
         <script type="text/javascript">
