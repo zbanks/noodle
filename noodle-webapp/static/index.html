@@ -16,6 +16,13 @@
                 font-family: Monospace;
                 font-size: 1.4rem;
             }
+            button {
+                font-size: 1.4em;
+            }
+            abbr {
+                text-decoration: none;
+                cursor: help;
+            }
             #status {
             }
             #output {
@@ -103,20 +110,30 @@
                     </span>
                     -->
                 </div>
+                <div style="margin-top: 1em;"></div>
                 <div>
-                    <abbr title="Post-process output; sort matches alphabetically">
-                        Sort Output
-                    </abbr>
+                    <label for="sort">
+                        <abbr title="Post-process output; sort matches alphabetically">
+                            Sort Output
+                        </abbr>
+                    </label>
                     <input type="checkbox" id="sort"></input>
-                    <span style="margin-right: 10px"></span>
-                    <abbr title="Post-process output; only include matches for the following regular expression">
-                        Filter Output
-                    </abbr>
+                <div>
+                </div>
+                    <label for="enable-filter">
+                        <abbr title="Post-process output; only include matches for the following regular expression">
+                            Filter Output
+                        </abbr>
+                    </label>
                     <input type="checkbox" id="enable-filter"></input>
                     <input type="text" id="filter"></input>
-                    <abbr title="Show debug logs">
-                        Debug
-                    </abbr>
+                </div>
+                <div>
+                    <label for="show-debug">
+                        <abbr title="Show debug logs">
+                            Show Debug
+                        </abbr>
+                    </label>
                     <input type="checkbox" id="show-debug"></input>
                 </div>
                 <div class="examples">
