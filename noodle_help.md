@@ -30,6 +30,7 @@
 - `#words 4` on its own line -- lower the **phrase-length limit** to 4
 - `#limit 1000` on its own line -- raise the **result limit** to 1000
 - `4 5` on its own line -- **enumeration**: match 4 letters, a space, then 5 letters
+- `VOWEL=[aeiou]` on its own line -- define a [**macro**](#macros) `VOWEL` to use in later lines
 - `//`, `/*…*/` -- **comment**, ignore text (like in C, Javascript, etc.)
 - [UI Tips](#ui-tips)
 
@@ -115,6 +116,14 @@ They all start with `#`:
 - `#quiet` -- do not print header/progress information.
 -->
 
+### Macros
+
+Macros allow you to define a common subexpression, which can be useful when working with repeated letters from a letterbank.
+
+Macros are defined with `NAME=expression...` syntax on their own lines.
+
+Macros are substituted in later lines before parsing, using a naive find-replace in the order they are defined.
+
 ## UI Tips
 
 ### Keyboard shortcuts
@@ -146,4 +155,14 @@ It is based on the Debian wordlist, Wikipedia, and Wiktionary.
 Noodle is open-source and released under the MIT license.
 
 Visit [GitHub](https://github.com/zbanks/noodle) to fork the code or submit bugs. There is also a command-line version available for running offline/locally.
+
+### Similar Tools
+
+- [Nutrimatic](https://nutrimatic.org/)
+    - Better at ordering results & constructing realistic phrases
+- [qhex](https://tools.qhex.org/) *Word Play* tool
+    - Extensive wordlist, supports "cross-filtering" for matching derivative words
+- [Qat](https://www.quinapalus.com/qat.html)
+    - Semantic search (e.g. "synonym to..."), complex "equation solver"
+
 <!-- end help -->

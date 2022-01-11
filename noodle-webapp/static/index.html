@@ -110,6 +110,7 @@
                         <li><a class="example">.{8}pi.{6} !_</a></li>
                         <li><a class="example">.*cat.*; (string:+); 10</a></li>
                         <li><a class="example">(hello world:^)</a></li>
+                        <li><a class="example">V=[aeiou]; C=[^aeiou]; CVCCVV</a></li>
                     </ul>
                 </div>
             </div>
@@ -156,6 +157,7 @@
 <li><code>#words 4</code> on its own line -- lower the <strong>phrase-length limit</strong> to 4</li>
 <li><code>#limit 1000</code> on its own line -- raise the <strong>result limit</strong> to 1000</li>
 <li><code>4 5</code> on its own line -- <strong>enumeration</strong>: match 4 letters, a space, then 5 letters</li>
+<li><code>VOWEL=[aeiou]</code> on its own line -- define a <a href="#macros"><strong>macro</strong></a> <code>VOWEL</code> to use in later lines</li>
 <li><code>//</code>, <code>/*…*/</code> -- <strong>comment</strong>, ignore text (like in C, Javascript, etc.)</li>
 <li><a href="#ui-tips">UI Tips</a></li>
 </ul>
@@ -211,6 +213,10 @@
 - `#list <default|small|...>` -- set the input wordlist to use (equivalent to the dropdown)
 - `#quiet` -- do not print header/progress information.
 -->
+<h3 id="macros">Macros</h3>
+<p>Macros allow you to define a common subexpression, which can be useful when working with repeated letters from a letterbank.</p>
+<p>Macros are defined with <code>NAME=expression...</code> syntax on their own lines.</p>
+<p>Macros are substituted in later lines before parsing, using a naive find-replace in the order they are defined.</p>
 <h2 id="ui-tips">UI Tips</h2>
 <h3 id="keyboard-shortcuts">Keyboard shortcuts</h3>
 <ul class="incremental">
@@ -227,7 +233,23 @@
 <p>It is based on the Debian wordlist, Wikipedia, and Wiktionary.</p>
 <h2 id="learn-more">Learn More</h2>
 <p>Noodle is open-source and released under the MIT license.</p>
-<p>Visit <a href="https://github.com/zbanks/noodle">GitHub</a> to fork the code or submit bugs. There is also a command-line version available for running offline/locally. <!-- end help --></p>
+<p>Visit <a href="https://github.com/zbanks/noodle">GitHub</a> to fork the code or submit bugs. There is also a command-line version available for running offline/locally.</p>
+<h3 id="similar-tools">Similar Tools</h3>
+<ul class="incremental">
+<li><a href="https://nutrimatic.org/">Nutrimatic</a>
+<ul class="incremental">
+<li>Better at ordering results &amp; constructing realistic phrases</li>
+</ul></li>
+<li><a href="https://tools.qhex.org/">qhex</a> <em>Word Play</em> tool
+<ul class="incremental">
+<li>Extensive wordlist, supports &quot;cross-filtering&quot; for matching derivative words</li>
+</ul></li>
+<li><a href="https://www.quinapalus.com/qat.html">Qat</a>
+<ul class="incremental">
+<li>Semantic search (e.g. &quot;synonym to...&quot;), complex &quot;equation solver&quot;</li>
+</ul></li>
+</ul>
+ <!-- end help -->
             </div>
         </div>
         <script type="text/javascript">
