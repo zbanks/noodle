@@ -80,12 +80,20 @@
                     -->
                 </div>
                 <div>
-                    Sort Output
+                    <abbr title="Post-process output; sort matches alphabetically">
+                        Sort Output
+                    </abbr>
                     <input type="checkbox" id="sort"></input>
                     <span style="margin-right: 10px"></span>
-                    Filter Output
+                    <abbr title="Post-process output; only include matches for the following regular expression">
+                        Filter Output
+                    </abbr>
                     <input type="checkbox" id="enable-filter"></input>
                     <input type="text" id="filter"></input>
+                    <abbr title="Show debug logs">
+                        Debug
+                    </abbr>
+                    <input type="checkbox" id="show-debug"></input>
                 </div>
                 <div class="examples">
                     <h2>Examples</h2>
@@ -110,19 +118,52 @@
                 <div id="status"></div>
                 <div id="output"></div>
 
-                <h2>Debug Logs</h2>
-                <div id="log"></div>
+                <div id="debug" style="display: none;">
+                    <h2>Debug Logs</h2>
+                    <div id="log"></div>
+                </div>
             </div>
             <div class="column">
-                <h2>Help</h2>
 <!-- generated from `pandoc noodle_help.md` -->
+<h2 id="help">Help</h2>
+<h3 id="quick-reference">Quick Reference</h3>
+<ul class="incremental">
+<li><code>a</code> or <code>A</code> -- <strong>the letter</strong> <code>a</code> itself (case-insensitive)</li>
+<li><code>'</code> (apostrophe) -- <strong>any punctuation</strong>, such as an apostrophe, dash, or period.</li>
+<li><code>_</code> (underscore) -- <strong>space</strong> (word boundary)</li>
+<li><code>.</code> -- <strong>any letter</strong></li>
+<li><code>[abc]</code> or <code>[a-c]</code> -- <strong>one of</strong> <code>a</code>, <code>b</code>, or <code>c</code></li>
+<li><code>[^abc]</code> -- <strong>one letter except</strong> <code>a</code>, <code>b</code>, or <code>c</code></li>
+<li><code>*</code> -- <strong>zero or more</strong> copies of the previous symbol</li>
+<li><code>+</code> -- <strong>one or more</strong> copies of the previous symbol</li>
+<li><code>?</code> -- <strong>one or zero</strong> copies of the previous symbol</li>
+<li><code>{3}</code> -- <strong>exactly three</strong> copies of the previous symbol</li>
+<li><code>{3,}</code> -- <strong>at least three</strong> copies of the previous symbol</li>
+<li><code>{,5}</code> -- <strong>at most five</strong> copies of the previous symbol</li>
+<li><code>{3,5}</code> -- <strong>between three and five</strong> (inclusive) copies of the previous symbol</li>
+<li><code>(abcd)</code> -- <strong>group</strong> of <code>abcd</code>, usually used with <code>*</code>, <code>+</code>, <code>?</code>, or <code>{…}</code>.</li>
+<li><code>&lt;ate&gt;</code> -- <strong>anagram</strong> of <code>ate</code>: <code>ate</code>, <code>eat</code>, <code>eta</code>, <code>tea</code></li>
+<li><code>&lt;ate+&gt;</code> -- <strong>superanagram</strong> of <code>ate</code>: <code>abate</code>, <code>acute</code>, <code>fated</code>, <code>neat</code>, …</li>
+<li><code>&lt;ate+3&gt;</code> -- <strong>transadd</strong> of <code>3</code> to <code>ate</code>: <code>abated</code>, <code>advent</code>, <code>basket</code>, …</li>
+<li><code>&lt;ate-&gt;</code> -- <strong>subanagram</strong> of <code>ate</code>: <code>ate</code>, <code>at</code>, <code>a</code>, <code>eat</code>, …</li>
+<li><code>&lt;ate-1&gt;</code> -- <strong>transdelete</strong> of <code>1</code> to <code>ate</code>: <code>at</code>, <code>Ta</code></li>
+<li><code>(ate:-)</code> -- <strong>subset</strong> of <code>ate</code>: <code>ate</code>, <code>at</code>, <code>a</code></li>
+<li><code>(ate:+)</code> -- <strong>superset</strong> of <code>ate</code>: <code>abate</code>, <code>acted</code>, <code>fated</code>, …</li>
+<li><code>(abcd:^)</code> -- <strong>substring</strong> of <code>abcd</code>: <code>a</code>, <code>cd</code></li>
+<li><code>!_</code> -- use <strong>explicit spaces</strong> for this line</li>
+<li><code>!'</code> -- use <strong>explicit punctuation</strong> for this line</li>
+<li><code>!1</code> -- use <strong>fuzzy search</strong> for this line, within an edit distance of 1</li>
+<li><code>#words 4</code> on its own line -- lower the <strong>phrase-length limit</strong> to 4</li>
+<li><code>#limit 1000</code> on its own line -- raise the <strong>result limit</strong> to 1000</li>
+<li><code>4 5</code> on its own line -- <strong>enumeration</strong>: match 4 letters, a space, then 5 letters</li>
+</ul>
 <h3 id="basics">Basics</h3>
 <p>Specify filters in the input textbox. Each line is treated as a <em>noodle expression</em>. You can specify multiple expressions, and only results that match <em>all</em> expressions are returned.</p>
 <p>The query runs until one of the following:</p>
 <ul class="incremental">
 <li>The input wordlist is exhausted, combining up to <strong>10 words</strong> into a phrase</li>
 <li><strong>300 results</strong> are returned</li>
-<li><strong>300 seconds</strong> have passed</li>
+<li><strong>60 seconds</strong> have passed</li>
 <li>The <code>Stop</code> button is pressed</li>
 </ul>
 <h4 id="learn-more">Learn More</h4>
@@ -143,7 +184,7 @@
 <li><code>&lt;abcd+&gt;</code> -- <strong>superanagram</strong> of <code>abcd</code>: rearranging <em>at least</em> the given letters</li>
 <li><code>&lt;abcd+3&gt;</code> -- <strong>transadd</strong> of <code>3</code> to <code>abcd</code>: rearranging <em>all</em> of the given letters <em>plus</em> <code>N</code> wildcards</li>
 <li><code>&lt;abcd-&gt;</code> -- <strong>subanagram</strong> of <code>abcd</code>: rearranging <em>at most</em> the given letters</li>
-<li><code>&lt;abcd-1&gt;</code> -- <strong>transdelete</strong> of <code>3</code> to <code>abcd</code>: rerranging <em>all but <code>N</code></em> of the given letters</li>
+<li><code>&lt;abcd-1&gt;</code> -- <strong>transdelete</strong> of <code>1</code> to <code>abcd</code>: rerranging <em>all but <code>N</code></em> of the given letters</li>
 <li><code>(abcd:-)</code> -- <strong>subset</strong> of <code>abcd</code>: contained within a <em>subset</em> of the given expression, in the same order</li>
 <li><code>(abcd:+)</code> -- <strong>superset</strong> of <code>abcd</code>: contains the <em>superset</em> of the given expression, in the same order</li>
 <li><code>(abcd:^)</code> -- <strong>substring</strong> of <code>abcd</code>: contained within the given expression (consecutively)</li>
@@ -193,6 +234,8 @@
             var input = document.querySelector("#input");
             var wordlist = document.querySelector("#wordlist");
             var enableFilter = document.querySelector("#enable-filter");
+            var showDebug = document.querySelector("#show-debug");
+            var debug = document.querySelector("#debug");
             var filter = document.querySelector("#filter");
             var sort = document.querySelector("#sort");
 
@@ -299,6 +342,13 @@
             filter.addEventListener("input", function() {
                 enableFilter.checked = true;
                 rebuildOutput();
+            });
+            showDebug.addEventListener("input", function() {
+                if (showDebug.checked) {
+                    debug.style.display = "block";
+                } else {
+                    debug.style.display = "none";
+                }
             });
         </script>
     </body>

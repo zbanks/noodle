@@ -1,4 +1,36 @@
 <!-- generated from `pandoc noodle_help.md` -->
+## Help
+
+### Quick Reference
+
+- `a` or `A`  -- **the letter** `a` itself (case-insensitive)
+- `'` (apostrophe) -- **any punctuation**, such as an apostrophe, dash, or period.
+- `_` (underscore) -- **space** (word boundary)
+- `.` -- **any letter**
+- `[abc]` or `[a-c]` -- **one of** `a`, `b`, or `c`
+- `[^abc]` -- **one letter except** `a`, `b`, or `c`
+- `*`  -- **zero or more** copies of the previous symbol
+- `+`  -- **one or more** copies of the previous symbol
+- `?`  -- **one or zero** copies of the previous symbol
+- `{3}`  -- **exactly three** copies of the previous symbol
+- `{3,}`  -- **at least three** copies of the previous symbol
+- `{,5}`  -- **at most five** copies of the previous symbol
+- `{3,5}`  -- **between three and five** (inclusive) copies of the previous symbol
+- `(abcd)` -- **group** of `abcd`, usually used with `*`, `+`, `?`, or `{…}`.
+- `<ate>` -- **anagram** of `ate`: `ate`, `eat`, `eta`, `tea`
+- `<ate+>` -- **superanagram** of `ate`: `abate`, `acute`, `fated`, `neat`, …
+- `<ate+3>` -- **transadd** of `3` to `ate`: `abated`, `advent`, `basket`, …
+- `<ate->` -- **subanagram** of `ate`: `ate`, `at`, `a`, `eat`, …
+- `<ate-1>` -- **transdelete** of `1` to `ate`: `at`, `Ta`
+- `(ate:-)` -- **subset** of `ate`: `ate`, `at`, `a`
+- `(ate:+)` -- **superset** of `ate`: `abate`, `acted`, `fated`, …
+- `(abcd:^)` -- **substring** of `abcd`: `a`, `cd`
+- `!_` -- use **explicit spaces** for this line
+- `!'` -- use **explicit punctuation** for this line
+- `!1` -- use **fuzzy search** for this line, within an edit distance of 1
+- `#words 4` on its own line -- lower the **phrase-length limit** to 4
+- `#limit 1000` on its own line -- raise the **result limit** to 1000
+- `4 5` on its own line -- **enumeration**: match 4 letters, a space, then 5 letters
 
 ### Basics
 
@@ -10,7 +42,7 @@ The query runs until one of the following:
 
 - The input wordlist is exhausted, combining up to **10 words** into a phrase
 - **300 results** are returned
-- **300 seconds** have passed
+- **60 seconds** have passed
 - The `Stop` button is pressed
 
 #### Learn More
@@ -44,7 +76,7 @@ Noodle has additional support for anagram-like constriants with angle bracket sy
 - `<abcd+>` -- **superanagram** of `abcd`: rearranging *at least* the given letters
 - `<abcd+3>` -- **transadd** of `3` to `abcd`: rearranging *all* of the given letters *plus* `N` wildcards
 - `<abcd->` -- **subanagram** of `abcd`: rearranging *at most* the given letters
-- `<abcd-1>` -- **transdelete** of `3` to `abcd`: rerranging *all but `N`* of the given letters
+- `<abcd-1>` -- **transdelete** of `1` to `abcd`: rerranging *all but `N`* of the given letters
 - `(abcd:-)` -- **subset** of `abcd`: contained within a *subset* of the given expression, in the same order
 - `(abcd:+)` -- **superset** of `abcd`: contains the *superset* of the given expression, in the same order
 - `(abcd:^)` -- **substring** of `abcd`: contained within the given expression (consecutively)

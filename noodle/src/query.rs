@@ -197,11 +197,11 @@ impl<'word> QueryEvaluator<'word> {
                 let estimate = initial_search_estimate - estimate.saturating_sub(step_estimate);
 
                 format!(
-                    "Phase 2: {}/{} ({}%) - depth={}, tranche={}",
+                    "{}-word phrase matches: {}/{} ({}%) - tranche={}",
+                    phase.depth,
                     estimate,
                     initial_search_estimate,
                     100 * estimate / initial_search_estimate,
-                    phase.depth,
                     phase.tranche,
                 )
             }

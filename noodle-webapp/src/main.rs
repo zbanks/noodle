@@ -31,7 +31,7 @@ lazy_static! {
     };
     static ref ACTIVE_QUERIES: AtomicUsize = AtomicUsize::new(0_usize);
 }
-static TIMEOUT: Duration = Duration::from_secs(300);
+static TIMEOUT: Duration = Duration::from_secs(60);
 static TIMEOUT_PLAINTEXT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -232,7 +232,7 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
         .await;
 }
 
-#[tokio::main(flavor = "multi_thread")]
+#[tokio::main(flavor = "multi_thread", worker_threads = 20)]
 async fn main() {
     //pretty_env_logger::init();
 
