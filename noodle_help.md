@@ -42,7 +42,7 @@ The query runs until one of the following:
 
 - The input wordlist is exhausted, combining up to **10 words** into a phrase
 - **300 results** are returned
-- **60 seconds** have passed
+- **150 seconds** have passed
 - The `Stop` button is pressed
 
 #### Learn More
@@ -138,4 +138,9 @@ You can separate mutli-line queries with semicolons (`;`) instead of newlines.
 
 For `GET` requests like this, the timeout is lowered, default results limit is lowered to 15 (this can be changed with `#limit`).
 
+### Wordlist
+
+The input wordlist can be downloaded [here](/wordlist).
+
+It is based on the Debian wordlist, Wikipedia, and Wiktionary.
 <!-- end help -->

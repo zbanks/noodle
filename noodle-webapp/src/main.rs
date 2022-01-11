@@ -31,7 +31,7 @@ lazy_static! {
     };
     static ref ACTIVE_QUERIES: AtomicUsize = AtomicUsize::new(0_usize);
 }
-static TIMEOUT: Duration = Duration::from_secs(60);
+static TIMEOUT: Duration = Duration::from_secs(150);
 static TIMEOUT_PLAINTEXT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -63,6 +63,18 @@ where
 fn flatten_phrase(phrase: Vec<Word>) -> String {
     let response = Response::Match { phrase };
     serde_json::to_string(&response).unwrap()
+}
+
+fn get_wordlist() -> http::Result<http::Response<hyper::Body>> {
+    let stream = stream::iter(
+        WORDLIST
+            .iter()
+            .map(|w| http::Result::Ok(format!("{}\n", w.text))),
+    );
+    let body = hyper::Body::wrap_stream(stream);
+    http::Response::builder()
+        .status(http::StatusCode::OK)
+        .body(body)
 }
 
 /// Plain HTTP interface, for use with cURL or GSheets IMPORTDATA
@@ -241,6 +253,11 @@ async fn main() {
         .or(warp::fs::file("static/index.html"))
         .or(warp::fs::file("noodle-webapp/static/index.html"));
 
+    // Wordlist
+    let wordlist = warp::get()
+        .and(warp::path("wordlist"))
+        .map(|| get_wordlist());
+
     // Websockets interface
     let ws = warp::path("ws")
         .and(warp::ws())
@@ -260,7 +277,7 @@ async fn main() {
             run_query_sync(std::str::from_utf8(&query_str).unwrap(), false)
         });
 
-    let routes = get_query.or(post_query).or(ws).or(index);
+    let routes = get_query.or(post_query).or(ws).or(wordlist).or(index);
     let addr = IpAddr::from_str("::0").unwrap();
     warp::serve(routes).run((addr, 8082)).await;
 }

@@ -19,11 +19,10 @@ kill_timeout = 5
     type = "connections"
 
   [[services.ports]]
-    handlers = ["http"]
     port = 80
 
   [[services.ports]]
-    handlers = ["tls", "http"]
+    handlers = ["tls"]
     port = 443
 
   [[services.tcp_checks]]
