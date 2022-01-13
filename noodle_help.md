@@ -1,4 +1,8 @@
 <!-- generated from `pandoc noodle_help.md` -->
+Noodle is a tool to find words or phrases that match certain conditions. 
+
+It's similar to [Regular Expressions](https://en.wikipedia.org/wiki/Regular_expression), [Nutrimatic](https://nutrimatic.org/), [qhex *Word Play*](https://tools.qhex.org/), or [Qat](https://www.quinapalus.com/qat.html).
+
 ## Quick Reference
 
 - `a` or `A`  -- **the letter** `a` itself (case-insensitive)
@@ -158,6 +162,8 @@ Visit [GitHub](https://github.com/zbanks/noodle) to fork the code or submit bugs
 
 ### Similar Tools
 
+- [Regular Expressions](https://en.wikipedia.org/wiki/Regular_expression), such as [Regex Dictionary](https://www.visca.com/regexdict/)
+    - Regular expressions are very common in programming, and can be used in Google Sheets
 - [Nutrimatic](https://nutrimatic.org/)
     - Better at ordering results & constructing realistic phrases
 - [qhex](https://tools.qhex.org/) *Word Play* tool
