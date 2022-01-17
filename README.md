@@ -80,14 +80,20 @@ See [Noodle Help](noodle_help.md).
     - Sugar (anagrams)
 - Select wordlist
 - Use wordlist from Wikipedia, like Nutrimatic, with rough frequency guides
+- Custom wordlist in web interface
+- Mix & match wordlists ("one word from this list of 100 words, plus any other 3 words")
 - Pre/post filters (regex)
 - "Extract"/re-write rules for matching "inner" words, etc. ("cross-filtering" on qhex)
 - "Inverse" NX expressions? ("does not match") -- (this is hard with NFAs)
 - Fuzzy matching + anagrams are weak; add post filter
 - Python library
 - Other ways of sorting the output in the UI (e.g. by length, alphabetical, etc.)
-- UI affordances for `#` options
 - Add support for `(...:-n)`/`(...:+n)` syntax
+- More powerful macro/preprocessing language?
+    - "Length of macro" would help with certain repetitive lookups
+- Feedback form in web UI
+- Make single-word searches faster by not building full transition tables
+- Heuristically re-sort constraints from most-to-least constraining (for speed)
 
 ## License
 
