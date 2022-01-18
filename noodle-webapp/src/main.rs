@@ -6,6 +6,7 @@ use serde::Serialize;
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use warp::ws::Message;
 use warp::Filter;
@@ -14,21 +15,21 @@ use warp::Filter;
 extern crate lazy_static;
 
 lazy_static! {
-    static ref WORDS: Vec<Word> = {
+    static ref WORDS: Arc<Vec<Arc<Word>>> = {
         let args: Vec<_> = std::env::args().collect();
         let wordlist_filename = args.get(1).cloned().unwrap_or("/usr/share/dict/words".to_string());
 
         let start = Instant::now();
         let words = load_wordlist(wordlist_filename).unwrap();
         println!(" === Time to load wordlist: {:?} ===", start.elapsed());
-        words
+        Arc::new(words.into_iter().map(|w| Arc::new(w)).collect())
     };
-    static ref WORDLIST: Vec<&'static Word> = {
-        let mut wordlist: Vec<&'static Word> = WORDS.iter().collect();
-        //wordlist.sort_by_key(|w| &w.chars);
-        wordlist.sort();
-        wordlist
-    };
+    //static ref WORDLIST: Arc<Vec<Arc<Word>>> = {
+    //    let mut wordlist: Vec<&'static Word> = WORDS.iter().collect();
+    //    //wordlist.sort_by_key(|w| &w.chars);
+    //    wordlist.sort();
+    //    Arc::new(wordlist
+    //};
     static ref ACTIVE_QUERIES: AtomicUsize = AtomicUsize::new(0_usize);
 }
 static TIMEOUT: Duration = Duration::from_secs(150);
@@ -67,7 +68,7 @@ fn flatten_phrase(phrase: Vec<Word>) -> String {
 
 fn get_wordlist() -> http::Result<http::Response<hyper::Body>> {
     let stream = stream::iter(
-        WORDLIST
+        WORDS
             .iter()
             .map(|w| http::Result::Ok(format!("{}\n", w.text))),
     );
@@ -99,18 +100,19 @@ fn run_query_sync(query_str: &str, plaintext: bool) -> http::Result<http::Respon
             if plaintext && query_ast.options.results_limit.is_none() {
                 query_ast.options.results_limit = Some(15);
             }
-            let evaluator = QueryEvaluator::from_ast(&query_ast, &WORDLIST).filter_map(move |m| {
-                if let QueryResponse::Match(p) = m {
-                    if plaintext {
-                        let words: Vec<_> = p.iter().map(|w| w.text.clone()).collect();
-                        Some(words.join(" "))
+            let evaluator =
+                QueryEvaluator::from_ast(&query_ast, WORDS.clone()).filter_map(move |m| {
+                    if let QueryResponse::Match(p) = m {
+                        if plaintext {
+                            let words: Vec<_> = p.iter().map(|w| w.text.clone()).collect();
+                            Some(words.join(" "))
+                        } else {
+                            Some(flatten_phrase(p))
+                        }
                     } else {
-                        Some(flatten_phrase(p))
+                        None
                     }
-                } else {
-                    None
-                }
-            });
+                });
             let response_stream = stream::iter(evaluator.map(Ok))
                 .chain(stream::once(future::ready(Err("".to_string()))));
 
@@ -175,7 +177,7 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
         )))
         .await?;
 
-        let mut evaluator = QueryEvaluator::from_ast(&query_ast, &WORDLIST);
+        let mut evaluator = QueryEvaluator::from_ast(&query_ast, WORDS.clone());
         for expression in evaluator.expressions() {
             tx.send(Response::Log {
                 message: format!("{:?}", expression),

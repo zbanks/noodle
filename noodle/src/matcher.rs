@@ -2,6 +2,7 @@ use crate::bitset::{BitSet1D, BitSet2D, BitSet3D, BitSetRef2D, BitSetRefMut2D};
 use crate::expression::Expression;
 use crate::words::{Char, Tranche, Word};
 use indexmap::IndexMap;
+use std::sync::Arc;
 use std::time::Instant;
 
 /// Search depth for phrase length, the number of words
@@ -16,7 +17,7 @@ pub type PhraseDepth = usize;
 /// The entire input wordlist needs to be evaluated before starting the
 /// phrase-matching phase.
 #[derive(Debug)]
-pub struct WordMatcher<'word> {
+pub struct WordMatcher {
     // We want an immutable reference to this, but with it allowed
     // to change out underneath us
     // This is owned by us and populated by us, others take a reference to it
@@ -28,7 +29,7 @@ pub struct WordMatcher<'word> {
     /// If there are multiple `WordMatchers` in a single `QueryEvaluator`,
     /// typically each `alive_wordlist` is a (weak) subset of the previous,
     /// with the first being a (weak) subset of the input wordlist.
-    pub alive_wordlist: Vec<&'word Word>,
+    pub alive_wordlist: Vec<Arc<Word>>,
 
     // As each word in the input wordlist is checked in `.next_single_word(...)`,
     // we also populate the `PhraseMatcher` datastructures to generate
@@ -50,7 +51,7 @@ pub struct WordMatcher<'word> {
     // If `table_chars` has N elements, then the first N elements of
     // `table_char_src_fuzz_dst` are valid, and correspond to the
     // possible state transitions from evaluating the `Char`s in this array.
-    table_chars: &'word [Char],
+    table_chars: Vec<Char>,
 
     // Tracks progress through evalutating the input wordlist.
     // Starts at `0`, and goes up to `input_wordlist.len()`.
@@ -60,9 +61,9 @@ pub struct WordMatcher<'word> {
 
 /// Wrapper around `WordMatcher` created from `WordMatcher::iter`.
 /// Used to turn the results of `WordMatcher::next_single_word` into an `Iterator`.
-pub struct WordMatcherIter<'word, 'it> {
-    word_matcher: &'it mut WordMatcher<'word>,
-    wordlist: &'it [&'word Word],
+pub struct WordMatcherIter<'it> {
+    word_matcher: &'it mut WordMatcher,
+    wordlist: &'it Vec<Arc<Word>>,
     single_word_only: bool,
     deadline: Option<Instant>,
 }
@@ -124,7 +125,7 @@ pub struct SearchPhase {
 
 // ---
 
-impl<'word> WordMatcher<'word> {
+impl WordMatcher {
     pub fn new(expression: Expression, max_word_len: usize) -> Self {
         let phrase_matcher = PhraseMatcher::new(expression);
 
@@ -139,16 +140,16 @@ impl<'word> WordMatcher<'word> {
             word_index: 0,
             alive_wordlist: vec![],
             table_char_src_fuzz_dst,
-            table_chars: &[],
+            table_chars: vec![],
         }
     }
 
     pub fn iter<'it>(
         &'it mut self,
-        wordlist: &'it [&'word Word],
+        wordlist: &'it Vec<Arc<Word>>,
         single_word_only: bool,
         deadline: Option<Instant>,
-    ) -> WordMatcherIter<'word, 'it> {
+    ) -> WordMatcherIter<'it> {
         WordMatcherIter {
             word_matcher: self,
             wordlist,
@@ -157,7 +158,7 @@ impl<'word> WordMatcher<'word> {
         }
     }
 
-    pub fn progress(&self, wordlist: &[&'word Word]) -> String {
+    pub fn progress(&self, wordlist: &Vec<Arc<Word>>) -> String {
         format!(
             "Single-word matches: {}/{} ({}%)",
             self.word_index,
@@ -175,7 +176,7 @@ impl<'word> WordMatcher<'word> {
     }
 
     /// TODO
-    //pub fn is_word_match(&self, word: &'word Word) -> bool {
+    //pub fn is_word_match(&self, word: &Word) -> bool {
     //    false
     //}
 
@@ -186,10 +187,10 @@ impl<'word> WordMatcher<'word> {
     /// While iterating, also compute the state needed by PhraseMatcher
     pub fn next_single_word(
         &mut self,
-        wordlist: &[&'word Word],
+        wordlist: &Vec<Arc<Word>>,
         single_word_only: bool,
         deadline: Option<Instant>,
-    ) -> Option<&'word Word> {
+    ) -> Option<Arc<Word>> {
         let mut deadline_check_count = 0;
         let states_len = self.phrase_matcher.states_len;
         let fuzz_range = 0..self.phrase_matcher.fuzz_limit;
@@ -206,7 +207,7 @@ impl<'word> WordMatcher<'word> {
             }
             deadline_check_count += 1;
 
-            let word = &wordlist[self.word_index];
+            let word = wordlist[self.word_index].clone();
             self.word_index += 1;
 
             // Find the common prefix with the last word we processed
@@ -246,17 +247,19 @@ impl<'word> WordMatcher<'word> {
                     single_word_only,
                 );
 
-            self.table_chars = &word.chars[0..partial_len];
+            self.table_chars.clear();
+            self.table_chars
+                .extend_from_slice(&word.chars[0..partial_len]);
             if partial_len < word_len {
                 continue;
             }
             assert_eq!(partial_len, word_len);
 
             // The word is "alive", it may be useful as part of a phrase match
-            self.alive_wordlist.push(word);
+            self.alive_wordlist.push(word.clone());
             let word_table_src_fuzz_dst = &self.table_char_src_fuzz_dst[word_len];
             self.phrase_matcher
-                .insert_word_table(word, &word_table_src_fuzz_dst);
+                .insert_word_table(&word, &word_table_src_fuzz_dst);
 
             // Check if the word is a match on its own (within the fuzz limit)
             let success_state = states_len - 1;
@@ -275,7 +278,7 @@ impl<'word> WordMatcher<'word> {
 
     pub fn optimize_for_wordlist(
         &mut self,
-        new_input_wordlist: &[&'word Word],
+        new_input_wordlist: &Vec<Arc<Word>>,
         search_queue: &Vec<SearchPhase>,
     ) -> bool {
         // Filter down `alive_wordlist` to exactly match `new_input_wordlist`.
@@ -298,17 +301,17 @@ impl<'word> WordMatcher<'word> {
                 .for_each(|wc| wc.clear());
 
             let mut new_word_classes = vec![];
-            let mut new_alive_wordlist = vec![];
+            let mut new_alive_wordlist: Vec<Arc<Word>> = vec![];
             let mut i: usize = 0;
-            for (&word, &class_index) in self
+            for (word, &class_index) in self
                 .alive_wordlist
                 .iter()
                 .zip(self.phrase_matcher.word_classes.iter())
             {
-                if i < new_input_wordlist.len() && *word == *new_input_wordlist[i] {
+                if i < new_input_wordlist.len() && *word == new_input_wordlist[i] {
                     if class_index != 0 {
                         new_word_classes.push(class_index);
-                        new_alive_wordlist.push(word);
+                        new_alive_wordlist.push(word.clone());
                         self.phrase_matcher
                             .classes
                             .get_index_mut(class_index)
@@ -576,16 +579,16 @@ impl<'word> WordMatcher<'word> {
             self.alive_wordlist.len()
         );
 
-        let mut new_alive_wordlist = vec![];
+        let mut new_alive_wordlist: Vec<Arc<Word>> = vec![];
         let mut new_word_classes = vec![];
-        for (&word, &old_class_index) in self
+        for (word, &old_class_index) in self
             .alive_wordlist
             .iter()
             .zip(self.phrase_matcher.word_classes.iter())
         {
             let new_class_index = class_map[old_class_index];
             if new_class_index != 0 {
-                new_alive_wordlist.push(word);
+                new_alive_wordlist.push(word.clone());
                 new_word_classes.push(new_class_index);
                 new_classes
                     .get_index_mut(new_class_index)
@@ -611,10 +614,10 @@ impl<'word> WordMatcher<'word> {
         Some(self.phrase_matcher)
     }
 }
-impl<'word> Iterator for WordMatcherIter<'word, '_> {
-    type Item = &'word Word;
+impl Iterator for WordMatcherIter<'_> {
+    type Item = Arc<Word>;
 
-    fn next(&mut self) -> Option<&'word Word> {
+    fn next(&mut self) -> Option<Arc<Word>> {
         self.word_matcher
             .next_single_word(self.wordlist, self.single_word_only, self.deadline)
     }
