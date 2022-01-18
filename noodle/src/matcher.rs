@@ -279,6 +279,10 @@ impl<'word> WordMatcher<'word> {
         // If they are not already equal, filter out the missing words
         {
             assert!(self.alive_wordlist.len() >= new_input_wordlist.len());
+            if self.alive_wordlist.len() == 0 {
+                assert!(new_input_wordlist.len() == 0);
+                return false;
+            }
 
             // Reset the classes internal metadata (e.g. # of words)
             self.phrase_matcher

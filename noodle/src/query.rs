@@ -348,6 +348,13 @@ impl<'word> QueryEvaluator<'word> {
                         if converged {
                             break;
                         }
+                        if optimization_passes > 100 {
+                            log_messages.push(format!(
+                                "gave up after performing {} optimization passes",
+                                optimization_passes
+                            ));
+                            break;
+                        }
                     }
 
                     log_messages.push(format!(
