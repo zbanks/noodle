@@ -223,17 +223,21 @@ impl<'word> QueryEvaluator<'word> {
 
         match &mut self.phase {
             QueryPhase::Word { matchers, wordlist } => {
+                let single_word_only = self.search_depth_limit <= 1;
+
                 // Check for single-word matches
                 let (first_matcher, remaining_matchers) = matchers.split_at_mut(1);
 
                 // Iterate over every word which satisfies the first matcher...
-                while let Some(word) = first_matcher[0].next_single_word(wordlist, deadline) {
+                while let Some(word) =
+                    first_matcher[0].next_single_word(wordlist, single_word_only, deadline)
+                {
                     // ...then have all of the remaining matchers consume the (growing) `alive_wordlist`
                     // The `alive_wordlist` of matcher `i` is fed into matcher `i+1`
                     let mut wordlist = &first_matcher[0].alive_wordlist;
                     let mut all_match = true;
                     for matcher in remaining_matchers.iter_mut() {
-                        let last_word = matcher.iter(wordlist, None).last();
+                        let last_word = matcher.iter(wordlist, single_word_only, None).last();
                         all_match = all_match && (last_word == Some(word));
                         wordlist = &matcher.alive_wordlist;
                     }
@@ -249,11 +253,12 @@ impl<'word> QueryEvaluator<'word> {
                 }
 
                 // Now, we're done with the single-word matches
-                if self.search_depth_limit <= 1 {
+                if single_word_only {
                     self.phase = QueryPhase::Done;
-                    return QueryResponse::Complete(
-                        "Complete, found all single-word matches".to_string(),
-                    );
+                    return QueryResponse::Complete(format!(
+                        "Complete, found all {} single-word matches",
+                        self.results_count
+                    ));
                 }
 
                 let mut log_messages = vec![];
@@ -262,7 +267,7 @@ impl<'word> QueryEvaluator<'word> {
                 let mut alive_wordlist = {
                     let mut wordlist = &first_matcher[0].alive_wordlist;
                     for matcher in remaining_matchers.iter_mut() {
-                        let _ = matcher.iter(wordlist, None).count();
+                        let _ = matcher.iter(wordlist, false, None).count();
                         wordlist = &matcher.alive_wordlist;
                     }
 

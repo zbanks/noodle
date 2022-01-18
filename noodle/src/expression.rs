@@ -454,13 +454,24 @@ impl Expression {
     /// The only bits that should be set are `[c][0][0][e]` where `e` is an epsilon transition
     /// from the starting state. (see `Expression::epsilon_states(0)`)
     ///
+    /// If `single_word_only` is true, only entries startin from state 0 are populated,
+    /// (i.e. `[c][0][f][t]`). This is an optimization when we know that the user doesn't care
+    /// about multi-word matches.
+    ///
     /// `RUNTIME: O(chars * fuzz * states^3)`
     pub fn fill_transition_table(
         &self,
         chars: &[Char],
         transition_table: &mut [BitSet3D],
+        single_word_only: bool,
     ) -> usize {
         debug_assert!(transition_table.len() > chars.len());
+
+        let n_start_states = if single_word_only {
+            1
+        } else {
+            self.states.len()
+        };
 
         // RUNTIME: O(chars * fuzz * states^3)
         for (char_index, &chr) in chars.iter().enumerate() {
@@ -479,8 +490,9 @@ impl Expression {
             }
 
             // Consume 1 character from the buffer and compute the set of possible resulting states
+            // All of the RUNTIME estimates are for `single_word_only == false`
             // RUNTIME: O(fuzz * states^3)
-            for state_index in 0..self.states.len() {
+            for state_index in 0..n_start_states {
                 let mut all_fuzz_are_empty = true;
                 // RUNTIME: O(fuzz * states^2)
                 for fuzz_index in 0..=self.fuzz {

@@ -92,7 +92,6 @@ See [Noodle Help](noodle_help.md).
 - More powerful macro/preprocessing language?
     - "Length of macro" would help with certain repetitive lookups
 - Feedback form in web UI
-- Make single-word searches faster by not building full transition tables
 - Heuristically re-sort constraints from most-to-least constraining (for speed)
 
 ## License

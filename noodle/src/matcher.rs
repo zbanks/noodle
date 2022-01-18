@@ -63,6 +63,7 @@ pub struct WordMatcher<'word> {
 pub struct WordMatcherIter<'word, 'it> {
     word_matcher: &'it mut WordMatcher<'word>,
     wordlist: &'it [&'word Word],
+    single_word_only: bool,
     deadline: Option<Instant>,
 }
 
@@ -145,11 +146,13 @@ impl<'word> WordMatcher<'word> {
     pub fn iter<'it>(
         &'it mut self,
         wordlist: &'it [&'word Word],
+        single_word_only: bool,
         deadline: Option<Instant>,
     ) -> WordMatcherIter<'word, 'it> {
         WordMatcherIter {
             word_matcher: self,
             wordlist,
+            single_word_only,
             deadline,
         }
     }
@@ -184,6 +187,7 @@ impl<'word> WordMatcher<'word> {
     pub fn next_single_word(
         &mut self,
         wordlist: &[&'word Word],
+        single_word_only: bool,
         deadline: Option<Instant>,
     ) -> Option<&'word Word> {
         let mut deadline_check_count = 0;
@@ -236,10 +240,11 @@ impl<'word> WordMatcher<'word> {
             // Fill the table, but this can return early if the chars are not a match
             // `partial_len` refers to how many chars are at least a partial match
             let partial_len = prefix_len
-                + self
-                    .phrase_matcher
-                    .expression
-                    .fill_transition_table(prefixed_chars, prefixed_table);
+                + self.phrase_matcher.expression.fill_transition_table(
+                    prefixed_chars,
+                    prefixed_table,
+                    single_word_only,
+                );
 
             self.table_chars = &word.chars[0..partial_len];
             if partial_len < word_len {
@@ -611,7 +616,7 @@ impl<'word> Iterator for WordMatcherIter<'word, '_> {
 
     fn next(&mut self) -> Option<&'word Word> {
         self.word_matcher
-            .next_single_word(self.wordlist, self.deadline)
+            .next_single_word(self.wordlist, self.single_word_only, self.deadline)
     }
 }
 
