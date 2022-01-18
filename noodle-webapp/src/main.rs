@@ -21,8 +21,9 @@ lazy_static! {
 
         let start = Instant::now();
         let words = load_wordlist(wordlist_filename).unwrap();
+        let words = Arc::new(words.into_iter().map(|w| Arc::new(w)).collect());
         println!(" === Time to load wordlist: {:?} ===", start.elapsed());
-        Arc::new(words.into_iter().map(|w| Arc::new(w)).collect())
+        words
     };
     //static ref WORDLIST: Arc<Vec<Arc<Word>>> = {
     //    let mut wordlist: Vec<&'static Word> = WORDS.iter().collect();
@@ -31,6 +32,7 @@ lazy_static! {
     //    Arc::new(wordlist
     //};
     static ref ACTIVE_QUERIES: AtomicUsize = AtomicUsize::new(0_usize);
+    static ref TOTAL_QUERIES: AtomicUsize = AtomicUsize::new(0_usize);
 }
 static TIMEOUT: Duration = Duration::from_secs(150);
 static TIMEOUT_PLAINTEXT: Duration = Duration::from_secs(10);
@@ -64,6 +66,29 @@ where
 fn flatten_phrase(phrase: Vec<Word>) -> String {
     let response = Response::Match { phrase };
     serde_json::to_string(&response).unwrap()
+}
+
+fn get_metrics() -> http::Result<http::Response<hyper::Body>> {
+    http::Response::builder().status(http::StatusCode::OK).body(
+        format!(
+            "\
+# HELP noodle_queries_active
+# TYPE noodle_queries_active gauge
+noodle_queries_active = {}
+
+# HELP noodle_queries_total
+# TYPE noodle_queries_total counter
+noodle_queries_total = {}
+
+# HELP noodle_wordlist_size
+# TYPE noodle_wordlist_size gauge
+noodle_wordlist_size = {}",
+            ACTIVE_QUERIES.load(Ordering::Relaxed),
+            TOTAL_QUERIES.load(Ordering::Relaxed),
+            WORDS.len()
+        )
+        .into(),
+    )
 }
 
 fn get_wordlist() -> http::Result<http::Response<hyper::Body>> {
@@ -152,6 +177,7 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
             .map(|m| m.map_err(Into::into))
             .unwrap_or_else(|| Err(anyhow!("Websocket closed without data")))?;
 
+        TOTAL_QUERIES.fetch_add(1, Ordering::Relaxed);
         let n_active = { ACTIVE_QUERIES.fetch_add(1, Ordering::Relaxed) };
         let start = Instant::now();
         tx.send(Response::Status(format!(
@@ -255,6 +281,9 @@ async fn main() {
         .or(warp::fs::file("static/index.html"))
         .or(warp::fs::file("noodle-webapp/static/index.html"));
 
+    // Metrics
+    let metrics = warp::get().and(warp::path("metrics")).map(|| get_metrics());
+
     // Wordlist
     let wordlist = warp::get()
         .and(warp::path("wordlist"))
@@ -279,7 +308,12 @@ async fn main() {
             run_query_sync(std::str::from_utf8(&query_str).unwrap(), false)
         });
 
-    let routes = get_query.or(post_query).or(ws).or(wordlist).or(index);
+    let routes = get_query
+        .or(post_query)
+        .or(ws)
+        .or(wordlist)
+        .or(metrics)
+        .or(index);
     let addr = IpAddr::from_str("::0").unwrap();
     warp::serve(routes).run((addr, 8082)).await;
 }

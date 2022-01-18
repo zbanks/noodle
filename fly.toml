@@ -5,6 +5,10 @@ app = "noodle"
 kill_signal = "SIGINT"
 kill_timeout = 5
 
+[metrics]
+port = 8082
+path = "/metrics"
+
 [env]
 
 [[services]]
