@@ -17,20 +17,17 @@ extern crate lazy_static;
 lazy_static! {
     static ref WORDS: Arc<Vec<Arc<Word>>> = {
         let args: Vec<_> = std::env::args().collect();
-        let wordlist_filename = args.get(1).cloned().unwrap_or("/usr/share/dict/words".to_string());
+        let wordlist_filename = args
+            .get(1)
+            .cloned()
+            .unwrap_or_else(|| "/usr/share/dict/words".to_string());
 
         let start = Instant::now();
         let words = load_wordlist(wordlist_filename).unwrap();
-        let words = Arc::new(words.into_iter().map(|w| Arc::new(w)).collect());
+        let words = Arc::new(words.into_iter().map(Arc::new).collect());
         println!(" === Time to load wordlist: {:?} ===", start.elapsed());
         words
     };
-    //static ref WORDLIST: Arc<Vec<Arc<Word>>> = {
-    //    let mut wordlist: Vec<&'static Word> = WORDS.iter().collect();
-    //    //wordlist.sort_by_key(|w| &w.chars);
-    //    wordlist.sort();
-    //    Arc::new(wordlist
-    //};
     static ref ACTIVE_QUERIES: AtomicUsize = AtomicUsize::new(0_usize);
     static ref TOTAL_QUERIES: AtomicUsize = AtomicUsize::new(0_usize);
 }
@@ -282,12 +279,10 @@ async fn main() {
         .or(warp::fs::file("noodle-webapp/static/index.html"));
 
     // Metrics
-    let metrics = warp::get().and(warp::path("metrics")).map(|| get_metrics());
+    let metrics = warp::get().and(warp::path("metrics")).map(get_metrics);
 
     // Wordlist
-    let wordlist = warp::get()
-        .and(warp::path("wordlist"))
-        .map(|| get_wordlist());
+    let wordlist = warp::get().and(warp::path("wordlist")).map(get_wordlist);
 
     // Websockets interface
     let ws = warp::path("ws")

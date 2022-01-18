@@ -342,7 +342,7 @@ impl QueryAst {
 
             let max_unique_letters = anagram_sets
                 .iter()
-                .map(|(_k, h)| h.iter().count())
+                .map(|(_k, h)| h.len())
                 .max()
                 .unwrap_or(0);
 

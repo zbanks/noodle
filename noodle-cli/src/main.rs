@@ -29,7 +29,7 @@ fn main() {
     let opt = Opt::from_args();
 
     let words = load_wordlist(opt.input).unwrap();
-    let mut wordlist: Vec<Arc<Word>> = words.into_iter().map(|w| Arc::new(w)).collect();
+    let mut wordlist: Vec<Arc<Word>> = words.into_iter().map(Arc::new).collect();
     wordlist.sort();
     let wordlist = Arc::new(wordlist);
 
@@ -39,18 +39,15 @@ fn main() {
     evaluator.set_search_depth_limit(opt.phrase_length);
 
     for result in evaluator {
-        match result {
-            QueryResponse::Match(phrase) => {
-                println!(
-                    "{}",
-                    phrase
-                        .into_iter()
-                        .map(|w| w.text)
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                );
-            }
-            _ => {}
-        };
+        if let QueryResponse::Match(phrase) = result {
+            println!(
+                "{}",
+                phrase
+                    .into_iter()
+                    .map(|w| w.text)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+        }
     }
 }

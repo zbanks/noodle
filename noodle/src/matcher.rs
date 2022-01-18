@@ -63,7 +63,7 @@ pub struct WordMatcher {
 /// Used to turn the results of `WordMatcher::next_single_word` into an `Iterator`.
 pub struct WordMatcherIter<'it> {
     word_matcher: &'it mut WordMatcher,
-    wordlist: &'it Vec<Arc<Word>>,
+    wordlist: &'it [Arc<Word>],
     single_word_only: bool,
     deadline: Option<Instant>,
 }
@@ -146,7 +146,7 @@ impl WordMatcher {
 
     pub fn iter<'it>(
         &'it mut self,
-        wordlist: &'it Vec<Arc<Word>>,
+        wordlist: &'it [Arc<Word>],
         single_word_only: bool,
         deadline: Option<Instant>,
     ) -> WordMatcherIter<'it> {
@@ -158,7 +158,7 @@ impl WordMatcher {
         }
     }
 
-    pub fn progress(&self, wordlist: &Vec<Arc<Word>>) -> String {
+    pub fn progress(&self, wordlist: &[Arc<Word>]) -> String {
         format!(
             "Single-word matches: {}/{} ({}%)",
             self.word_index,
@@ -187,7 +187,7 @@ impl WordMatcher {
     /// While iterating, also compute the state needed by PhraseMatcher
     pub fn next_single_word(
         &mut self,
-        wordlist: &Vec<Arc<Word>>,
+        wordlist: &[Arc<Word>],
         single_word_only: bool,
         deadline: Option<Instant>,
     ) -> Option<Arc<Word>> {
@@ -259,7 +259,7 @@ impl WordMatcher {
             self.alive_wordlist.push(word.clone());
             let word_table_src_fuzz_dst = &self.table_char_src_fuzz_dst[word_len];
             self.phrase_matcher
-                .insert_word_table(&word, &word_table_src_fuzz_dst);
+                .insert_word_table(&word, word_table_src_fuzz_dst);
 
             // Check if the word is a match on its own (within the fuzz limit)
             let success_state = states_len - 1;
@@ -278,8 +278,8 @@ impl WordMatcher {
 
     pub fn optimize_for_wordlist(
         &mut self,
-        new_input_wordlist: &Vec<Arc<Word>>,
-        search_queue: &Vec<SearchPhase>,
+        new_input_wordlist: &[Arc<Word>],
+        search_queue: &[SearchPhase],
     ) -> bool {
         // Filter down `alive_wordlist` to exactly match `new_input_wordlist`.
         //
@@ -289,8 +289,8 @@ impl WordMatcher {
             assert!(self.alive_wordlist.len() >= new_input_wordlist.len());
 
             // If there are no words left, there's no optimization to be done
-            if self.alive_wordlist.len() == 0 {
-                assert!(new_input_wordlist.len() == 0);
+            if self.alive_wordlist.is_empty() {
+                assert!(new_input_wordlist.is_empty());
                 return false;
             }
 
@@ -428,7 +428,7 @@ impl WordMatcher {
         // *and* can be used to reach the success state, with the given wordlist
         // TODO: Compute alive_states per tranche
         let alive_states = {
-            let mut states = reachable_srcs.clone();
+            let mut states = reachable_srcs;
             states.borrow_mut().intersect_with(candidate_srcs.borrow());
 
             states
@@ -700,7 +700,7 @@ impl PhraseMatcher {
 
         let tranches = {
             let mut ts: Vec<_> = search_phases.iter().map(|p| p.tranche).collect();
-            ts.sort();
+            ts.sort_unstable();
             ts.dedup();
             ts
         };

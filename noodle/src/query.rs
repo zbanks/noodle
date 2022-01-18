@@ -151,7 +151,7 @@ impl QueryEvaluator {
         let expressions: Vec<_> = query_ast
             .expressions
             .iter()
-            .map(|expr| Expression::from_ast(expr))
+            .map(Expression::from_ast)
             .collect();
 
         Self::new(
@@ -280,7 +280,7 @@ impl QueryEvaluator {
                 tranches.dedup();
                 {
                     let tranches_check = tranches.clone();
-                    tranches.sort();
+                    tranches.sort_unstable();
                     tranches.dedup();
                     assert_eq!(tranches, tranches_check);
                 }
