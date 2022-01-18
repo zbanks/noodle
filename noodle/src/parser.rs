@@ -528,12 +528,12 @@ fn parse_term(pair: Pair<Rule>) -> Option<Ast> {
                 .filter_map(parse_term)
                 .flat_map(|c| {
                     vec![
-                        c,
                         Ast::Repetition {
                             term: Box::new(Ast::CharClass(CharBitset::ALL)),
                             min: 0,
                             max: None,
                         },
+                        c,
                     ]
                     .into_iter()
                 })
