@@ -71,15 +71,15 @@ fn get_metrics() -> http::Result<http::Response<hyper::Body>> {
             "\
 # HELP noodle_queries_active
 # TYPE noodle_queries_active gauge
-noodle_queries_active = {}
+noodle_queries_active {}
 
 # HELP noodle_queries_total
 # TYPE noodle_queries_total counter
-noodle_queries_total = {}
+noodle_queries_total {}
 
 # HELP noodle_wordlist_size
 # TYPE noodle_wordlist_size gauge
-noodle_wordlist_size = {}",
+noodle_wordlist_size {}",
             ACTIVE_QUERIES.load(Ordering::Relaxed),
             TOTAL_QUERIES.load(Ordering::Relaxed),
             WORDS.len()
