@@ -4,6 +4,7 @@ use pest::error::{Error as PestError, LineColLocation};
 use pest::iterators::{Pair, Pairs};
 use pest::Parser;
 use std::fmt;
+use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, PestError<Rule>>;
 
@@ -27,6 +28,7 @@ pub struct QueryOptions {
     pub dictionary: Option<String>,
     pub results_limit: Option<usize>,
     pub quiet: Option<bool>,
+    pub wordlist: Option<Arc<Vec<Arc<Word>>>>,
 }
 
 /// An expression is similar to a single regular expression.
@@ -109,7 +111,9 @@ impl QueryAst {
             dictionary: None,
             results_limit: None,
             quiet: None,
+            wordlist: None,
         };
+        let mut wordlist: Option<Vec<Arc<Word>>> = None;
 
         fn error_set_line(mut err: PestError<Rule>, line: usize) -> PestError<Rule> {
             match &mut err.line_col {
@@ -123,8 +127,15 @@ impl QueryAst {
         }
 
         for (i, line) in input_str.split(&['\n', ';'][..]).enumerate() {
-            let mut line = line.to_owned();
+            if let Some(ref mut wl) = wordlist {
+                let line = line.trim();
+                if line.len() > 0 {
+                    wl.push(Arc::new(Word::new(line, 1, i as u32)));
+                }
+                continue;
+            }
 
+            let mut line = line.to_owned();
             for (macro_name, macro_value) in macros.iter() {
                 line = line.replace(macro_name, macro_value);
             }
@@ -158,6 +169,9 @@ impl QueryAst {
                     Rule::pragma_quiet => {
                         options.quiet = Some(true);
                     }
+                    Rule::pragma_wordlist => {
+                        wordlist = Some(vec![]);
+                    }
                     Rule::macro_define => {
                         let inner = pair.into_inner();
                         let terms: Vec<_> = inner
@@ -174,6 +188,10 @@ impl QueryAst {
                     _ => println!("Unexpected: {:?}", pair),
                 }
             }
+        }
+        if let Some(mut wl) = wordlist {
+            wl.sort();
+            options.wordlist = Some(Arc::new(wl));
         }
 
         let mut ast = QueryAst {

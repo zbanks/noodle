@@ -156,7 +156,12 @@ impl QueryEvaluator {
 
         Self::new(
             expressions,
-            input_wordlist,
+            query_ast
+                .options
+                .wordlist
+                .as_ref()
+                .cloned()
+                .unwrap_or(input_wordlist),
             search_depth_limit,
             results_limit,
         )

@@ -19,6 +19,11 @@
             button {
                 font-size: 1.4em;
             }
+            button#copy-wordlist {
+                font-size: 1em;
+                float: right;
+                margin-right: 2em;
+            }
             abbr {
                 text-decoration: none;
                 cursor: help;
@@ -175,6 +180,13 @@
                         </abbr>
                     </label>
                     <input type="checkbox" id="show-debug"></input>
+                </div>
+                <div style="margin-top: 1em;"></div>
+                <div>
+                    <details>
+                        <summary>Custom Wordlist <button id="copy-wordlist">Copy from Results</button></summary>
+                        <textarea id="custom-wordlist" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+                    </details>
                 </div>
                 <div class="examples">
                     <h2>Examples</h2>
@@ -355,6 +367,7 @@
             var debug = document.querySelector("#debug");
             var filter = document.querySelector("#filter");
             var sort = document.querySelector("#sort");
+            var customWordlist = document.querySelector("#custom-wordlist");
 
             input.value = decodeURI(window.location.hash.substring(1));
             window.matches = "";
@@ -395,13 +408,16 @@
 
                 sort.checked = false;
                 enableFilter.checked = false;
+                window.location.hash = "#" + encodeURI(input.value);
 
                 var inputText = "";
                 inputText += "#dict " + wordlist.value + "\n";
                 inputText += "#words " + maxPhraseLength.value + "\n";
                 inputText += "#limit " + maxResults.value + "\n";
                 inputText += input.value;
-                window.location.hash = "#" + encodeURI(input.value);
+                if (customWordlist.value) {
+                    inputText += "\n#wordlist\n" + customWordlist.value;
+                }
 
                 var protocol = window.location.protocol == "https:" ? "wss:" : "ws:";
                 var ws = new WebSocket(protocol + "//" + window.location.host + "/ws");
@@ -508,6 +524,23 @@
                 } else {
                     debug.style.display = "none";
                 }
+            });
+            document.querySelector("#copy-wordlist").addEventListener("click", function() {
+                var filter_regex = null;
+                if (enableFilter.checked) {
+                    filter_regex = new RegExp(filter.value);
+                }
+                var words = "";
+                for (var i = 0; i < window.matches.length; i++) {
+                    if (filter_regex !== null) {
+                        if (!window.matches[i].fullText.match(filter_regex)) {
+                            continue;
+                        }
+                    }
+                    words += window.matches[i].fullText + "\n";
+                }
+                customWordlist.value = words;
+                customWordlist.parentElement.open = true;
             });
         </script>
     </body>

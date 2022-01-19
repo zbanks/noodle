@@ -81,7 +81,8 @@ pragma_words = { ^"#words" ~ number }
 pragma_dict = { (^"#dict" | ^"#dictionary") ~ character+ }
 pragma_limit = {^"#limit" ~ number }
 pragma_quiet = {^"#quiet"}
-pragma = _{ SOI ~ (pragma_words | pragma_dict | pragma_limit | pragma_quiet) ~ EOI }
+pragma_wordlist = {^"#wordlist"}
+pragma = _{ SOI ~ (pragma_words | pragma_dict | pragma_limit | pragma_quiet | pragma_wordlist) ~ EOI }
 
 empty_line = _{ SOI ~ EOI }
 
