@@ -16,6 +16,7 @@ pest = "2.1.0"
 pest_derive = "2.1.0"
 unicode-normalization = "0.1.17"
 serde = { version = "1.0", features = ["derive"], optional = true }
+zstd = "0.9"
 
 [features]
 serialize = ["serde"]

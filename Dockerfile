@@ -15,8 +15,8 @@ WORKDIR /home/noodle/
 
 RUN mkdir static
 COPY --from=build --chown=noodle:noodle /home/rust/src/target/x86_64-unknown-linux-musl/release/noodle-webapp .
-COPY --from=build /home/rust/src/wordlist_consolidated.txt .
+COPY --from=build /home/rust/src/wordlist_consolidated.txt.zst .
 COPY --from=build /home/rust/src/noodle-webapp/static/* ./static/
 
 USER noodle
-CMD ./noodle-webapp wordlist_consolidated.txt
+CMD ./noodle-webapp wordlist_consolidated.txt.zst

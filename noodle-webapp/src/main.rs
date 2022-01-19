@@ -23,9 +23,13 @@ lazy_static! {
             .unwrap_or_else(|| "/usr/share/dict/words".to_string());
 
         let start = Instant::now();
-        let words = load_wordlist(wordlist_filename).unwrap();
+        let words = load_wordlist(&wordlist_filename).unwrap();
         let words = Arc::new(words.into_iter().map(Arc::new).collect());
-        println!(" === Time to load wordlist: {:?} ===", start.elapsed());
+        println!(
+            "Time to load wordlist from {:?}: {:?}",
+            wordlist_filename,
+            start.elapsed()
+        );
         words
     };
     static ref ACTIVE_QUERIES: AtomicUsize = AtomicUsize::new(0_usize);
@@ -272,6 +276,9 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
 #[tokio::main(flavor = "multi_thread", worker_threads = 20)]
 async fn main() {
     //pretty_env_logger::init();
+
+    // Force load of WORDS lazy_static at startup
+    println!("wordlist size {}", WORDS.len());
 
     // Static files
     let index = warp::fs::file("index.html")

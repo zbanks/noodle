@@ -129,7 +129,7 @@ impl QueryAst {
         for (i, line) in input_str.split(&['\n', ';'][..]).enumerate() {
             if let Some(ref mut wl) = wordlist {
                 let line = line.trim();
-                if line.len() > 0 {
+                if !line.is_empty() {
                     wl.push(Arc::new(Word::new(line, 1, i as u32)));
                 }
                 continue;

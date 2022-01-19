@@ -189,12 +189,20 @@ impl fmt::Display for Word {
 #[allow(clippy::result_unit_err)]
 pub fn load_wordlist<P>(filename: P) -> Result<Vec<Word>, ()>
 where
-    P: AsRef<std::path::Path>,
+    P: AsRef<std::path::Path> + Clone,
 {
     // TODO: Correctly propagate errors
     // TODO: Include tranche values in the wordlist file, rather than making them up
-    let file = std::fs::File::open(filename).unwrap();
-    let lines = io::BufReader::new(file).lines();
+    let file = std::fs::File::open(filename.clone()).unwrap();
+    let bufread = io::BufReader::new(file);
+    let unzip: Box<dyn BufRead> =
+        if filename.as_ref().extension() == Some(std::ffi::OsStr::new("zst")) {
+            Box::new(io::BufReader::new(
+                zstd::stream::read::Decoder::new(bufread).unwrap(),
+            ))
+        } else {
+            Box::new(bufread)
+        };
 
     const INITIAL_TRANCHE_SIZE: usize = 10000;
     let mut tranche_size: usize = INITIAL_TRANCHE_SIZE;
@@ -202,7 +210,8 @@ where
     let mut tranche: Tranche = 0;
     let mut word_count: usize = 0;
 
-    let mut wordlist: Vec<_> = lines
+    let mut wordlist: Vec<_> = unzip
+        .lines()
         .filter_map(|line| line.ok())
         .filter_map(|line| {
             if line.len() > 1 || line == "I" || line == "a" {
