@@ -242,3 +242,28 @@ where
     );
     Ok(wordlist)
 }
+
+pub trait WordListRef<'word> {
+    fn size(&self) -> usize;
+    fn borrow(&self, index: usize) -> &'word Word;
+}
+
+impl<'word, 'a> WordListRef<'word> for &'a [&'word Word] {
+    fn size(&self) -> usize {
+        self.len()
+    }
+
+    fn borrow(&self, index: usize) -> &'word Word {
+        self[index]
+    }
+}
+
+impl<'word> WordListRef<'word> for &'word [Word] {
+    fn size(&self) -> usize {
+        self.len()
+    }
+
+    fn borrow(&self, index: usize) -> &'word Word {
+        &self[index]
+    }
+}

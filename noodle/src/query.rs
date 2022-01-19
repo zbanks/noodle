@@ -3,13 +3,12 @@ use crate::expression::Expression;
 use crate::matcher::{PhraseDepth, PhraseMatcher, SearchPhase, WordMatcher};
 use crate::parser;
 use crate::words::{Tranche, Word};
-use std::sync::Arc;
 use std::time::Instant;
 
 /// Evaluate a query, consisting of multiple expressions, on a given wordset.
 /// Returns words and phrases that match the given query
-pub struct QueryEvaluator {
-    phase: QueryPhase,
+pub struct QueryEvaluator<'word> {
+    phase: QueryPhase<'word>,
 
     /// The initial limit on search depth (e.g. max number of words in a phrase)
     /// This limit is used to populate the `QueryPhase::Phrase.search_queue` list,
@@ -27,13 +26,13 @@ pub struct QueryEvaluator {
 ///  - Single word matches (while simultaneously populating the PhraseMatcher datastructure)
 ///  - Phrase matches
 ///  - Done
-enum QueryPhase {
+enum QueryPhase<'word> {
     /// Phase 1, single-word matches
     Word {
-        matchers: Vec<WordMatcher>,
+        matchers: Vec<WordMatcher<'word>>,
 
         /// The input wordlist (unfiltered)
-        wordlist: Arc<Vec<Arc<Word>>>,
+        wordlist: &'word [Word],
     },
     /// Phase 2, multi-word phrases
     Phrase {
@@ -41,7 +40,7 @@ enum QueryPhase {
 
         /// The "alive" wordlist, which has been filtered to only contain words that
         /// *could* contribute to a phrase match across all `PhraseMatcher`s
-        wordlist: Vec<Arc<Word>>,
+        wordlist: Vec<&'word Word>,
 
         /// The search is sort of a form of IDDFS, see
         /// https://en.wikipedia.org/wiki/Iterative_deepening_depth-first_search
@@ -100,10 +99,10 @@ fn search_estimate(search_phases: &[SearchPhase]) -> u32 {
         .sum()
 }
 
-impl QueryEvaluator {
+impl<'word> QueryEvaluator<'word> {
     pub fn new(
         expressions: Vec<Expression>,
-        input_wordlist: Arc<Vec<Arc<Word>>>,
+        input_wordlist: &'word [Word],
         search_depth_limit: PhraseDepth,
         results_limit: Option<usize>,
     ) -> Self {
@@ -132,7 +131,7 @@ impl QueryEvaluator {
         }
     }
 
-    pub fn from_ast(query_ast: &parser::QueryAst, input_wordlist: Arc<Vec<Arc<Word>>>) -> Self {
+    pub fn from_ast(query_ast: &'word parser::QueryAst, input_wordlist: &'word [Word]) -> Self {
         // TODO: Use `options.dictionary`
         // TODO: Use `options.quiet`
         // TODO: Maybe `results_limit` should be handled upstream?
@@ -160,7 +159,7 @@ impl QueryEvaluator {
                 .options
                 .wordlist
                 .as_ref()
-                .cloned()
+                .map(|wl| &wl[..])
                 .unwrap_or(input_wordlist),
             search_depth_limit,
             results_limit,
@@ -187,7 +186,7 @@ impl QueryEvaluator {
 
     pub fn progress(&self) -> String {
         match &self.phase {
-            QueryPhase::Word { matchers, wordlist } => matchers[0].progress(&*wordlist),
+            QueryPhase::Word { matchers, wordlist } => matchers[0].progress(wordlist),
             QueryPhase::Phrase {
                 search_layers,
                 search_queue,
@@ -235,8 +234,8 @@ impl QueryEvaluator {
                 let (first_matcher, remaining_matchers) = matchers.split_at_mut(1);
 
                 // Iterate over every word which satisfies the first matcher...
-                while let Some(ref word) =
-                    first_matcher[0].next_single_word(&*wordlist, single_word_only, deadline)
+                while let Some(word) =
+                    first_matcher[0].next_single_word(*wordlist, single_word_only, deadline)
                 {
                     // ...then have all of the remaining matchers consume the (growing) `alive_wordlist`
                     // The `alive_wordlist` of matcher `i` is fed into matcher `i+1`
@@ -244,14 +243,14 @@ impl QueryEvaluator {
                     let mut all_match = true;
                     for matcher in remaining_matchers.iter_mut() {
                         let last_word = matcher.iter(wordlist, single_word_only, None).last();
-                        all_match = all_match && (last_word == Some(word.clone()));
+                        all_match = all_match && (last_word == Some(word));
                         wordlist = &matcher.alive_wordlist;
                     }
 
                     // A single word is match if it is returned by every matcher's iterator
                     if all_match {
                         self.results_count += 1;
-                        return QueryResponse::Match(vec![(**word).clone()]);
+                        return QueryResponse::Match(vec![word.clone()]);
                     }
                 }
                 if deadline.is_some() && Some(Instant::now()) > deadline {
@@ -555,7 +554,7 @@ impl QueryEvaluator {
                         result = Some(QueryResponse::Match(
                             search_layers[0..=*layer_index]
                                 .iter()
-                                .map(|sl| (*wordlist[sl.word_index]).clone())
+                                .map(|sl| wordlist[sl.word_index].clone())
                                 .collect(),
                         ));
                     }
@@ -645,7 +644,7 @@ impl QueryEvaluator {
     }
 }
 
-impl Iterator for QueryEvaluator {
+impl Iterator for QueryEvaluator<'_> {
     type Item = QueryResponse;
 
     fn next(&mut self) -> Option<QueryResponse> {

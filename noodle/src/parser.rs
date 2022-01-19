@@ -4,7 +4,6 @@ use pest::error::{Error as PestError, LineColLocation};
 use pest::iterators::{Pair, Pairs};
 use pest::Parser;
 use std::fmt;
-use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, PestError<Rule>>;
 
@@ -28,7 +27,7 @@ pub struct QueryOptions {
     pub dictionary: Option<String>,
     pub results_limit: Option<usize>,
     pub quiet: Option<bool>,
-    pub wordlist: Option<Arc<Vec<Arc<Word>>>>,
+    pub wordlist: Option<Vec<Word>>,
 }
 
 /// An expression is similar to a single regular expression.
@@ -113,7 +112,7 @@ impl QueryAst {
             quiet: None,
             wordlist: None,
         };
-        let mut wordlist: Option<Vec<Arc<Word>>> = None;
+        let mut wordlist: Option<Vec<Word>> = None;
 
         fn error_set_line(mut err: PestError<Rule>, line: usize) -> PestError<Rule> {
             match &mut err.line_col {
@@ -130,7 +129,7 @@ impl QueryAst {
             if let Some(ref mut wl) = wordlist {
                 let line = line.trim();
                 if !line.is_empty() {
-                    wl.push(Arc::new(Word::new(line, 1, i as u32)));
+                    wl.push(Word::new(line, 1, i as u32));
                 }
                 continue;
             }
@@ -191,7 +190,7 @@ impl QueryAst {
         }
         if let Some(mut wl) = wordlist {
             wl.sort();
-            options.wordlist = Some(Arc::new(wl));
+            options.wordlist = Some(wl);
         }
 
         let mut ast = QueryAst {

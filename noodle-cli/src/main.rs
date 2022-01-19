@@ -1,6 +1,5 @@
-use noodle::{load_wordlist, parser, QueryEvaluator, QueryResponse, Word};
+use noodle::{load_wordlist, parser, QueryEvaluator, QueryResponse};
 use std::path::PathBuf;
-use std::sync::Arc;
 use structopt::StructOpt;
 
 const DEFAULT_WORDLIST_FILE: &str = "/usr/share/dict/words";
@@ -27,14 +26,9 @@ struct Opt {
 
 fn main() {
     let opt = Opt::from_args();
-
     let words = load_wordlist(opt.input).unwrap();
-    let mut wordlist: Vec<Arc<Word>> = words.into_iter().map(Arc::new).collect();
-    wordlist.sort();
-    let wordlist = Arc::new(wordlist);
-
     let query_ast = parser::QueryAst::new_from_str(&opt.query).unwrap();
-    let mut evaluator = QueryEvaluator::from_ast(&query_ast, wordlist);
+    let mut evaluator = QueryEvaluator::from_ast(&query_ast, &words);
     evaluator.set_results_limit(opt.count);
     evaluator.set_search_depth_limit(opt.phrase_length);
 

@@ -1,12 +1,11 @@
 use anyhow::{self as ah, anyhow};
 use futures::task::Poll;
-use futures::{future, poll, stream, SinkExt, Stream, StreamExt};
+use futures::{future, poll, stream, SinkExt, StreamExt};
 use noodle::{load_wordlist, parser, QueryEvaluator, QueryResponse, Word};
 use serde::Serialize;
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use warp::ws::Message;
 use warp::Filter;
@@ -15,7 +14,7 @@ use warp::Filter;
 extern crate lazy_static;
 
 lazy_static! {
-    static ref WORDS: Arc<Vec<Arc<Word>>> = {
+    static ref WORDS: Vec<Word> = {
         let args: Vec<_> = std::env::args().collect();
         let wordlist_filename = args
             .get(1)
@@ -24,7 +23,6 @@ lazy_static! {
 
         let start = Instant::now();
         let words = load_wordlist(&wordlist_filename).unwrap();
-        let words = Arc::new(words.into_iter().map(Arc::new).collect());
         println!(
             "Time to load wordlist from {:?}: {:?}",
             wordlist_filename,
@@ -44,24 +42,6 @@ enum Response {
     Status(String),
     Log { message: String },
     Match { phrase: Vec<Word> },
-}
-
-/// Convert a `Stream` on `Result<T, T>` items into a `Stream` on `T`.
-/// Returns items from the input stream while they are `Ok`, then returns
-/// the contents of the *first* `Err`, then stops
-fn stream_until_error<T, S>(stream: S) -> impl Stream<Item = T>
-where
-    S: Stream<Item = Result<T, T>>,
-{
-    // TODO: This is primarily used for implementing timeouts, and forwarding that
-    // error to the end user. Is there a more elegant way of doing this?
-    stream
-        .flat_map(|r| match r {
-            Ok(v) => stream::once(async { Some(v) }).left_stream(),
-            Err(e) => stream::iter(vec![Some(e), None]).right_stream(),
-        })
-        .take_while(|x| future::ready(x.is_some()))
-        .map(|x| x.unwrap())
 }
 
 fn flatten_phrase(phrase: Vec<Word>) -> String {
@@ -105,7 +85,7 @@ fn get_wordlist() -> http::Result<http::Response<hyper::Body>> {
 }
 
 /// Plain HTTP interface, for use with cURL or GSheets IMPORTDATA
-fn run_query_sync(query_str: &str, plaintext: bool) -> http::Result<http::Response<hyper::Body>> {
+fn run_query_sync(query_str: &str, plaintext: bool) -> http::Result<impl warp::Reply> {
     // TODO: hyper's implementation of "transfer-encoding: chunked" buffers the results of the
     // iterator, and only flushes every ~24 or so items (as 24 separate chunks, at once).
     // (The flushing is not on a timeout, nor on total data size afaict)
@@ -115,47 +95,54 @@ fn run_query_sync(query_str: &str, plaintext: bool) -> http::Result<http::Respon
     //
     // TODO: I don't like that this has a lot of the same code as run_websocket,
     // but it's a pain to abstract out streams due to their long types
+    TOTAL_QUERIES.fetch_add(1, Ordering::Relaxed);
+    ACTIVE_QUERIES.fetch_add(1, Ordering::Relaxed);
+
     let timeout = if plaintext {
         TIMEOUT_PLAINTEXT
     } else {
         TIMEOUT
     };
     let query_ast = parser::QueryAst::new_from_str(query_str);
-    let body = match query_ast {
+
+    let result = match query_ast {
         Ok(mut query_ast) => {
+            let mut body = String::new();
             if plaintext && query_ast.options.results_limit.is_none() {
                 query_ast.options.results_limit = Some(15);
             }
-            let evaluator =
-                QueryEvaluator::from_ast(&query_ast, WORDS.clone()).filter_map(move |m| {
-                    if let QueryResponse::Match(p) = m {
+            let deadline = Instant::now() + timeout;
+            let mut evaluator = QueryEvaluator::from_ast(&query_ast, &WORDS);
+            loop {
+                match evaluator.next_within_deadline(Some(deadline)) {
+                    QueryResponse::Match(p) => {
                         if plaintext {
-                            let words: Vec<_> = p.iter().map(|w| w.text.clone()).collect();
-                            Some(words.join(" "))
+                            for word in p.iter() {
+                                body.push_str(&word.text);
+                                body.push(' ');
+                            }
+                            body.push('\n');
                         } else {
-                            Some(flatten_phrase(p))
+                            body.push_str(&flatten_phrase(p));
+                            body.push('\n');
                         }
-                    } else {
-                        None
                     }
-                });
-            let response_stream = stream::iter(evaluator.map(Ok))
-                .chain(stream::once(future::ready(Err("".to_string()))));
-
-            let timeout_stream = stream::once(tokio::time::sleep(timeout))
-                .map(move |_| Err(format!("# Timeout after {:?}", timeout)));
-
-            // TODO: The string building code here is pretty bad
-            let result_stream = stream_until_error(stream::select(response_stream, timeout_stream))
-                .map(|ms| Result::<_, String>::Ok(format!("{}\n", ms)));
-            hyper::Body::wrap_stream(result_stream)
+                    QueryResponse::Timeout => {
+                        body.push_str(&format!("# Timeout after {:?}\n", timeout));
+                        break;
+                    }
+                    QueryResponse::Logs(_) => {}
+                    QueryResponse::Complete(_) => {
+                        break;
+                    }
+                };
+            }
+            Ok(body)
         }
-        Err(error) => error.to_string().into(),
+        Err(error) => Ok(error.to_string()),
     };
-
-    http::Response::builder()
-        .status(http::StatusCode::OK)
-        .body(body)
+    ACTIVE_QUERIES.fetch_sub(1, Ordering::Relaxed);
+    result
 }
 
 /// Websockets interface, for interactive use
@@ -204,7 +191,7 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
         )))
         .await?;
 
-        let mut evaluator = QueryEvaluator::from_ast(&query_ast, WORDS.clone());
+        let mut evaluator = QueryEvaluator::from_ast(&query_ast, &WORDS[..]);
         for expression in evaluator.expressions() {
             tx.send(Response::Log {
                 message: format!("{:?}", expression),
@@ -278,7 +265,7 @@ async fn main() {
     //pretty_env_logger::init();
 
     // Force load of WORDS lazy_static at startup
-    println!("wordlist size {}", WORDS.len());
+    //println!("wordlist size {}", WORDS.len());
 
     // Static files
     let index = warp::fs::file("index.html")
