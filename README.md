@@ -80,7 +80,6 @@ See [Noodle Help](noodle_help.md).
     - Sugar (anagrams)
 - Select wordlist
 - Use wordlist from Wikipedia, like Nutrimatic, with rough frequency guides
-- Custom wordlist in web interface
 - Mix & match wordlists ("one word from this list of 100 words, plus any other 3 words")
 - Pre/post filters (regex)
 - "Extract"/re-write rules for matching "inner" words, etc. ("cross-filtering" on qhex)
@@ -98,5 +97,5 @@ See [Noodle Help](noodle_help.md).
 
 Released under the [MIT License](LICENSE).
 
-Copyright (c) 2020-2021 Zach Banks
+Copyright (c) 2020-2022 Zach Banks
 
