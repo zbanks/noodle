@@ -277,6 +277,7 @@ async fn main() {
     let index = warp::fs::file("index.html")
         .or(warp::fs::file("static/index.html"))
         .or(warp::fs::file("noodle-webapp/static/index.html"));
+    let statics = warp::fs::dir("static").or(warp::fs::dir("noodle-webapp/static"));
 
     // Metrics
     let metrics = warp::get().and(warp::path("metrics")).map(get_metrics);
@@ -308,6 +309,7 @@ async fn main() {
         .or(ws)
         .or(wordlist)
         .or(metrics)
+        .or(statics)
         .or(index);
     let addr = IpAddr::from_str("::0").unwrap();
     warp::serve(routes).run((addr, 8082)).await;
