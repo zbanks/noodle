@@ -1,3 +1,4 @@
+use smallvec::SmallVec;
 use std::convert::TryInto;
 use std::fmt;
 use std::io::{self, BufRead};
@@ -154,7 +155,7 @@ pub struct Word {
     #[cfg_attr(feature = "serialize", serde(skip))]
     pub tranche: Tranche,
     #[cfg_attr(feature = "serialize", serde(skip))]
-    pub chars: Vec<Char>,
+    pub chars: SmallVec<[Char; 16]>,
     pub text: String,
     pub score: u32,
 }
