@@ -503,6 +503,7 @@
                         copy.innerText = "c";
                         copy.className = "ext";
                         copy.style.cursor = "copy";
+                        copy.title = "Copy to clipboard";
                         copy.addEventListener("click", function() {
                             navigator.clipboard.writeText(match.fullText);
                         });
@@ -510,18 +511,21 @@
                         let google = document.createElement("a");
                         google.innerText = "g";
                         google.className = "ext";
-                        google.href = "https://google.com/search?q=define:+" + encodeURI(match.fullText);
+                        google.href = "https://google.com/search?q=define:" + encodeURI(match.fullText);
+                        google.title = "Google define:" + match.fullText;
                         google.target = "_blank";
 
                         let wiki = document.createElement("a");
                         wiki.innerText = "w";
                         wiki.className = "ext";
                         wiki.href = "https://en.wikipedia.org/w/index.php?ns0=1&search=" + encodeURI(match.fullText);
+                        wiki.title = "Wikipedia " + match.fullText;
                         wiki.target = "_blank";
 
                         let cxio = document.createElement("a");
                         cxio.innerText = "x";
                         cxio.className = "ext";
+                        cxio.title = "crossword-solver.io clue " + match.fullText;
                         cxio.href = "https://crossword-solver.io/clue/" + encodeURI(match.fullText);
                         cxio.target = "_blank";
 
