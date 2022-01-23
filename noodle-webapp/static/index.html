@@ -205,6 +205,17 @@
                         <textarea id="custom-wordlist" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
                     </details>
                 </div>
+                <div style="margin-top: 1em;"></div>
+                <div>
+                    <details>
+                        <summary>Send Feedback</summary>
+                        <textarea id="feedback"></textarea>
+                        <button id="send-feedback">Send Feedback</button>
+                        <p>
+                        This form will send @zbanks your current query, your browser name, and the above text.
+                        </p>
+                    </details>
+                </div>
                 <div class="examples">
                     <h2>Examples</h2>
                     <ul>
@@ -385,6 +396,7 @@
             var filter = document.querySelector("#filter");
             var sort = document.querySelector("#sort");
             var customWordlist = document.querySelector("#custom-wordlist");
+            var feedback = document.querySelector("#feedback");
 
             input.value = decodeURI(window.location.hash.substring(1));
             window.matches = "";
@@ -572,6 +584,19 @@
                 }
                 customWordlist.value = words;
                 customWordlist.parentElement.open = true;
+            });
+            document.querySelector("#send-feedback").addEventListener("click", function() {
+                // Yes, this is just a plain Discord webhook URL, thinly vieled to thwart generic
+                // GitHub/web scrapers. Yes you can use this to send me arbitrary messages, but then
+                // I can just disable the webhook entirely.
+                let webhookUrl = "https://disco" + "rd.com/api/webho" + "oks/93489429" + "7843634177/sxl1mAAxEGYj3trquqoYpHQVchRirVu0tArGpd6eIJst" + "kUQ3Q-Q0fa3Csx-sAR6IJUd8";
+                let message = feedback.value + "\n```\n" + input.value + "\n```\nvia `" + window.navigator.userAgent + "`\n";
+                console.log(message);
+
+                let xhr = new XMLHttpRequest();
+                xhr.open("POST", webhookUrl);
+                xhr.setRequestHeader("Content-type", "application/json");
+                xhr.send(JSON.stringify({content: message}));
             });
         </script>
     </body>
