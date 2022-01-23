@@ -21,7 +21,8 @@ class Wordlist:
         wordlist = Wordlist()
         with path.open() as f:
             for i, line in enumerate(f):
-                score, canonical, word = line.strip().split("\t")
+                row = line.strip().split("\t")
+                score, word = row[0], row[-1]
                 wordlist.add_word(word=word, index=i, score=int(score))
         return wordlist
 
@@ -31,6 +32,22 @@ class Wordlist:
                 self.word_data.items(), key=lambda x: x[1][0], reverse=True
             ):
                 f.write(f"{score}\t{canonical}\t{word}\n")
+                # f.write(f"{score}\t{word}\n")
+        print(f"Saved {len(self.word_data)}-entry wordlist to {path}")
+
+    def dump_final(self, path: Path) -> None:
+        total_scores = sum(x[0] for x in self.word_data.values())
+        max_score = max(x[0] for x in self.word_data.values())
+        min_score = min(x[0] for x in self.word_data.values())
+        min_frequency = min_score / total_scores
+        scale = 1e6 / math.log(min_frequency)
+        assert scale < 0
+        with path.open("w") as f:
+            for canonical, (score, _, word) in sorted(
+                self.word_data.items(), key=lambda x: x[1][0], reverse=True
+            ):
+                value = int(scale * math.log(score / total_scores))
+                f.write(f"{value}\t{word}\n")
         print(f"Saved {len(self.word_data)}-entry wordlist to {path}")
 
     def add_canonical(self, canonical: str, word: str, score: int) -> int:
@@ -49,6 +66,9 @@ class Wordlist:
         canonical = canoncialize(word)
         if canonical not in self.word_data:
             self.word_data[canonical] = (score, index, word)
+        else:
+            old_score, old_index, old_word = self.word_data[canonical]
+            self.word_data[canonical] = (old_score + score, old_index, old_word)
         return canonical
 
     def merge(self, other: "Wordlist") -> None:
@@ -67,9 +87,9 @@ class Wordlist:
 
 
 strip_body_re = re.compile(r"(^.*? Retrieved .*?) Retrieved ")
-strip_word_re = re.compile(r"^\W*([\w/\-,.&]*\w)\W*$")
+strip_word_re = re.compile(r"^\W*([\w/\-,.&']*\w)\W*$")
 any_letter_re = re.compile(r".*[a-zA-Z].*")
-canonicalize_re = re.compile(r"[^a-zA-Z']")
+# canonicalize_re = re.compile(r"^.*?([a-zA-Z'/\-,.&']*).*?$")
 domain_re = re.compile(r".*\.(com|co\.|org|net|gov|biz|info|today|cz|at|dk|de)")
 
 
@@ -108,6 +128,8 @@ def strip_word(word: str) -> str:
 
 
 def canoncialize(word: str) -> str:
+    if any("0" <= x <= "9" for x in word):
+        return ""
     canonical = word
     canonical = (
         canonical.replace("æ", "ae")
@@ -115,9 +137,20 @@ def canoncialize(word: str) -> str:
         .replace("œ", "oe")
         .replace("Œ", "OE")
     )
-    canonical = unicodedata.normalize("NFKD", canonical)
-    canonical = canonical.casefold()
-    # canonical = canonicalize_re.sub("", canonical)
+    try:
+        canonical = (
+            unicodedata.normalize("NFKD", canonical)
+            .casefold()
+            .encode("ascii")
+            .decode("ascii")
+        )
+    except UnicodeEncodeError:
+        return ""
+    while canonical and not "a" <= canonical[0] <= "z":
+        canonical = canonical[1:]
+    while canonical and not "a" <= canonical[-1] <= "z":
+        canonical = canonical[:-1]
+    # canonical = canonicalize_re.match(canonical).group(1)
     return canonical
 
 
@@ -206,14 +239,19 @@ def create_wordlist(base_path: Path, cutoff: int = 10) -> Wordlist:
             return
         assert "\t" not in word
         canonical = canoncialize(word)
+        if not canonical:
+            return
         if canonical == word:
             # If the word matches its canonical form, give it a big bonus
             count = count * 2 + 1
         elif canonical == word.casefold():
             # If the word matches its canonical form except for capitalization, give it a small bonus
             count = int(count * 1.5) + 1
+        elif len(canonical) / len(word) <= 0.5:
+            # If the "word" shrinks by >50% when canonicalizing, give it a major penalty
+            count = int(count * 0.2 - 1)
         elif alpha_ratio(word) <= 0.75:
-            # If the "word" is less than 75% letters, give it an extra penalty
+            # If the "word" is less than 75% letters, give it a minor penalty
             count = int(count * 0.5 - 1)
 
         points = word_points.get(canonical, 0)
@@ -252,7 +290,7 @@ def create_wordlist(base_path: Path, cutoff: int = 10) -> Wordlist:
 
     wordlist_path = base_path / f"wordlist.{cutoff}.txt"
     print(f"Saving wordlist to {wordlist_path}")
-    wordlist.dump(wordlist_path)
+    wordlist.dump_final(wordlist_path)
     return wordlist
 
 
@@ -264,7 +302,7 @@ def validate_wordlist(wordlist: Wordlist) -> None:
         score, _, _ = wordlist.word_data.get(canoncialize(answer), (0, 0, ""))
         log_score = int(math.log2(score)) if score > 0 else 0
         answer_scores[log_score] += 1
-        if score is 0:
+        if score == 0:
             print(f"Missing answer: {answer}")
     for i in range(30):
         print(f"> score ~ {2**i}, count={answer_scores.get(i, 0)}")

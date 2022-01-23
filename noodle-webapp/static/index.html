@@ -88,8 +88,25 @@
             a.ext:visited {
                 color: #205;
             }
-            div.match span {
+            div.match {
+                display: flex;
+            }
+            div.result {
+                position: relative;
                 margin-left: 0.8em;
+                width: 100%;
+                padding-top: 1px;
+                padding-bottom: 1px;
+                margin-top: 2px;
+                margin-bottom: 2px;
+            }
+            div.match div.score-bar{
+                position: absolute;
+                top: 0;
+                left: 0;
+                z-index: -1;
+                height: 100%;
+                background-color: #E2E2E2;
             }
             li code {
                 word-wrap: break-word;
@@ -159,7 +176,7 @@
                 <div>
                     <label for="sort">
                         <abbr title="Post-process output; sort matches alphabetically">
-                            Sort Output
+                            Sort Output by Score
                         </abbr>
                     </label>
                     <input type="checkbox" id="sort"></input>
@@ -442,19 +459,33 @@
                         let match = data.match;
                         match.fullText = "";
                         match.originalOrder = window.matches.length;
+
+                        // This score function is kind of arbitrary, but seems to do "good enough"
+                        // The `score` from the backend is proportional to the log-frequency, such that
+                        // the rarest word still in the wordlist has a score of 1e6.
                         match.netScore = 0;
                         for (var i = 0; i < match.phrase.length; i++) {
                             match.fullText += match.phrase[i].text + " ";
-                            match.netScore += Math.pow(match.phrase[i].score, 0.5);
+                            match.netScore += match.phrase[i].score;
                         }
+                        match.netScore /= Math.pow(match.phrase.length, 0.5);
+                        // Map (3.5e6: 0; 3e5: 1)
+                        match.fractionScore = Math.max(0.02, Math.min(1.0, (3.3e6 - match.netScore) / 3.2e6));
+
                         match.fullText = match.fullText.trim();
                         match.block = document.createElement("div");
                         match.block.match = match;
                         match.block.className = "match";
                         window.matches.push(match);
 
-                        match.span = document.createElement("span");
-                        match.span.innerText = match.fullText;
+                        let result = document.createElement("div");
+                        result.className = "result";
+                        result.innerText = match.fullText;
+
+                        let scoreBar = document.createElement("div");
+                        scoreBar.className = "score-bar";
+                        scoreBar.style.width = (match.fractionScore * 100) + "%";
+                        result.appendChild(scoreBar);
 
                         let copy = document.createElement("a");
                         copy.innerText = "c";
@@ -486,7 +517,7 @@
                         match.block.appendChild(google);
                         match.block.appendChild(wiki);
                         match.block.appendChild(cxio);
-                        match.block.appendChild(match.span);
+                        match.block.appendChild(result);
 
                         if (!enableFilter.checked || match.fullText.match(new RegExp(filter.value))) {
                             outputDiv.appendChild(match.block);

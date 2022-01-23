@@ -156,7 +156,7 @@ pub struct Word {
     pub tranche: Tranche,
     #[cfg_attr(feature = "serialize", serde(skip))]
     pub chars: SmallVec<[Char; 16]>,
-    pub text: String,
+    pub text: Box<str>,
     pub score: u32,
 }
 
@@ -166,8 +166,11 @@ impl Word {
             text: text.into(),
             chars: text
                 .chars()
+                // Unicode NFKD normalization
                 .nfkd()
+                // Convert UTF-8 characters into Char enums
                 .map(|c| c.into())
+                // Add a WORD_END character to the end
                 .chain(std::iter::once(Char::WORD_END))
                 .collect(),
             tranche,
@@ -210,36 +213,56 @@ where
     let mut tranche_count: usize = 0;
     let mut tranche: Tranche = 0;
     let mut word_count: usize = 0;
+    let mut skipped_count: usize = 0;
 
     let mut wordlist: Vec<_> = unzip
         .lines()
         .filter_map(|line| line.ok())
         .filter_map(|line| {
-            if line.len() > 1 || line == "I" || line == "a" {
-                // Bump words which aren't strictly ASCII lowercase into the next tranche
-                let t = tranche + (!line.chars().all(|c| c.is_ascii_lowercase())) as Tranche;
-
-                word_count += 1;
-                tranche_count += 1;
-                if tranche_count > tranche_size {
-                    // Make each tranche 150% the size of the previous one
-                    tranche_size += tranche_size / 2;
-                    tranche_count = 0;
-                    tranche += 1;
+            // Parse either a plain wordlist, or a 2-column (count, word) variant
+            let mut word = line.as_ref();
+            let mut score = line.len() as u32;
+            if let Some((count_col, word_col)) = line.split_once("\t") {
+                if let Ok(count) = count_col.parse::<u32>() {
+                    score = count;
+                    word = word_col;
                 }
-
-                let score = word_count as u32;
-                Some(Word::new(&line, t, score))
-            } else {
-                None
             }
+
+            // Bump words which aren't strictly ASCII lowercase into the next tranche
+            let t = tranche + (!word.chars().all(|c| c.is_ascii_lowercase())) as Tranche;
+            let word = Word::new(word, t, score);
+
+            // Remove any 1-letter words (except "I" and "a")
+            if word.chars.len() <= 1 && word.text.as_ref() != "I" && word.text.as_ref() != "a" {
+                skipped_count += 1;
+                return None;
+            }
+
+            // Remove any words that contain a digit
+            if word.text.contains(|c| ('0'..='9').contains(&c)) {
+                skipped_count += 1;
+                return None;
+            }
+
+            word_count += 1;
+            tranche_count += 1;
+            if tranche_count > tranche_size {
+                // Make each tranche 150% the size of the previous one
+                tranche_size += tranche_size / 2;
+                tranche_count = 0;
+                tranche += 1;
+            }
+
+            Some(word)
         })
         .collect();
     wordlist.sort();
     println!(
-        "Loaded {} words with {} tranches",
+        "Loaded {} words with {} tranches (skipped {})",
         wordlist.len(),
-        tranche + 1
+        tranche + 1,
+        skipped_count
     );
     Ok(wordlist)
 }
