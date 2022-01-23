@@ -2,6 +2,7 @@ use smallvec::SmallVec;
 use std::convert::TryInto;
 use std::fmt;
 use std::io::{self, BufRead};
+use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
 
 #[cfg(feature = "serialize")]
@@ -168,8 +169,20 @@ impl Word {
                 .chars()
                 // Unicode NFKD normalization
                 .nfkd()
+                .filter(|c: &char| !is_combining_mark(*c))
+                .flat_map(|c: char| {
+                    let cs: Box<dyn Iterator<Item = char>> = match c {
+                        'æ' | 'Æ' => Box::new(std::iter::once('a').chain(std::iter::once('e'))),
+                        'œ' | 'Œ' => Box::new(std::iter::once('o').chain(std::iter::once('e'))),
+                        _ => Box::new(std::iter::once(c)),
+                    };
+                    cs
+                })
+                // Case folding
+                .flat_map(|c| c.to_uppercase())
+                .flat_map(|c| c.to_lowercase())
                 // Convert UTF-8 characters into Char enums
-                .map(|c| c.into())
+                .map(|c| (c).into())
                 // Add a WORD_END character to the end
                 .chain(std::iter::once(Char::WORD_END))
                 .collect(),

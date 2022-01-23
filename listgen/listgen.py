@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 from collections import Counter
+from dataclasses import dataclass, field
+from multiprocessing import Pool
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
-from multiprocessing import Pool
-from dataclasses import dataclass, field
 import math
+import orjson as json
 import re
 import sys
 import unicodedata
-import orjson as json
 import zstandard as zst
 
 
@@ -137,13 +137,13 @@ def canoncialize(word: str) -> str:
         .replace("œ", "oe")
         .replace("Œ", "OE")
     )
+    canonical = "".join(
+        c
+        for c in unicodedata.normalize("NFKD", canonical)
+        if not unicodedata.combining(c)
+    )
     try:
-        canonical = (
-            unicodedata.normalize("NFKD", canonical)
-            .casefold()
-            .encode("ascii")
-            .decode("ascii")
-        )
+        canonical = canonical.casefold().encode("ascii").decode("ascii")
     except UnicodeEncodeError:
         return ""
     while canonical and not "a" <= canonical[0] <= "z":
@@ -233,13 +233,14 @@ def word_frequency(base_path: Path) -> None:
 def create_wordlist(base_path: Path, cutoff: int = 10) -> Wordlist:
     word_points: Dict[str, int] = {}
     original_words: Dict[str, str] = {}
+    blocklist: Set[str] = {"aeo"}  # From the album name "æo³ & ³hæ"
 
     def add_word(count: int, word: str) -> None:
         if not word:
             return
         assert "\t" not in word
         canonical = canoncialize(word)
-        if not canonical:
+        if not canonical or canonical in blocklist:
             return
         if canonical == word:
             # If the word matches its canonical form, give it a big bonus
