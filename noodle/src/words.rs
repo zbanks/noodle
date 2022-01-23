@@ -233,8 +233,8 @@ where
             let t = tranche + (!word.chars().all(|c| c.is_ascii_lowercase())) as Tranche;
             let word = Word::new(word, t, score);
 
-            // Remove any 1-letter words (except "I" and "a")
-            if word.chars.len() <= 1 && word.text.as_ref() != "I" && word.text.as_ref() != "a" {
+            // Remove any 1-letter words (except "I" and "a") (all words have Char::WORD_END)
+            if word.chars.len() <= 2 && word.text.as_ref() != "I" && word.text.as_ref() != "a" {
                 skipped_count += 1;
                 return None;
             }
