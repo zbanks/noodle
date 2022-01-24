@@ -1,6 +1,6 @@
 use crate::bitset::{BitSet1D, BitSet2D, BitSet3D, BitSetRef2D, BitSetRefMut2D};
 use crate::expression::Expression;
-use crate::words::{Char, Tranche, Word, WordListRef};
+use crate::words::{Char, CharBitset, Tranche, Word, WordListRef};
 use indexmap::IndexMap;
 use std::time::Instant;
 
@@ -45,6 +45,7 @@ pub struct WordMatcher<'word> {
     // previous word (see `table_chars`), then only the *un*-common suffix
     // needs to be evaluated on the `Expression`.
     table_char_src_fuzz_dst: Vec<BitSet3D>,
+    table_char_nonempty: Vec<bool>,
 
     // A parallel array to `table_char_src_fuzz_dst`.
     // If `table_chars` has N elements, then the first N elements of
@@ -132,15 +133,69 @@ impl<'word> WordMatcher<'word> {
         let fuzz_limit = phrase_matcher.fuzz_limit;
         let empty_table_src_fuzz_dst = BitSet3D::new((states_len, fuzz_limit), states_len);
         let table_char_src_fuzz_dst = vec![empty_table_src_fuzz_dst; max_word_len];
+        let table_char_nonempty = vec![false; max_word_len];
 
-        WordMatcher {
+        let mut wm = WordMatcher {
             phrase_matcher,
 
             word_index: 0,
             alive_wordlist: vec![],
             table_char_src_fuzz_dst,
+            table_char_nonempty,
             table_chars: &[],
+        };
+        wm.reset_table();
+        wm
+    }
+
+    pub fn reset_table(&mut self) {
+        let first_table = &mut self.table_char_src_fuzz_dst[0];
+        first_table.borrow_mut().clear();
+        let matcher = &self.phrase_matcher;
+        for src in 0..matcher.states_len {
+            first_table
+                .slice_mut((src, 0))
+                .union_with(matcher.expression.epsilon_states(src));
         }
+        self.table_char_nonempty[0] = true;
+    }
+
+    pub fn apply_table_char(
+        &mut self,
+        index: usize,
+        char_bitset: CharBitset,
+        single_word_only: bool,
+    ) -> bool {
+        if !self.table_char_nonempty[index] {
+            self.table_char_nonempty[index + 1] = false;
+            return false;
+        }
+
+        let (prev_tables, next_tables) = self.table_char_src_fuzz_dst.split_at_mut(index + 1);
+        let nonempty = self.phrase_matcher.expression.step_transition_table(
+            char_bitset,
+            &prev_tables[index],
+            &mut next_tables[0],
+            single_word_only,
+        );
+        self.table_char_nonempty[index + 1] = nonempty;
+        nonempty
+    }
+
+    pub fn check_table(&self, char_index: usize) -> bool {
+        if !self.table_char_nonempty[char_index + 1] {
+            return false;
+        }
+        let success_state = self.phrase_matcher.states_len - 1;
+        for f in 0..self.phrase_matcher.fuzz_limit {
+            if self.table_char_src_fuzz_dst[char_index + 1]
+                .slice((0, f))
+                .contains(success_state)
+            {
+                return true;
+            }
+        }
+        false
     }
 
     pub fn iter<'it>(

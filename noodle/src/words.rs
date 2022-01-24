@@ -1,6 +1,9 @@
-use smallvec::SmallVec;
+use anyhow::Result;
+use fst::Map;
+use memmap::Mmap;
 use std::convert::TryInto;
 use std::fmt;
+use std::fs::File;
 use std::io::{self, BufRead};
 use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
@@ -9,6 +12,7 @@ use unicode_normalization::UnicodeNormalization;
 use serde::Serialize;
 
 pub type Tranche = u8;
+pub type Wordlist = Map<Mmap>;
 
 // 28 values: A-Z, Punctuation, Space
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
@@ -19,12 +23,12 @@ impl Char {
     pub const WORD_END: Self = Char(27);
     pub const _MAX: usize = 28;
 
-    pub fn into_char(self) -> char {
+    pub fn into_u8(self) -> u8 {
         assert!((self.0 as usize) < Self::_MAX);
         match self {
-            Char::PUNCTUATION => '\'',
-            Char::WORD_END => '_',
-            _ => std::char::from_u32('a' as u32 + self.0 as u32).unwrap(),
+            Char::PUNCTUATION => b'\'',
+            Char::WORD_END => b'_',
+            _ => b'a' + self.0 as u8,
         }
     }
 
@@ -52,7 +56,24 @@ impl From<char> for Char {
 
 impl Into<char> for &Char {
     fn into(self) -> char {
-        self.into_char()
+        self.into_u8().into()
+    }
+}
+
+impl From<u8> for Char {
+    fn from(c: u8) -> Self {
+        match c {
+            b'A'..=b'Z' => Char((c - b'A').try_into().unwrap()),
+            b'a'..=b'z' => Char((c - b'a').try_into().unwrap()),
+            b' ' | b'_' => Char::WORD_END,
+            _ => Char::PUNCTUATION,
+        }
+    }
+}
+
+impl Into<u8> for &Char {
+    fn into(self) -> u8 {
+        self.into_u8()
     }
 }
 
@@ -73,7 +94,6 @@ pub struct CharBitset(u32);
 impl CharBitset {
     pub const EMPTY: Self = Self(0);
     pub const LETTERS: Self = Self((1 << 26) - 1);
-    pub const LETTERS_BUT_I: Self = Self(((1 << 26) - 1) & !(1 << ('I' as u32 - 'A' as u32)));
     pub const ALL: Self = Self((1 << 28) - 1);
 
     pub fn from_range(low: char, high: char) -> Self {
@@ -156,7 +176,7 @@ pub struct Word {
     #[cfg_attr(feature = "serialize", serde(skip))]
     pub tranche: Tranche,
     #[cfg_attr(feature = "serialize", serde(skip))]
-    pub chars: SmallVec<[Char; 16]>,
+    pub chars: Box<[Char]>,
     pub text: Box<str>,
     pub score: u32,
 }
@@ -198,19 +218,56 @@ impl fmt::Display for Word {
             f,
             "{} ({})",
             self.text,
-            self.chars.iter().map(|c| c.into_char()).collect::<String>()
+            self.chars
+                .iter()
+                .map(|c| c.into_u8() as char)
+                .collect::<String>()
         )
     }
 }
 
-#[allow(clippy::result_unit_err)]
-pub fn load_wordlist<P>(filename: P) -> Result<Vec<Word>, ()>
+pub fn wordlist_to_fst<P>(wordlist: &[Word], filename: P) -> Result<()>
+where
+    P: AsRef<std::path::Path>,
+{
+    let mut values: Vec<(Box<[u8]>, u64)> = wordlist
+        .iter()
+        .map(|w| {
+            (
+                w.chars
+                    .iter()
+                    .map(|c| c.into())
+                    .collect::<Vec<u8>>()
+                    .into_boxed_slice(),
+                w.score as u64,
+            )
+        })
+        .collect();
+    values.sort();
+    values.dedup_by(|a, b| a.0 == b.0);
+
+    let writer = io::BufWriter::new(File::create(filename)?);
+    let mut builder = fst::MapBuilder::new(writer)?;
+    builder.extend_iter(values.into_iter())?;
+    builder.finish()?;
+    Ok(())
+}
+
+pub fn load_wordlist_fst<P>(filename: P) -> Result<Wordlist>
+where
+    P: AsRef<std::path::Path> + Clone,
+{
+    let mmap = unsafe { Mmap::map(&File::open(filename)?)? };
+    Ok(Map::new(mmap)?)
+}
+
+pub fn load_wordlist<P>(filename: P) -> Result<Vec<Word>>
 where
     P: AsRef<std::path::Path> + Clone,
 {
     // TODO: Correctly propagate errors
     // TODO: Include tranche values in the wordlist file, rather than making them up
-    let file = std::fs::File::open(filename.clone()).unwrap();
+    let file = File::open(filename.clone()).unwrap();
     let bufread = io::BufReader::new(file);
     let unzip: Box<dyn BufRead> =
         if filename.as_ref().extension() == Some(std::ffi::OsStr::new("zst")) {

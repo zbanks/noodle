@@ -2,7 +2,7 @@ use crate::bitset::BitSet3D;
 use crate::expression::Expression;
 use crate::matcher::{PhraseDepth, PhraseMatcher, SearchPhase, WordMatcher};
 use crate::parser;
-use crate::words::{Tranche, Word};
+use crate::words::{Char, CharBitset, Tranche, Word, Wordlist};
 use std::time::Instant;
 
 /// Evaluate a query, consisting of multiple expressions, on a given wordset.
@@ -22,6 +22,13 @@ pub struct QueryEvaluator<'word> {
     results_count: usize,
 }
 
+struct StreamState<'word> {
+    node: fst::raw::Node<'word>,
+    transition: usize,
+    output: fst::raw::Output,
+    chr: Char,
+}
+
 /// Evaluating a query goes through three separate phases:
 ///  - Single word matches (while simultaneously populating the PhraseMatcher datastructure)
 ///  - Phrase matches
@@ -32,7 +39,11 @@ enum QueryPhase<'word> {
         matchers: Vec<WordMatcher<'word>>,
 
         /// The input wordlist (unfiltered)
-        wordlist: &'word [Word],
+        //wordlist: &'word [Word],
+        wordlist: &'word Wordlist,
+
+        node_stack: Vec<StreamState<'word>>,
+        word_index: usize,
     },
     /// Phase 2, multi-word phrases
     Phrase {
@@ -102,18 +113,19 @@ fn search_estimate(search_phases: &[SearchPhase]) -> u32 {
 impl<'word> QueryEvaluator<'word> {
     pub fn new(
         expressions: Vec<Expression>,
-        input_wordlist: &'word [Word],
+        input_wordlist: &'word Wordlist,
         search_depth_limit: PhraseDepth,
         results_limit: Option<usize>,
     ) -> Self {
         assert!(!expressions.is_empty());
 
         // TODO: Remove +1
-        let max_word_len = 1 + input_wordlist
-            .iter()
-            .map(|w| w.chars.len())
-            .max()
-            .unwrap_or(0);
+        let max_word_len = 100; // FIXME
+                                //let max_word_len = 1 + input_wordlist
+                                //    .iter()
+                                //    .map(|w| w.chars.len())
+                                //    .max()
+                                //    .unwrap_or(0);
 
         let word_matchers = expressions
             .into_iter()
@@ -124,6 +136,8 @@ impl<'word> QueryEvaluator<'word> {
             phase: QueryPhase::Word {
                 matchers: word_matchers,
                 wordlist: input_wordlist,
+                word_index: 0,
+                node_stack: vec![],
             },
             search_depth_limit,
             results_limit,
@@ -131,7 +145,7 @@ impl<'word> QueryEvaluator<'word> {
         }
     }
 
-    pub fn from_ast(query_ast: &'word parser::QueryAst, input_wordlist: &'word [Word]) -> Self {
+    pub fn from_ast(query_ast: &'word parser::QueryAst, input_wordlist: &'word Wordlist) -> Self {
         // TODO: Use `options.dictionary`
         // TODO: Use `options.quiet`
         // TODO: Maybe `results_limit` should be handled upstream?
@@ -155,12 +169,15 @@ impl<'word> QueryEvaluator<'word> {
 
         Self::new(
             expressions,
+            /*
             query_ast
                 .options
                 .wordlist
                 .as_ref()
                 .map(|wl| &wl[..])
                 .unwrap_or(input_wordlist),
+            */
+            input_wordlist,
             search_depth_limit,
             results_limit,
         )
@@ -186,7 +203,18 @@ impl<'word> QueryEvaluator<'word> {
 
     pub fn progress(&self) -> String {
         match &self.phase {
-            QueryPhase::Word { matchers, wordlist } => matchers[0].progress(wordlist),
+            QueryPhase::Word {
+                wordlist,
+                word_index,
+                ..
+            } => {
+                format!(
+                    "Single-word matches: {}/{} ({}%)",
+                    word_index,
+                    wordlist.len(),
+                    100 * word_index / wordlist.len()
+                )
+            }
             QueryPhase::Phrase {
                 search_layers,
                 search_queue,
@@ -227,10 +255,113 @@ impl<'word> QueryEvaluator<'word> {
         }
 
         match &mut self.phase {
-            QueryPhase::Word { matchers, wordlist } => {
-                let single_word_only = self.search_depth_limit <= 1;
+            QueryPhase::Word {
+                matchers,
+                wordlist,
+                ref mut word_index,
+                ref mut node_stack,
+            } => {
+                let single_word_only = (self.search_depth_limit <= 1) || true;
+                let mut table_chars: &'word [Char] = &[];
+                let word_fst = wordlist.as_fst();
 
                 // Check for single-word matches
+                let mut deadline_check_count = 0;
+                node_stack.clear();
+                node_stack.push(StreamState {
+                    node: word_fst.root(),
+                    transition: 0,
+                    output: fst::raw::Output::zero(),
+                    chr: Char::WORD_END,
+                });
+                while let Some(state) = node_stack.pop() {
+                    if state.transition >= state.node.len() {
+                        continue;
+                    }
+                    let trans = state.node.transition(state.transition);
+                    let output = state.output.cat(trans.out);
+                    let chr: Char = trans.inp.into();
+                    let next_node = word_fst.node(trans.addr);
+
+                    let char_index = node_stack.len();
+                    let char_bitset = CharBitset::from(chr);
+                    let mut all_nonempty = true;
+                    for matcher in matchers.iter_mut() {
+                        all_nonempty |=
+                            matcher.apply_table_char(char_index, char_bitset, single_word_only);
+                    }
+                    node_stack.push(StreamState {
+                        transition: state.transition + 1,
+                        ..state
+                    });
+                    if all_nonempty {
+                        if next_node.is_final() {
+                            if matchers.iter().all(|m| m.check_table(char_index)) {
+                                let chars = node_stack[1..]
+                                    .iter()
+                                    .map(|s| s.chr)
+                                    .chain(std::iter::once(chr))
+                                    .collect::<Vec<Char>>();
+                                println!("{:?}", chars);
+                                //return QueryResponse::Match(chars);
+                            }
+                        } else {
+                            node_stack.push(StreamState {
+                                node: next_node,
+                                transition: 0,
+                                output,
+                                chr: chr,
+                            });
+                        }
+                    }
+
+                    /*
+                    // If we've exceeded the deadline, return `None` for now
+                    // (But only check the clock a small fraction of the time)
+                    if deadline_check_count % 256 == 0
+                        && deadline.is_some()
+                        && Some(Instant::now()) > deadline
+                    {
+                        break;
+                    }
+                    deadline_check_count += 1;
+                    */
+
+                    /*
+                    let word = &wordlist[*word_index];
+                    *word_index += 1;
+
+                    // Find the common prefix with the last word we processed
+                    let word_len = word.chars.len();
+                    let mut prefix_len: usize = 0;
+                    while prefix_len < word_len
+                        && prefix_len < table_chars.len()
+                        && word.chars[prefix_len] == table_chars[prefix_len]
+                    {
+                        prefix_len += 1;
+                    }
+
+                    let mut char_index = prefix_len;
+                    while char_index < word_len {
+                        let mut all_matching = true;
+                        let char_bitset = CharBitset::from(word.chars[char_index]);
+                        for matcher in matchers.iter_mut() {
+                            all_matching |= matcher.apply_table_char(char_index, char_bitset, single_word_only);
+                        }
+                        char_index += 1;
+                        if !all_matching {
+                            break;
+                        }
+                    }
+                    if char_index == word_len  {
+                        if matchers.iter().all(|m| m.check_table(char_index)){
+                            return QueryResponse::Match(vec![word.clone()]);
+                        }
+                    }
+                    table_chars = &word.chars[0..char_index];
+                    */
+                }
+                /*
                 let (first_matcher, remaining_matchers) = matchers.split_at_mut(1);
 
                 // Iterate over every word which satisfies the first matcher...
@@ -253,6 +384,7 @@ impl<'word> QueryEvaluator<'word> {
                         return QueryResponse::Match(vec![word.clone()]);
                     }
                 }
+                */
                 if deadline.is_some() && Some(Instant::now()) > deadline {
                     return QueryResponse::Timeout;
                 }
@@ -269,6 +401,7 @@ impl<'word> QueryEvaluator<'word> {
                 let mut log_messages = vec![];
 
                 // Process remaining words to populate phrase-matching data, even though they won't yield any single-word matches
+                /*
                 let mut alive_wordlist = {
                     let mut wordlist = &first_matcher[0].alive_wordlist;
                     for matcher in remaining_matchers.iter_mut() {
@@ -279,7 +412,9 @@ impl<'word> QueryEvaluator<'word> {
                     wordlist
                 }
                 .clone();
+                */
 
+                /*
                 let mut tranches = alive_wordlist.iter().map(|w| w.tranche).collect::<Vec<_>>();
                 tranches.dedup();
                 {
@@ -485,6 +620,8 @@ impl<'word> QueryEvaluator<'word> {
                     phase_had_partial_match: false,
                     initial_search_estimate,
                 };
+                */
+                unreachable!();
 
                 QueryResponse::Logs(log_messages)
             }

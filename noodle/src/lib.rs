@@ -11,4 +11,4 @@ pub mod words;
 
 pub use expression::Expression;
 pub use query::{QueryEvaluator, QueryResponse};
-pub use words::{load_wordlist, Word};
+pub use words::{load_wordlist, load_wordlist_fst, wordlist_to_fst, Word};
