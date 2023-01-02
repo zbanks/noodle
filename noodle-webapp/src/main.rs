@@ -2,6 +2,7 @@ use anyhow::{self as ah, anyhow};
 use futures::task::Poll;
 use futures::{future, poll, stream, SinkExt, StreamExt};
 use noodle::{load_wordlist, parser, QueryEvaluator, QueryResponse, Word};
+use percent_encoding::percent_decode_str;
 use serde::Serialize;
 use std::net::IpAddr;
 use std::str::FromStr;
@@ -288,7 +289,7 @@ async fn main() {
     let get_query = warp::get()
         .and(warp::path("query"))
         .and(warp::path::param())
-        .map(|q: String| run_query_sync(&q, true));
+        .map(|q: String| run_query_sync(&percent_decode_str(&q).decode_utf8_lossy(), true));
 
     let post_query = warp::post()
         .and(warp::path("query"))
