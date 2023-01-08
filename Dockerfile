@@ -13,10 +13,10 @@ RUN adduser -D -s /bin/sh -u 1000 -G noodle noodle
 
 WORKDIR /home/noodle/
 
-RUN mkdir static
+RUN mkdir static wordlists
 COPY --from=build --chown=noodle:noodle /home/rust/src/target/x86_64-unknown-linux-musl/release/noodle-webapp .
-COPY --from=build /home/rust/src/wordlist.50.txt.zst .
 COPY --from=build /home/rust/src/noodle-webapp/static/* ./static/
+COPY --from=build /home/rust/src/wordlists/* ./wordlists/
 
 USER noodle
-CMD ./noodle-webapp wordlist.50.txt.zst
+CMD ./noodle-webapp ./wordlists

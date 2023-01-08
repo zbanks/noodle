@@ -163,7 +163,7 @@ def extract_word_frequency(json_file: Path) -> None:
     title_counter: Counter[str] = Counter()
     body_counter: Counter[str] = Counter()
     with zst.open(json_file, mode="r", newline="\n") as f:
-        for i, line in enumerate(zst.open(json_file, mode="r", newline="\n")):
+        for i, line in enumerate(f):
             if i % 100000 == 0:
                 print(f"> {i} {json_file} {len(title_counter)} {len(body_counter)}")
             title, score, body = json.loads(line)
@@ -173,12 +173,20 @@ def extract_word_frequency(json_file: Path) -> None:
             body_counter.update(strip_word(w) for w in strip_body(body).split())
     print(f"> done {json_file} {len(title_counter)} {len(body_counter)}")
 
+    with json_file.with_suffix(".title-wordlist").open("w") as f:
+        for word, count in title_counter.items():
+            f.write(f"{count}\t{word}\n")
+
+    with json_file.with_suffix(".body-wordlist").open("w") as f:
+        for word, count in body_counter.items():
+            f.write(f"{count}\t{word}\n")
+
 
 def split_word_frequency(base_path: Path) -> None:
     # Parallelize
-    pool = Pool(4)
+    pool = Pool(8)
     files = list(base_path.glob("enwiki-*.json.*.zst"))
-    files = [f for f in files if any(x in str(f) for x in ("00", "05", "06", "07"))]
+    #files = [f for f in files if any(x in str(f) for x in ("00", "05", "06", "07"))]
     print(files)
     pool.map(extract_word_frequency, files)
 
@@ -191,13 +199,15 @@ def word_frequency(base_path: Path) -> None:
     for p in base_path.glob("enwiki-*.title-wordlist"):
         with p.open() as f:
             for line in f:
-                count_str, _, word = line.strip().split("\t")
+                #count_str, _, word = line.strip().split("\t")
+                count_str, word = line.strip("\n").split("\t")
                 title_count[word] = title_count.get(word, 0) + int(count_str)
         print(f"loaded {p}")
     for p in base_path.glob("enwiki-*.body-wordlist"):
         with p.open() as f:
             for line in f:
-                count_str, _, word = line.strip().split("\t")
+                #count_str, _, word = line.strip().split("\t")
+                count_str, word = line.strip("\n").split("\t")
                 body_count[word] = body_count.get(word, 0) + int(count_str)
         print(f"loaded {p}")
 
@@ -277,9 +287,9 @@ def create_wordlist(base_path: Path, cutoff: int = 10) -> Wordlist:
             count_str, _, word = line.strip().partition("\t")
             add_word(int(count_str), word)
 
-    with open("/home/zbanks/wordlist_consolidated.txt") as f:
-        for line in f:
-            add_word(25, line.strip())
+    #with open("/home/zbanks/wordlist_consolidated.txt") as f:
+    #    for line in f:
+    #        add_word(25, line.strip())
 
     output_words = [(c, w) for w, c in word_points.items() if c >= cutoff]
     output_words.sort(reverse=True)
@@ -328,9 +338,13 @@ def wiktionary_wordlist(path: Path) -> Wordlist:
     with zst.open(path, mode="r", newline="\n") as f:
         for line in f:
             data = json.loads(line.strip())
+            if data.get("lang_code") != "en" or "word" not in data:
+                continue
             wordlist.add_word(data["word"], score=1000)
             for form in data.get("forms", []):
-                wordlist.add_word(form["form"], score=100)
+                form_word = form["form"]
+                if " " not in form_word and canoncialize(form_word) == form_word:
+                    wordlist.add_word(form["form"], score=50)
     return wordlist
 
 
@@ -383,15 +397,13 @@ def build_wiki_graph(input_file, wordlist: Wordlist, base_path: Path) -> None:
 def main() -> None:
     base_path = Path("enwiki-index")
     base_path.mkdir(parents=True, exist_ok=True)
-    # dict_wordlist = wiktionary_wordlist(
-    #    Path("/home/zbanks/kaikki-enwiktionary.json.zstd")
-    # )
-    # dict_wordlist.dump(base_path / "enwiktionary.txt")
-    # split_word_frequency(base_path)
-    # word_frequency(base_path)
+    dict_wordlist = wiktionary_wordlist(base_path / "kaikki-enwiktionary.json.zst")
+    dict_wordlist.dump(base_path / "enwiktionary.txt")
+    #split_word_frequency(base_path)
+    word_frequency(base_path)
     wordlist = create_wordlist(base_path, cutoff=50)
     # wordlist = Wordlist.load(base_path / "wordlist.10.txt")
-    validate_wordlist(wordlist)
+    #validate_wordlist(wordlist)
     # build_wiki_graph(sys.stdin, wordlist, base_path)
 
 

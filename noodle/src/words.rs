@@ -50,9 +50,9 @@ impl From<char> for Char {
     }
 }
 
-impl Into<char> for &Char {
-    fn into(self) -> char {
-        self.into_char()
+impl From<&Char> for char {
+    fn from(val: &Char) -> Self {
+        val.into_char()
     }
 }
 
@@ -235,7 +235,7 @@ where
             // Parse either a plain wordlist, or a 2-column (count, word) variant
             let mut word = line.as_ref();
             let mut score = line.len() as u32;
-            if let Some((count_col, word_col)) = line.split_once("\t") {
+            if let Some((count_col, word_col)) = line.split_once('\t') {
                 if let Ok(count) = count_col.parse::<u32>() {
                     score = count;
                     word = word_col;

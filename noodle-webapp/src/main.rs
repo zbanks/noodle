@@ -4,6 +4,8 @@ use futures::{future, poll, stream, SinkExt, StreamExt};
 use noodle::{load_wordlist, parser, QueryEvaluator, QueryResponse, Word};
 use percent_encoding::percent_decode_str;
 use serde::Serialize;
+use std::collections::HashMap;
+use std::fmt::Write;
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -14,22 +16,41 @@ use warp::Filter;
 #[macro_use]
 extern crate lazy_static;
 
+static DEFAULT_WORDLIST: &str = "american-english";
+
 lazy_static! {
-    static ref WORDS: Vec<Word> = {
+    static ref WORDLISTS: HashMap<String, Vec<Word>> = {
         let args: Vec<_> = std::env::args().collect();
-        let wordlist_filename = args
+        let wordlist_dir = args
             .get(1)
             .cloned()
-            .unwrap_or_else(|| "/usr/share/dict/words".to_string());
+            .unwrap_or_else(|| "/usr/share/dict".to_string());
 
-        let start = Instant::now();
-        let words = load_wordlist(&wordlist_filename).unwrap();
-        println!(
-            "Time to load wordlist from {:?}: {:?}",
-            wordlist_filename,
-            start.elapsed()
-        );
-        words
+        let mut map = HashMap::new();
+        for path in std::fs::read_dir(wordlist_dir).unwrap() {
+            let path = path.unwrap();
+            let ftype = path.file_type().unwrap();
+            if !ftype.is_file() || ftype.is_symlink() {
+                continue;
+            }
+            let name = path.file_name().into_string().unwrap();
+            let name = name
+                .split_once('.')
+                .map(|(p, _)| p)
+                .unwrap_or(&name)
+                .to_string();
+            let filepath = path.path();
+
+            let start = Instant::now();
+            let words = load_wordlist(&filepath).unwrap();
+            println!(
+                "Time to load wordlist {name} from {:?}: {:?}",
+                filepath,
+                start.elapsed()
+            );
+            map.insert(name, words);
+        }
+        map
     };
     static ref ACTIVE_QUERIES: AtomicUsize = AtomicUsize::new(0_usize);
     static ref TOTAL_QUERIES: AtomicUsize = AtomicUsize::new(0_usize);
@@ -51,9 +72,10 @@ fn flatten_phrase(phrase: Vec<Word>) -> String {
 }
 
 fn get_metrics() -> http::Result<http::Response<hyper::Body>> {
-    http::Response::builder().status(http::StatusCode::OK).body(
-        format!(
-            "\
+    let mut output = String::new();
+    writeln!(
+        &mut output,
+        "\
 # HELP noodle_queries_active
 # TYPE noodle_queries_active gauge
 noodle_queries_active {}
@@ -63,19 +85,28 @@ noodle_queries_active {}
 noodle_queries_total {}
 
 # HELP noodle_wordlist_size
-# TYPE noodle_wordlist_size gauge
-noodle_wordlist_size {}",
-            ACTIVE_QUERIES.load(Ordering::Relaxed),
-            TOTAL_QUERIES.load(Ordering::Relaxed),
-            WORDS.len()
-        )
-        .into(),
+# TYPE noodle_wordlist_size gauge",
+        ACTIVE_QUERIES.load(Ordering::Relaxed),
+        TOTAL_QUERIES.load(Ordering::Relaxed),
     )
+    .unwrap();
+    for (name, words) in WORDLISTS.iter() {
+        writeln!(
+            &mut output,
+            "noodle_wordlist_size{{wordlist=\"{}\"}} {}",
+            name,
+            words.len()
+        )
+        .unwrap();
+    }
+    http::Response::builder()
+        .status(http::StatusCode::OK)
+        .body(output.into())
 }
 
-fn get_wordlist() -> http::Result<http::Response<hyper::Body>> {
+fn get_wordlist(name: String) -> http::Result<http::Response<hyper::Body>> {
     let stream = stream::iter(
-        WORDS
+        words(&name)
             .iter()
             .map(|w| http::Result::Ok(format!("{}\n", w.text))),
     );
@@ -83,6 +114,12 @@ fn get_wordlist() -> http::Result<http::Response<hyper::Body>> {
     http::Response::builder()
         .status(http::StatusCode::OK)
         .body(body)
+}
+
+fn words(wordlist_name: &str) -> &'static [Word] {
+    WORDLISTS
+        .get(wordlist_name)
+        .unwrap_or_else(|| WORDLISTS.get(DEFAULT_WORDLIST).unwrap())
 }
 
 /// Plain HTTP interface, for use with cURL or GSheets IMPORTDATA
@@ -113,7 +150,7 @@ fn run_query_sync(query_str: &str, plaintext: bool) -> http::Result<impl warp::R
                 query_ast.options.results_limit = Some(15);
             }
             let deadline = Instant::now() + timeout;
-            let mut evaluator = QueryEvaluator::from_ast(&query_ast, &WORDS);
+            let mut evaluator = QueryEvaluator::from_ast(&query_ast, words("default"));
             loop {
                 match evaluator.next_within_deadline(Some(deadline)) {
                     QueryResponse::Match(p) => {
@@ -192,7 +229,7 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
         )))
         .await?;
 
-        let mut evaluator = QueryEvaluator::from_ast(&query_ast, &WORDS[..]);
+        let mut evaluator = QueryEvaluator::from_ast(&query_ast, words("default"));
         for expression in evaluator.expressions() {
             tx.send(Response::Log {
                 message: format!("{:?}", expression),
@@ -278,7 +315,10 @@ async fn main() {
     let metrics = warp::get().and(warp::path("metrics")).map(get_metrics);
 
     // Wordlist
-    let wordlist = warp::get().and(warp::path("wordlist")).map(get_wordlist);
+    let wordlist = warp::get()
+        .and(warp::path("wordlist"))
+        .and(warp::path::param())
+        .map(get_wordlist);
 
     // Websockets interface
     let ws = warp::path("ws")
