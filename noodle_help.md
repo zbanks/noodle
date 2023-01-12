@@ -150,7 +150,15 @@ For `GET` requests like this, the timeout is lowered, default results limit is l
 
 ### Wordlist
 
-The input wordlist can be downloaded [here](/wordlist).
+The input wordlists are described below, and can be downloaded by following these links:
+
+- [default](/wordlist/default): combination of Wikipedia titles, page content, and Wiktionary. Filtered slightly based on frequency.
+- [dumpling](/wordlist/dumpling): all answers available in [dumpling](https://dumpling.fly.dev), contains "crosswordese" and phrases.
+- [npl-allwords2](/wordlist/npl-allwords2): "allwords2.txt" wordlist from NPL's website.
+- [scrabble](/wordlist/scrabble): Collins Scrabble words (2019).
+- [pokemon](/wordlist/pokemon): all pokemon names, gen 1-9.
+- [wiktionary](/wordlist/wiktionary): all words defined in English Wiktionary, including "forms" of words.
+- [wiki-titles](/wordlist/wiki-titles): all individual words in English Wikipedia titles, without any frequency filter.
 
 It is based on the Debian wordlist, Wikipedia, and Wiktionary.
 

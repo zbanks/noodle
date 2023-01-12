@@ -249,38 +249,38 @@
             <div class="column">
 <!-- generated from `pandoc noodle_help.md` -->
 <p>Noodle is a tool to find words or phrases that match certain conditions.</p>
-<p>It's similar to <a href="https://en.wikipedia.org/wiki/Regular_expression">Regular Expressions</a>, <a href="https://nutrimatic.org/">Nutrimatic</a>, <a href="https://tools.qhex.org/">qhex <em>Word Play</em></a>, or <a href="https://www.quinapalus.com/qat.html">Qat</a>.</p>
+<p>It’s similar to <a href="https://en.wikipedia.org/wiki/Regular_expression">Regular Expressions</a>, <a href="https://nutrimatic.org/">Nutrimatic</a>, <a href="https://tools.qhex.org/">qhex <em>Word Play</em></a>, or <a href="https://www.quinapalus.com/qat.html">Qat</a>.</p>
 <h2 id="quick-reference">Quick Reference</h2>
 <ul class="incremental">
-<li><code>a</code> or <code>A</code> -- <strong>the letter</strong> <code>a</code> itself (case-insensitive)</li>
-<li><code>'</code> (apostrophe) -- <strong>any punctuation</strong>, such as an apostrophe, dash, or period.</li>
-<li><code>_</code> (underscore) -- <strong>space</strong> (word boundary)</li>
-<li><code>.</code> -- <strong>any letter</strong></li>
-<li><code>[abc]</code> or <code>[a-c]</code> -- <strong>one of</strong> <code>a</code>, <code>b</code>, or <code>c</code></li>
-<li><code>[^abc]</code> -- <strong>one letter except</strong> <code>a</code>, <code>b</code>, or <code>c</code></li>
-<li><code>*</code> -- <strong>zero or more</strong> copies of the previous symbol</li>
-<li><code>+</code> -- <strong>one or more</strong> copies of the previous symbol</li>
-<li><code>?</code> -- <strong>one or zero</strong> copies of the previous symbol</li>
-<li><code>{3}</code> -- <strong>exactly three</strong> copies of the previous symbol</li>
-<li><code>{3,}</code> -- <strong>at least three</strong> copies of the previous symbol</li>
-<li><code>{,5}</code> -- <strong>at most five</strong> copies of the previous symbol</li>
-<li><code>{3,5}</code> -- <strong>between three and five</strong> (inclusive) copies of the previous symbol</li>
-<li><code>(abcd)</code> -- <strong>group</strong> of <code>abcd</code>, usually used with <code>*</code>, <code>+</code>, <code>?</code>, or <code>{…}</code>.</li>
-<li><code>(ab|cd|ef)</code> -- <strong>either</strong> <code>ab</code>, <code>cd</code>, or <code>ef</code></li>
-<li><code>&lt;ate&gt;</code> -- <strong>anagram</strong> of <code>ate</code>: <code>ate</code>, <code>eat</code>, <code>eta</code>, <code>tea</code></li>
-<li><code>&lt;ate+&gt;</code> -- <strong>superanagram</strong> of <code>ate</code>: <code>abate</code>, <code>acute</code>, <code>fated</code>, <code>neat</code>, …</li>
-<li><code>&lt;ate+3&gt;</code> -- <strong>transadd</strong> of <code>3</code> to <code>ate</code>: <code>abated</code>, <code>advent</code>, <code>basket</code>, …</li>
-<li><code>&lt;ate-&gt;</code> -- <strong>subanagram</strong> of <code>ate</code>: <code>ate</code>, <code>at</code>, <code>a</code>, <code>eat</code>, …</li>
-<li><code>&lt;ate-1&gt;</code> -- <strong>transdelete</strong> of <code>1</code> to <code>ate</code>: <code>at</code>, <code>Ta</code></li>
-<li><code>(ate:-)</code> -- <strong>subset</strong> of <code>ate</code>: <code>ate</code>, <code>at</code>, <code>a</code></li>
-<li><code>(ate:+)</code> -- <strong>superset</strong> of <code>ate</code>: <code>abate</code>, <code>acted</code>, <code>fated</code>, …</li>
-<li><code>(abcd:^)</code> -- <strong>substring</strong> of <code>abcd</code>: <code>a</code>, <code>cd</code></li>
-<li><code>!_</code> -- use <strong>explicit spaces</strong> for this line</li>
-<li><code>!'</code> -- use <strong>explicit punctuation</strong> for this line</li>
-<li><code>!1</code> -- use <strong>fuzzy search</strong> for this line, within an edit distance of 1</li>
-<li><code>4 5</code> on its own line -- <strong>enumeration</strong>: match 4 letters, a space, then 5 letters</li>
-<li><code>VOWEL=[aeiou]</code> on its own line -- define a <a href="#macros"><strong>macro</strong></a> <code>VOWEL</code> to use in later lines</li>
-<li><code>//</code>, <code>/*…*/</code> -- <strong>comment</strong>, ignore text (like in C, Javascript, etc.)</li>
+<li><code>a</code> or <code>A</code> – <strong>the letter</strong> <code>a</code> itself (case-insensitive)</li>
+<li><code>'</code> (apostrophe) – <strong>any punctuation</strong>, such as an apostrophe, dash, or period.</li>
+<li><code>_</code> (underscore) – <strong>space</strong> (word boundary)</li>
+<li><code>.</code> – <strong>any letter</strong></li>
+<li><code>[abc]</code> or <code>[a-c]</code> – <strong>one of</strong> <code>a</code>, <code>b</code>, or <code>c</code></li>
+<li><code>[^abc]</code> – <strong>one letter except</strong> <code>a</code>, <code>b</code>, or <code>c</code></li>
+<li><code>*</code> – <strong>zero or more</strong> copies of the previous symbol</li>
+<li><code>+</code> – <strong>one or more</strong> copies of the previous symbol</li>
+<li><code>?</code> – <strong>one or zero</strong> copies of the previous symbol</li>
+<li><code>{3}</code> – <strong>exactly three</strong> copies of the previous symbol</li>
+<li><code>{3,}</code> – <strong>at least three</strong> copies of the previous symbol</li>
+<li><code>{,5}</code> – <strong>at most five</strong> copies of the previous symbol</li>
+<li><code>{3,5}</code> – <strong>between three and five</strong> (inclusive) copies of the previous symbol</li>
+<li><code>(abcd)</code> – <strong>group</strong> of <code>abcd</code>, usually used with <code>*</code>, <code>+</code>, <code>?</code>, or <code>{…}</code>.</li>
+<li><code>(ab|cd|ef)</code> – <strong>either</strong> <code>ab</code>, <code>cd</code>, or <code>ef</code></li>
+<li><code>&lt;ate&gt;</code> – <strong>anagram</strong> of <code>ate</code>: <code>ate</code>, <code>eat</code>, <code>eta</code>, <code>tea</code></li>
+<li><code>&lt;ate+&gt;</code> – <strong>superanagram</strong> of <code>ate</code>: <code>abate</code>, <code>acute</code>, <code>fated</code>, <code>neat</code>, …</li>
+<li><code>&lt;ate+3&gt;</code> – <strong>transadd</strong> of <code>3</code> to <code>ate</code>: <code>abated</code>, <code>advent</code>, <code>basket</code>, …</li>
+<li><code>&lt;ate-&gt;</code> – <strong>subanagram</strong> of <code>ate</code>: <code>ate</code>, <code>at</code>, <code>a</code>, <code>eat</code>, …</li>
+<li><code>&lt;ate-1&gt;</code> – <strong>transdelete</strong> of <code>1</code> to <code>ate</code>: <code>at</code>, <code>Ta</code></li>
+<li><code>(ate:-)</code> – <strong>subset</strong> of <code>ate</code>: <code>ate</code>, <code>at</code>, <code>a</code></li>
+<li><code>(ate:+)</code> – <strong>superset</strong> of <code>ate</code>: <code>abate</code>, <code>acted</code>, <code>fated</code>, …</li>
+<li><code>(abcd:^)</code> – <strong>substring</strong> of <code>abcd</code>: <code>a</code>, <code>cd</code></li>
+<li><code>!_</code> – use <strong>explicit spaces</strong> for this line</li>
+<li><code>!'</code> – use <strong>explicit punctuation</strong> for this line</li>
+<li><code>!1</code> – use <strong>fuzzy search</strong> for this line, within an edit distance of 1</li>
+<li><code>4 5</code> on its own line – <strong>enumeration</strong>: match 4 letters, a space, then 5 letters</li>
+<li><code>VOWEL=[aeiou]</code> on its own line – define a <a href="#macros"><strong>macro</strong></a> <code>VOWEL</code> to use in later lines</li>
+<li><code>//</code>, <code>/*…*/</code> – <strong>comment</strong>, ignore text (like in C, Javascript, etc.)</li>
 <li><a href="#ui-tips">UI Tips</a></li>
 </ul>
 <h2 id="help">Help</h2>
@@ -297,21 +297,21 @@
 <h3 id="regular-expressions">Regular Expressions</h3>
 <p>Noodle supports the following regular expression syntax: <code>[…]</code>, <code>[^…]</code>, <code>.</code>, <code>*</code>, <code>+</code>, <code>?</code>, <code>(…)</code>, <code>|</code>, <code>{…}</code>.</p>
 <p>Before matching, words are converted to lowercase and stripped of whitespace and non-alphabetical symbols (punctuation, numbers).</p>
-<p>To explicitly match spaces, include &quot;<code>!_</code>&quot; at the end of the expression. When enabled, spaces can be explicitly matched with the &quot;<code>_</code>&quot; character.</p>
-<p>To explicitly match other symbols, include &quot;<code>!'</code>&quot; at the end of the expression. When enabled, these symbols can be matched with the &quot;<code>'</code>&quot; character.</p>
-<p>Regardless of setting, and unlike normal regular expressions, the period (&quot;<code>.</code>&quot;) is only equivalent to &quot;<code>[a-z]</code>&quot;. To match <em>any</em> symbol, use &quot;<code>[a-z'_]</code>&quot;.</p>
-<p>Noodle expressions do not support backreferences (e.g. &quot;<code>\1</code>&quot;). Additionally, because the input is pre-processed to have a limited alphabet, noodle expressions do not support escape characters, or character classes like &quot;<code>[:alpha:]</code>&quot;.</p>
+<p>To explicitly match spaces, include “<code>!_</code>” at the end of the expression. When enabled, spaces can be explicitly matched with the “<code>_</code>” character.</p>
+<p>To explicitly match other symbols, include “<code>!'</code>” at the end of the expression. When enabled, these symbols can be matched with the “<code>'</code>” character.</p>
+<p>Regardless of setting, and unlike normal regular expressions, the period (“<code>.</code>”) is only equivalent to “<code>[a-z]</code>”. To match <em>any</em> symbol, use “<code>[a-z'_]</code>”.</p>
+<p>Noodle expressions do not support backreferences (e.g. “<code>\1</code>”). Additionally, because the input is pre-processed to have a limited alphabet, noodle expressions do not support escape characters, or character classes like “<code>[:alpha:]</code>”.</p>
 <h3 id="anagram-constraints">Anagram constraints</h3>
 <p>Noodle has additional support for anagram-like constriants with angle bracket syntax: <code>&lt;...&gt;</code></p>
 <ul class="incremental">
-<li><code>&lt;abcd&gt;</code> -- <strong>anagram</strong> of <code>abcd</code>: rearranging the given letters</li>
-<li><code>&lt;abcd+&gt;</code> -- <strong>superanagram</strong> of <code>abcd</code>: rearranging <em>at least</em> the given letters</li>
-<li><code>&lt;abcd+3&gt;</code> -- <strong>transadd</strong> of <code>3</code> to <code>abcd</code>: rearranging <em>all</em> of the given letters <em>plus</em> <code>N</code> wildcards</li>
-<li><code>&lt;abcd-&gt;</code> -- <strong>subanagram</strong> of <code>abcd</code>: rearranging <em>at most</em> the given letters</li>
-<li><code>&lt;abcd-1&gt;</code> -- <strong>transdelete</strong> of <code>1</code> to <code>abcd</code>: rerranging <em>all but <code>N</code></em> of the given letters</li>
-<li><code>(abcd:-)</code> -- <strong>subset</strong> of <code>abcd</code>: contained within a <em>subset</em> of the given expression, in the same order</li>
-<li><code>(abcd:+)</code> -- <strong>superset</strong> of <code>abcd</code>: contains the <em>superset</em> of the given expression, in the same order</li>
-<li><code>(abcd:^)</code> -- <strong>substring</strong> of <code>abcd</code>: contained within the given expression (consecutively)</li>
+<li><code>&lt;abcd&gt;</code> – <strong>anagram</strong> of <code>abcd</code>: rearranging the given letters</li>
+<li><code>&lt;abcd+&gt;</code> – <strong>superanagram</strong> of <code>abcd</code>: rearranging <em>at least</em> the given letters</li>
+<li><code>&lt;abcd+3&gt;</code> – <strong>transadd</strong> of <code>3</code> to <code>abcd</code>: rearranging <em>all</em> of the given letters <em>plus</em> <code>N</code> wildcards</li>
+<li><code>&lt;abcd-&gt;</code> – <strong>subanagram</strong> of <code>abcd</code>: rearranging <em>at most</em> the given letters</li>
+<li><code>&lt;abcd-1&gt;</code> – <strong>transdelete</strong> of <code>1</code> to <code>abcd</code>: rerranging <em>all but <code>N</code></em> of the given letters</li>
+<li><code>(abcd:-)</code> – <strong>subset</strong> of <code>abcd</code>: contained within a <em>subset</em> of the given expression, in the same order</li>
+<li><code>(abcd:+)</code> – <strong>superset</strong> of <code>abcd</code>: contains the <em>superset</em> of the given expression, in the same order</li>
+<li><code>(abcd:^)</code> – <strong>substring</strong> of <code>abcd</code>: contained within the given expression (consecutively)</li>
 </ul>
 <p>Anagram constraints are not compatible with fuzzy matching, and may result in false positives (but not false negatives!).</p>
 <h3 id="enumerations">Enumerations</h3>
@@ -320,11 +320,11 @@
 <h3 id="fuzzy-matching">Fuzzy matching</h3>
 <p>Noodle supports performing <em>fuzzy matching</em> for certain expressions.</p>
 <p>This will find words &amp; phrases that would match within a given <a href="https://en.wikipedia.org/wiki/Levenshtein_distance">edit distance</a> of the expression.</p>
-<p>To allow matches within edit distance 2, include &quot;<code>!2</code>&quot; at the end of the expression.</p>
+<p>To allow matches within edit distance 2, include “<code>!2</code>” at the end of the expression.</p>
 <p>Fuzzy matching can make queries take much longer, so it works best when there are additional constraints.</p>
 <h4 id="fuzzy-caveats">Fuzzy Caveats</h4>
-<p>If there are multiple constraints with fuzzy matching, the edits between expressions may not be consistent. For example, <code>&quot;hey&quot;</code> will match the query <code>&quot;hen !1; hay !1&quot;</code> even though the edits <em>to get to</em> &quot;hen&quot; or &quot;hay&quot; are different.</p>
-<p>Anagram-like constraints (&quot;<code>&lt;…&gt;</code>&quot;) are incompatible with fuzzy matching, and may produce false positives.</p>
+<p>If there are multiple constraints with fuzzy matching, the edits between expressions may not be consistent. For example, <code>"hey"</code> will match the query <code>"hen !1; hay !1"</code> even though the edits <em>to get to</em> “hen” or “hay” are different.</p>
+<p>Anagram-like constraints (“<code>&lt;…&gt;</code>”) are incompatible with fuzzy matching, and may produce false positives.</p>
 <h3 id="macros">Macros</h3>
 <p>Macros allow you to define a common subexpression, which can be useful when working with repeated letters from a letterbank.</p>
 <p>Macros are defined with <code>NAME=expression...</code> syntax on their own lines.</p>
@@ -337,24 +337,33 @@
 <h2 id="ui-tips">UI Tips</h2>
 <h3 id="keyboard-shortcuts">Keyboard shortcuts</h3>
 <ul class="incremental">
-<li><code>Ctrl-Enter</code> -- submit query</li>
+<li><code>Ctrl-Enter</code> – submit query</li>
 </ul>
 <h3 id="quick-links">Quick Links</h3>
 <p>Next to each result, there are 3 links to common actions:</p>
 <ul class="incremental">
-<li><code>c</code> -- <strong>copy</strong> the result to the clipboard</li>
-<li><code>g</code> -- look up the result on <strong>Google</strong></li>
-<li><code>w</code> -- look up the result on <strong>Wikipedia</strong></li>
-<li><code>x</code> -- look up the result as a clue on <strong>Crossword Solver</strong></li>
+<li><code>c</code> – <strong>copy</strong> the result to the clipboard</li>
+<li><code>g</code> – look up the result on <strong>Google</strong></li>
+<li><code>w</code> – look up the result on <strong>Wikipedia</strong></li>
+<li><code>x</code> – look up the result as a clue on <strong>Crossword Solver</strong></li>
 </ul>
 <h3 id="google-sheets-integration">Google Sheets Integration</h3>
-<p>You can query Noodle directly from Google Sheets! Here's an example formula:</p>
+<p>You can query Noodle directly from Google Sheets! Here’s an example formula:</p>
 <pre><code>=IMPORTDATA(CONCAT(&quot;https://noodle.fly.dev/query/&quot;, ENCODEURL(&quot;yourqueryhere&quot;)))</code></pre>
 <p>You can wrap it in <code>TRANSPOSE(...)</code> to have it fill out horizontally instead of vertically.</p>
 <p>You can separate mutli-line queries with semicolons (<code>;</code>) instead of newlines.</p>
-<p>For <code>GET</code> requests like this, the timeout is lowered, default results limit is lowered to 15 (this can be changed with e.g. <code>#limit 100;</code>).</p>
+<p>For <code>GET</code> requests like this, the timeout is lowered, default results limit is lowered to 15 (this can be changed with e.g. <code>#limit 100;</code>).</p>
 <h3 id="wordlist">Wordlist</h3>
-<p>The input wordlist can be downloaded <a href="/wordlist">here</a>.</p>
+<p>The input wordlists are described below, and can be downloaded by following these links:</p>
+<ul class="incremental">
+<li><a href="/wordlist/default">default</a>: combination of Wikipedia titles, page content, and Wiktionary. Filtered slightly based on frequency.</li>
+<li><a href="/wordlist/dumpling">dumpling</a>: all answers available in <a href="https://dumpling.fly.dev">dumpling</a>, contains “crosswordese” and phrases.</li>
+<li><a href="/wordlist/npl-allwords2">npl-allwords2</a>: “allwords2.txt” wordlist from NPL’s website.</li>
+<li><a href="/wordlist/scrabble">scrabble</a>: Collins Scrabble words (2019).</li>
+<li><a href="/wordlist/pokemon">pokemon</a>: all pokemon names, gen 1-9.</li>
+<li><a href="/wordlist/wiktionary">wiktionary</a>: all words defined in English Wiktionary, including “forms” of words.</li>
+<li><a href="/wordlist/wiki-titles">wiki-titles</a>: all individual words in English Wikipedia titles, without any frequency filter.</li>
+</ul>
 <p>It is based on the Debian wordlist, Wikipedia, and Wiktionary.</p>
 <h2 id="learn-more">Learn More</h2>
 <p>Noodle is open-source and released under the MIT license.</p>
@@ -371,11 +380,11 @@
 </ul></li>
 <li><a href="https://tools.qhex.org/">qhex</a> <em>Word Play</em> tool
 <ul class="incremental">
-<li>Extensive wordlist, supports &quot;cross-filtering&quot; for matching derivative words</li>
+<li>Extensive wordlist, supports “cross-filtering” for matching derivative words</li>
 </ul></li>
 <li><a href="https://www.quinapalus.com/qat.html">Qat</a>
 <ul class="incremental">
-<li>Semantic search (e.g. &quot;synonym to...&quot;), complex &quot;equation solver&quot;</li>
+<li>Semantic search (e.g. “synonym to…”), complex “equation solver”</li>
 </ul></li>
 </ul>
 <!-- end help -->
