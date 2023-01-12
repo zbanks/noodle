@@ -65,6 +65,13 @@ perf.data*
 
 # Word lists
 consolidated.txt
+wordlists/*
+listgen/enwiki-index/
+listgen/raw_data/
+*.gz
+*.zst
+*.zstd
+!wordlists/*.zst
 
 
 #Added by cargo

@@ -123,23 +123,7 @@
                     <button id="query">Query</button>
                     <button id="stop">Stop</button>
 
-                    <input type="hidden" id="wordlist" value="default"></input>
-                    <!--
-                    <span style="margin-left: 2em">
-                        Wordlist:
-                        <select id="wordlist">
-                            <option>default</option>
-                            <option>small</option>
-                            <option>large</option>
-                            <option>huge</option>
-                            <option>insane</option>
-                            <option>scrabble</option>
-                            <option>uk_cryptics</option>
-                            <option>all</option>
-                        </select>
-                    </span>
-                    -->
-                    <span style="margin-left: 2em"></span>
+                    <span style="margin-left: 1em"></span>
                     <label for="max-phrase-length">
                         Max Phrase Length:
                     </label>
@@ -156,21 +140,36 @@
                         <option>10</option>
                     </select>
 
-                    <span style="margin-left: 2em"></span>
-                    <label for="max-result">
-                        Max Results:
-                    </label>
-                    <select id="max-results">
-                        <option>1</option>
-                        <option>3</option>
-                        <option>10</option>
-                        <option>30</option>
-                        <option selected>100</option>
-                        <option>300</option>
-                        <option>1000</option>
-                        <option>3000</option>
-                        <option>10000</option>
-                    </select>
+                </div>
+
+                <div style="margin-top: 1em;">
+                    <span style="">
+                        <label for="max-result">
+                            Max Results:
+                        </label>
+                        <select id="max-results">
+                            <option>1</option>
+                            <option>3</option>
+                            <option>10</option>
+                            <option>30</option>
+                            <option selected>100</option>
+                            <option>300</option>
+                            <option>1000</option>
+                            <option>3000</option>
+                            <option>10000</option>
+                        </select>
+                    </span>
+                    <!--
+                    <input type="hidden" id="wordlist" value="default"></input>
+                    -->
+                    <span style="margin-left: 1em">
+                        <label for="wordlist">
+                            Wordlist:
+                        </label>
+                        <select id="wordlist">
+                            <option>default</option>
+                        </select>
+                    </span>
                 </div>
                 <div style="margin-top: 1em;"></div>
                 <div>
@@ -190,6 +189,7 @@
                     <input type="checkbox" id="enable-filter"></input>
                     <input type="text" id="filter"></input>
                 </div>
+                <!--
                 <div>
                     <label for="show-debug">
                         <abbr title="Show debug logs">
@@ -198,6 +198,7 @@
                     </label>
                     <input type="checkbox" id="show-debug"></input>
                 </div>
+                -->
                 <div style="margin-top: 1em;"></div>
                 <div>
                     <details>
@@ -380,8 +381,6 @@
 <!-- end help -->
             </div>
         </div>
-        <script type="text/javascript">
-        </script>
         <script type="text/javascript">
             var outputDiv = document.querySelector("#output");
             var statusDiv = document.querySelector("#status");
@@ -602,6 +601,21 @@
                 xhr.setRequestHeader("Content-type", "application/json");
                 xhr.send(JSON.stringify({content: message}));
             });
+        </script>
+        <script type="text/javascript" src="/wordlists.js"></script>
+        <script type="text/javascript">
+            window.WORDLISTS.sort(function(a, b){return b.len - a.len});
+            wordlist.innerHTML = "";
+            for (var i = 0; i < window.WORDLISTS.length; i++) {
+                var wl = window.WORDLISTS[i];
+                var opt = document.createElement("option");
+                opt.innerText = wl.name + " (" + wl.len + ")";
+                opt.value = wl.name;
+                if (wl.name == "default") {
+                    opt.selected = true;
+                }
+                wordlist.appendChild(opt);
+            }
         </script>
     </body>
 </html>

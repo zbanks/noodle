@@ -41,6 +41,11 @@ lazy_static! {
                 .to_string();
             let filepath = path.path();
 
+            if map.has(&name) {
+                println!("Skipping duplicate wordlist {name}");
+                continue;
+            }
+
             let start = Instant::now();
             let words = load_wordlist(&filepath).unwrap();
             println!(
@@ -122,6 +127,22 @@ fn words(wordlist_name: &str) -> &'static [Word] {
         .unwrap_or_else(|| WORDLISTS.get(DEFAULT_WORDLIST).unwrap())
 }
 
+fn get_wordlist_js() -> http::Result<http::Response<hyper::Body>> {
+    let mut output = String::new();
+    writeln!(&mut output, "window.WORDLISTS = [];").unwrap();
+    for (name, words) in WORDLISTS.iter() {
+        writeln!(
+            &mut output,
+            "window.WORDLISTS.push({{\"name\": \"{}\", \"len\": {}}});",
+            name, words.len(),
+        ).unwrap();
+    }
+    http::Response::builder()
+        .status(http::StatusCode::OK)
+        .body(output.into())
+}
+
+
 /// Plain HTTP interface, for use with cURL or GSheets IMPORTDATA
 fn run_query_sync(query_str: &str, plaintext: bool) -> http::Result<impl warp::Reply> {
     // TODO: hyper's implementation of "transfer-encoding: chunked" buffers the results of the
@@ -150,7 +171,8 @@ fn run_query_sync(query_str: &str, plaintext: bool) -> http::Result<impl warp::R
                 query_ast.options.results_limit = Some(15);
             }
             let deadline = Instant::now() + timeout;
-            let mut evaluator = QueryEvaluator::from_ast(&query_ast, words("default"));
+            let dict = words(query_ast.options.dictionary.as_ref().map(|s| &s[..]).unwrap_or(DEFAULT_WORDLIST));
+            let mut evaluator = QueryEvaluator::from_ast(&query_ast, dict);
             loop {
                 match evaluator.next_within_deadline(Some(deadline)) {
                     QueryResponse::Match(p) => {
@@ -229,7 +251,8 @@ async fn run_websocket(websocket: warp::ws::WebSocket) {
         )))
         .await?;
 
-        let mut evaluator = QueryEvaluator::from_ast(&query_ast, words("default"));
+        let dict = words(query_ast.options.dictionary.as_ref().map(|s| &s[..]).unwrap_or(DEFAULT_WORDLIST));
+        let mut evaluator = QueryEvaluator::from_ast(&query_ast, dict);
         for expression in evaluator.expressions() {
             tx.send(Response::Log {
                 message: format!("{:?}", expression),
@@ -320,6 +343,11 @@ async fn main() {
         .and(warp::path::param())
         .map(get_wordlist);
 
+    // Wordlist Javascript
+    let wordlist_js = warp::get()
+        .and(warp::path("wordlists.js"))
+        .map(get_wordlist_js);
+
     // Websockets interface
     let ws = warp::path("ws")
         .and(warp::ws())
@@ -343,6 +371,7 @@ async fn main() {
         .or(post_query)
         .or(ws)
         .or(wordlist)
+        .or(wordlist_js)
         .or(metrics)
         .or(statics)
         .or(index);

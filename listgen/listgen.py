@@ -63,12 +63,12 @@ class Wordlist:
         word = strip_word(word)
         if not word:
             return None
-        canonical = canoncialize(word)
+        canonical = canonicalize(word)
         if canonical not in self.word_data:
             self.word_data[canonical] = (score, index, word)
         else:
             old_score, old_index, old_word = self.word_data[canonical]
-            self.word_data[canonical] = (old_score + score, old_index, old_word)
+            self.word_data[canonical] = (max(old_score, score), min(index, old_index), old_word)
         return canonical
 
     def merge(self, other: "Wordlist") -> None:
@@ -127,7 +127,7 @@ def strip_word(word: str) -> str:
     return word
 
 
-def canoncialize(word: str) -> str:
+def canonicalize(word: str) -> str:
     if any("0" <= x <= "9" for x in word):
         return ""
     canonical = word
@@ -215,7 +215,7 @@ def word_frequency(base_path: Path) -> None:
     for c in (title_count, body_count):
         new_c: Counter[str] = Counter()
         for word, count in c.items():
-            canonical = canoncialize(word)
+            canonical = canonicalize(word)
             if canonical not in canonical_form:
                 c_count = title_count.get(canonical, 0) + body_count.get(canonical, 0)
                 if c_count >= 0.01 * count:
@@ -245,13 +245,13 @@ def create_wordlist(base_path: Path, cutoff: int = 10) -> Wordlist:
     original_words: Dict[str, str] = {}
     blocklist: Set[str] = {"aeo"}  # From the album name "æo³ & ³hæ"
 
-    def add_word(count: int, word: str) -> None:
+    def add_word(count: int, word: str) -> int:
         if not word:
             return
         assert "\t" not in word
-        canonical = canoncialize(word)
+        canonical = canonicalize(word)
         if not canonical or canonical in blocklist:
-            return
+            return None
         if canonical == word:
             # If the word matches its canonical form, give it a big bonus
             count = count * 2 + 1
@@ -269,18 +269,27 @@ def create_wordlist(base_path: Path, cutoff: int = 10) -> Wordlist:
         points += count
         word_points[canonical] = points
         original_words[canonical] = word
+        return points
 
+    wiktionary_wl = Wordlist()
     with (base_path / "enwiktionary.txt").open() as f:
         for line in f:
             count_str, _, word = line.strip().split("\t")
             # Words in wiktionary are already scaled to 100/1000 points
-            add_word(int(count_str), word)
+            score = add_word(int(count_str), word)
+            if score:
+                wiktionary_wl.add_canonical(canonical=canonicalize(word), word=word, score=score)
+    wiktionary_wl.dump_final(base_path / "wiktionary.tsv")
 
+    wikititle_wl = Wordlist()
     with (base_path / "title.txt").open() as f:
         for line in f:
             count_str, _, word = line.strip().partition("\t")
             # Words in the title get a 3x bonus as they're less likely to be typos
-            add_word(int(count_str) * 3, word)
+            score = add_word(int(count_str) * 3, word)
+            if score:
+                wikititle_wl.add_canonical(canonical=canonicalize(word), word=word, score=score)
+    wikititle_wl.dump_final(base_path / "wiki-titles.tsv")
 
     with (base_path / "body.txt").open() as f:
         for line in f:
@@ -310,7 +319,7 @@ def validate_wordlist(wordlist: Wordlist) -> None:
     for answer in load_mh_answers(Path("/home/zbanks/mh_answers/")):
         if len(answer) <= 4 and ord(answer[0]) > 0x1F000:
             continue
-        score, _, _ = wordlist.word_data.get(canoncialize(answer), (0, 0, ""))
+        score, _, _ = wordlist.word_data.get(canonicalize(answer), (0, 0, ""))
         log_score = int(math.log2(score)) if score > 0 else 0
         answer_scores[log_score] += 1
         if score == 0:
@@ -326,7 +335,7 @@ def validate_wordlist(wordlist: Wordlist) -> None:
             for line in f:
                 if "'s" in line:
                     continue
-                if canoncialize(line.strip()) not in wordlist.word_data:
+                if canonicalize(line.strip()) not in wordlist.word_data:
                     o.write(line)
                     missing_words += 1
                 total_words += 1
@@ -343,7 +352,7 @@ def wiktionary_wordlist(path: Path) -> Wordlist:
             wordlist.add_word(data["word"], score=1000)
             for form in data.get("forms", []):
                 form_word = form["form"]
-                if " " not in form_word and canoncialize(form_word) == form_word:
+                if " " not in form_word and canonicalize(form_word) == form_word:
                     wordlist.add_word(form["form"], score=50)
     return wordlist
 
@@ -364,7 +373,7 @@ def build_wiki_graph(input_file, wordlist: Wordlist, base_path: Path) -> None:
     def words_to_set(line: str) -> Set[int]:
         output: Set[int] = set()
         for word in line.split():
-            word = canoncialize(strip_word(word))
+            word = canonicalize(strip_word(word))
             data = wordlist.word_data.get(word)
             if data is not None and data[1] > 1000:
                 output.add(data[1])
@@ -397,11 +406,12 @@ def build_wiki_graph(input_file, wordlist: Wordlist, base_path: Path) -> None:
 def main() -> None:
     base_path = Path("enwiki-index")
     base_path.mkdir(parents=True, exist_ok=True)
-    dict_wordlist = wiktionary_wordlist(base_path / "kaikki-enwiktionary.json.zst")
-    dict_wordlist.dump(base_path / "enwiktionary.txt")
+    #dict_wordlist = wiktionary_wordlist(base_path / "kaikki-enwiktionary.json.zst")
+    #dict_wordlist.dump(base_path / "enwiktionary.txt")
     #split_word_frequency(base_path)
     word_frequency(base_path)
     wordlist = create_wordlist(base_path, cutoff=50)
+    return
     # wordlist = Wordlist.load(base_path / "wordlist.10.txt")
     #validate_wordlist(wordlist)
     # build_wiki_graph(sys.stdin, wordlist, base_path)

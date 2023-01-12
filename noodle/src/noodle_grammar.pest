@@ -78,7 +78,7 @@ macro_value = { (' '..'~')* } // Nearly any ASCII character
 macro_define = { SOI ~ macro_name ~ "=" ~ macro_value ~ EOI }
 
 pragma_words = { ^"#words" ~ number }
-pragma_dict = { (^"#dict" | ^"#dictionary") ~ character+ }
+pragma_dict = { (^"#dict" | ^"#dictionary") ~ (character | "-")+ }
 pragma_limit = {^"#limit" ~ number }
 pragma_quiet = {^"#quiet"}
 pragma_wordlist = {^"#wordlist"}

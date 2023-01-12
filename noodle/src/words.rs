@@ -234,7 +234,7 @@ where
         .filter_map(|line| {
             // Parse either a plain wordlist, or a 2-column (count, word) variant
             let mut word = line.as_ref();
-            let mut score = line.len() as u32;
+            let mut score = line.len() as u32 * 200;
             if let Some((count_col, word_col)) = line.split_once('\t') {
                 if let Ok(count) = count_col.parse::<u32>() {
                     score = count;
