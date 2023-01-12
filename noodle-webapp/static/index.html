@@ -399,7 +399,6 @@
             var maxPhraseLength = document.querySelector("#max-phrase-length");
             var maxResults = document.querySelector("#max-results");
             var enableFilter = document.querySelector("#enable-filter");
-            var showDebug = document.querySelector("#show-debug");
             var debug = document.querySelector("#debug");
             var filter = document.querySelector("#filter");
             var sort = document.querySelector("#sort");
@@ -572,13 +571,6 @@
             filter.addEventListener("input", function() {
                 enableFilter.checked = true;
                 rebuildOutput();
-            });
-            showDebug.addEventListener("input", function() {
-                if (showDebug.checked) {
-                    debug.style.display = "block";
-                } else {
-                    debug.style.display = "none";
-                }
             });
             document.querySelector("#copy-wordlist").addEventListener("click", function() {
                 var filter_regex = null;
