@@ -16,7 +16,7 @@ use warp::Filter;
 #[macro_use]
 extern crate lazy_static;
 
-static DEFAULT_WORDLIST: &str = "american-english";
+static DEFAULT_WORDLIST: &str = "default";
 
 lazy_static! {
     static ref WORDLISTS: HashMap<String, Vec<Word>> = {
