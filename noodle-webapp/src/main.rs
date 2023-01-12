@@ -41,7 +41,7 @@ lazy_static! {
                 .to_string();
             let filepath = path.path();
 
-            if map.has(&name) {
+            if map.contains_key(&name) {
                 println!("Skipping duplicate wordlist {name}");
                 continue;
             }
